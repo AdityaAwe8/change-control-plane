@@ -1,0 +1,17 @@
+FROM golang:1.26-alpine AS build
+
+WORKDIR /workspace
+COPY go.mod ./
+COPY cmd ./cmd
+COPY db ./db
+COPY internal ./internal
+COPY pkg ./pkg
+
+RUN go build -o /out/change-control-plane-api ./cmd/api
+
+FROM alpine:3.21
+WORKDIR /app
+COPY --from=build /out/change-control-plane-api /usr/local/bin/change-control-plane-api
+
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/change-control-plane-api"]

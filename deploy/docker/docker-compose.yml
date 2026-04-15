@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: change-control-plane-postgres
+    environment:
+      POSTGRES_DB: change_control_plane
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ccp-postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: change-control-plane-redis
+    ports:
+      - "6379:6379"
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: change-control-plane-nats
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.api
+    container_name: change-control-plane-api
+    environment:
+      CCP_API_HOST: 0.0.0.0
+      CCP_API_PORT: 8080
+      CCP_DB_DSN: postgres://postgres:postgres@postgres:5432/change_control_plane?sslmode=disable
+      CCP_REDIS_ADDR: redis:6379
+      CCP_NATS_URL: nats://nats:4222
+    depends_on:
+      - postgres
+      - redis
+      - nats
+    ports:
+      - "8080:8080"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.worker
+    container_name: change-control-plane-worker
+    environment:
+      CCP_DB_DSN: postgres://postgres:postgres@postgres:5432/change_control_plane?sslmode=disable
+      CCP_REDIS_ADDR: redis:6379
+      CCP_NATS_URL: nats://nats:4222
+    depends_on:
+      - api
+
+volumes:
+  ccp-postgres:

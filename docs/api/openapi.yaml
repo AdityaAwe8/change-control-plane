@@ -1,0 +1,800 @@
+openapi: 3.1.0
+info:
+  title: ChangeControlPlane API
+  version: 0.1.0
+  description: >
+    Initial version of the ChangeControlPlane control-plane API for
+    organizations, projects, teams, services, environments, changes,
+    risk assessments, rollout plans, rollout executions, policies,
+    audit events, integrations, service accounts, and machine-token flows.
+servers:
+  - url: http://localhost:8080
+security:
+  - BearerAuth: []
+paths:
+  /healthz:
+    get:
+      summary: Health probe
+      security: []
+      responses:
+        '200':
+          description: Healthy
+  /readyz:
+    get:
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Ready
+  /api/v1/auth/dev/login:
+    post:
+      summary: Development bootstrap login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DevLoginRequest'
+      responses:
+        '200':
+          description: Session bootstrap issued
+  /api/v1/auth/session:
+    get:
+      summary: Placeholder session info
+      responses:
+        '200':
+          description: Session information
+  /api/v1/catalog:
+    get:
+      summary: Combined service and environment catalog summary
+      responses:
+        '200':
+          description: Catalog summary
+  /api/v1/metrics/basics:
+    get:
+      summary: Basic control-plane counts
+      responses:
+        '200':
+          description: Basic metrics
+  /api/v1/organizations:
+    get:
+      summary: List organizations
+      responses:
+        '200':
+          description: Organization list
+    post:
+      summary: Create organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          description: Organization created
+  /api/v1/organizations/{id}:
+    get:
+      summary: Get organization detail
+      responses:
+        '200':
+          description: Organization detail
+    patch:
+      summary: Update organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganizationRequest'
+      responses:
+        '200':
+          description: Organization updated
+  /api/v1/projects:
+    get:
+      summary: List projects
+      responses:
+        '200':
+          description: Project list
+    post:
+      summary: Create project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+  /api/v1/projects/{id}:
+    get:
+      summary: Get project detail
+      responses:
+        '200':
+          description: Project detail
+    patch:
+      summary: Update project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+  /api/v1/projects/{id}/archive:
+    post:
+      summary: Archive project
+      responses:
+        '200':
+          description: Project archived
+  /api/v1/teams:
+    get:
+      summary: List teams
+      responses:
+        '200':
+          description: Team list
+    post:
+      summary: Create team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Team created
+  /api/v1/teams/{id}:
+    get:
+      summary: Get team detail
+      responses:
+        '200':
+          description: Team detail
+    patch:
+      summary: Update team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTeamRequest'
+      responses:
+        '200':
+          description: Team updated
+  /api/v1/teams/{id}/archive:
+    post:
+      summary: Archive team
+      responses:
+        '200':
+          description: Team archived
+  /api/v1/services:
+    get:
+      summary: List services
+      responses:
+        '200':
+          description: Service list
+    post:
+      summary: Register service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '201':
+          description: Service created
+  /api/v1/services/{id}:
+    get:
+      summary: Get service detail
+      responses:
+        '200':
+          description: Service detail
+    patch:
+      summary: Update service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServiceRequest'
+      responses:
+        '200':
+          description: Service updated
+  /api/v1/services/{id}/archive:
+    post:
+      summary: Archive service
+      responses:
+        '200':
+          description: Service archived
+  /api/v1/environments:
+    get:
+      summary: List environments
+      responses:
+        '200':
+          description: Environment list
+    post:
+      summary: Create environment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnvironmentRequest'
+      responses:
+        '201':
+          description: Environment created
+  /api/v1/environments/{id}:
+    get:
+      summary: Get environment detail
+      responses:
+        '200':
+          description: Environment detail
+    patch:
+      summary: Update environment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEnvironmentRequest'
+      responses:
+        '200':
+          description: Environment updated
+  /api/v1/environments/{id}/archive:
+    post:
+      summary: Archive environment
+      responses:
+        '200':
+          description: Environment archived
+  /api/v1/changes:
+    get:
+      summary: List change sets
+      responses:
+        '200':
+          description: Change set list
+    post:
+      summary: Ingest change set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChangeSetRequest'
+      responses:
+        '201':
+          description: Change set created
+  /api/v1/changes/{id}:
+    get:
+      summary: Get change-set detail
+      responses:
+        '200':
+          description: Change-set detail
+  /api/v1/risk-assessments:
+    get:
+      summary: List risk assessments
+      responses:
+        '200':
+          description: Risk assessment list
+    post:
+      summary: Assess a change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRiskAssessmentRequest'
+      responses:
+        '201':
+          description: Risk assessment created
+  /api/v1/rollout-plans:
+    get:
+      summary: List rollout plans
+      responses:
+        '200':
+          description: Rollout plan list
+    post:
+      summary: Generate rollout plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRolloutPlanRequest'
+      responses:
+        '201':
+          description: Rollout plan created
+  /api/v1/rollout-executions:
+    get:
+      summary: List rollout executions
+      responses:
+        '200':
+          description: Rollout execution list
+    post:
+      summary: Create rollout execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRolloutExecutionRequest'
+      responses:
+        '201':
+          description: Rollout execution created
+  /api/v1/rollout-executions/{id}:
+    get:
+      summary: Get rollout execution detail
+      responses:
+        '200':
+          description: Rollout execution detail
+  /api/v1/rollout-executions/{id}/advance:
+    post:
+      summary: Advance rollout execution lifecycle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceRolloutExecutionRequest'
+      responses:
+        '200':
+          description: Rollout execution advanced
+  /api/v1/rollout-executions/{id}/verification:
+    post:
+      summary: Record verification result for rollout execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordVerificationResultRequest'
+      responses:
+        '201':
+          description: Verification result recorded
+  /api/v1/policies:
+    get:
+      summary: List policies
+      responses:
+        '200':
+          description: Policy list
+  /api/v1/incidents:
+    get:
+      summary: List incidents
+      responses:
+        '200':
+          description: Incident list
+  /api/v1/audit-events:
+    get:
+      summary: List audit events
+      responses:
+        '200':
+          description: Audit event list
+  /api/v1/integrations:
+    get:
+      summary: List integrations
+      responses:
+        '200':
+          description: Integration list
+  /api/v1/integrations/{id}:
+    patch:
+      summary: Update integration configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIntegrationRequest'
+      responses:
+        '200':
+          description: Integration updated
+  /api/v1/integrations/{id}/graph-ingest:
+    post:
+      summary: Persist graph enrichment from an integration ingest payload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationGraphIngestRequest'
+      responses:
+        '200':
+          description: Graph relationships upserted
+  /api/v1/graph/relationships:
+    get:
+      summary: List persisted graph relationships
+      responses:
+        '200':
+          description: Graph relationship list
+  /api/v1/service-accounts:
+    get:
+      summary: List service accounts
+      responses:
+        '200':
+          description: Service account list
+    post:
+      summary: Create service account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceAccountRequest'
+      responses:
+        '201':
+          description: Service account created
+  /api/v1/service-accounts/{id}/deactivate:
+    post:
+      summary: Deactivate service account
+      responses:
+        '200':
+          description: Service account deactivated
+  /api/v1/service-accounts/{id}/tokens:
+    get:
+      summary: List service-account API tokens
+      responses:
+        '200':
+          description: Token list
+    post:
+      summary: Issue service-account API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueAPITokenRequest'
+      responses:
+        '201':
+          description: Token issued
+  /api/v1/service-accounts/{id}/tokens/{token_id}/revoke:
+    post:
+      summary: Revoke service-account API token
+      responses:
+        '200':
+          description: Token revoked
+  /api/v1/service-accounts/{id}/tokens/{token_id}/rotate:
+    post:
+      summary: Rotate service-account API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateAPITokenRequest'
+      responses:
+        '200':
+          description: Token rotated
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: CCP-HMAC
+  schemas:
+    DevLoginRequest:
+      type: object
+      required: [email, display_name]
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        organization_name:
+          type: string
+        organization_slug:
+          type: string
+    CreateOrganizationRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateOrganizationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        tier:
+          type: string
+        mode:
+          type: string
+    CreateProjectRequest:
+      type: object
+      required: [organization_id, name, slug]
+      properties:
+        organization_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        adoption_mode:
+          type: string
+        status:
+          type: string
+    UpdateTeamRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        owner_user_ids:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+    UpdateServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        criticality:
+          type: string
+        tier:
+          type: string
+        customer_facing:
+          type: boolean
+        has_slo:
+          type: boolean
+        has_observability:
+          type: boolean
+        regulated_zone:
+          type: boolean
+        dependent_services_count:
+          type: integer
+        status:
+          type: string
+    UpdateEnvironmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        type:
+          type: string
+        region:
+          type: string
+        production:
+          type: boolean
+        compliance_zone:
+          type: string
+        status:
+          type: string
+    CreateRolloutExecutionRequest:
+      type: object
+      required: [rollout_plan_id]
+      properties:
+        rollout_plan_id:
+          type: string
+    AdvanceRolloutExecutionRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+        reason:
+          type: string
+    RecordVerificationResultRequest:
+      type: object
+      required: [outcome, decision, summary]
+      properties:
+        outcome:
+          type: string
+        decision:
+          type: string
+        summary:
+          type: string
+    CreateServiceAccountRequest:
+      type: object
+      required: [organization_id, name, role]
+      properties:
+        organization_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        role:
+          type: string
+    IssueAPITokenRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        expires_in_hours:
+          type: integer
+    RotateAPITokenRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        expires_in_hours:
+          type: integer
+    UpdateIntegrationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+        status:
+          type: string
+        description:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+    IntegrationGraphIngestRequest:
+      type: object
+      properties:
+        repositories:
+          type: array
+          items:
+            type: object
+        service_dependencies:
+          type: array
+          items:
+            type: object
+        service_environments:
+          type: array
+          items:
+            type: object
+        change_repositories:
+          type: array
+          items:
+            type: object
+        description:
+          type: string
+        adoption_mode:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateTeamRequest:
+      type: object
+      required: [organization_id, project_id, name, slug]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateServiceRequest:
+      type: object
+      required: [organization_id, project_id, team_id, name, slug]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        team_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        criticality:
+          type: string
+        tier:
+          type: string
+        customer_facing:
+          type: boolean
+        has_slo:
+          type: boolean
+        has_observability:
+          type: boolean
+        regulated_zone:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateEnvironmentRequest:
+      type: object
+      required: [organization_id, project_id, name, slug, type]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        type:
+          type: string
+        region:
+          type: string
+        production:
+          type: boolean
+        compliance_zone:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateChangeSetRequest:
+      type: object
+      required: [organization_id, project_id, service_id, environment_id, summary]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        summary:
+          type: string
+        change_types:
+          type: array
+          items:
+            type: string
+        file_count:
+          type: integer
+        resource_count:
+          type: integer
+        touches_infrastructure:
+          type: boolean
+        touches_iam:
+          type: boolean
+        touches_secrets:
+          type: boolean
+        touches_schema:
+          type: boolean
+        dependency_changes:
+          type: boolean
+        historical_incident_count:
+          type: integer
+        poor_rollback_history:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateRiskAssessmentRequest:
+      type: object
+      required: [change_set_id]
+      properties:
+        change_set_id:
+          type: string
+    CreateRolloutPlanRequest:
+      type: object
+      required: [change_set_id]
+      properties:
+        change_set_id:
+          type: string
