@@ -1,32 +1,177 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# =========================================================
+# OS / Editor
+# =========================================================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
 
-# Test binary, built with `go test -c`
+# =========================================================
+# Logs
+# =========================================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================================================
+# Environment / Secrets
+# =========================================================
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+*.secret
+*.credentials
+
+# =========================================================
+# Go
+# =========================================================
+bin/
+dist/
+build/
+.coverprofile
+coverage.out
 *.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
+vendor/
 go.work.sum
 
-# env file
-.env
+# =========================================================
+# Python
+# =========================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.python-version
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# =========================================================
+# Node / TypeScript
+# =========================================================
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.next/
+.nuxt/
+.svelte-kit/
+.parcel-cache/
+storybook-static/
+coverage/
+*.tsbuildinfo
+frontend/dist/
+frontend/build/
+web/dist/
+web/build/
+ui/dist/
+ui/build/
+
+# =========================================================
+# Terraform / OpenTofu
+# =========================================================
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+!*.sample.tfvars
+
+# =========================================================
+# Kubernetes / Helm / Generated manifests
+# =========================================================
+*.generated.yaml
+*.generated.yml
+rendered-manifests/
+charts/**/tmp/
+charts/**/dist/
+
+# =========================================================
+# Docker / Containers
+# =========================================================
+.docker/
+docker-data/
+*.tar
+
+# =========================================================
+# Temporary files
+# =========================================================
+tmp/
+temp/
+.tmp/
+.cache/
+
+# =========================================================
+# Test artifacts / reports
+# =========================================================
+test-results/
+playwright-report/
+junit.xml
+report.xml
+
+# =========================================================
+# Security / Scanners
+# =========================================================
+.snyk
+.semgrep/
+.trivy/
+
+# =========================================================
+# Project-specific
+# =========================================================
+artifacts/
+.local/
+data/
+runtime/
