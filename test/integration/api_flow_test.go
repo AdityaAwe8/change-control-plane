@@ -94,8 +94,57 @@ func TestControlPlaneAPIFlow(t *testing.T) {
 		t.Fatal("expected approval requirement for production IAM change")
 	}
 
+	execution := postItem[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions", types.CreateRolloutExecutionRequest{
+		RolloutPlanID:      rollout.Plan.ID,
+		BackendType:        "simulated",
+		SignalProviderType: "simulated",
+	}, token, orgID)
+	if execution.Status != "awaiting_approval" {
+		t.Fatalf("expected awaiting_approval execution, got %s", execution.Status)
+	}
+
+	serviceAccount := postItem[types.ServiceAccount](t, server.URL+"/api/v1/service-accounts", types.CreateServiceAccountRequest{
+		OrganizationID: orgID,
+		Name:           "worker-bot",
+		Role:           "org_member",
+	}, token, orgID)
+	worker := postItem[types.IssuedAPITokenResponse](t, server.URL+"/api/v1/service-accounts/"+serviceAccount.ID+"/tokens", types.IssueAPITokenRequest{
+		Name: "worker",
+	}, token, orgID)
+
+	execution = postItem[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/advance", types.AdvanceRolloutExecutionRequest{
+		Action: "approve",
+		Reason: "integration test approval",
+	}, worker.Token, orgID)
+	execution = postItem[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/advance", types.AdvanceRolloutExecutionRequest{
+		Action: "start",
+		Reason: "integration test start",
+	}, worker.Token, orgID)
+	if execution.Status != "in_progress" {
+		t.Fatalf("expected in_progress rollout, got %s", execution.Status)
+	}
+
+	_ = postItem[types.RolloutExecutionDetail](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/reconcile", struct{}{}, worker.Token, orgID)
+
+	_ = postItem[types.SignalSnapshot](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/signal-snapshots", types.CreateSignalSnapshotRequest{
+		ProviderType: "simulated",
+		Health:       "healthy",
+		Summary:      "runtime health remained inside guardrails",
+		Signals: []types.SignalValue{
+			{Name: "latency_p95_ms", Category: "technical", Value: 140, Unit: "ms", Status: "healthy", Threshold: 250, Comparator: ">"},
+		},
+	}, worker.Token, orgID)
+	detail := postItem[types.RolloutExecutionDetail](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/reconcile", struct{}{}, worker.Token, orgID)
+	if len(detail.VerificationResults) == 0 {
+		t.Fatal("expected automated verification result after reconcile")
+	}
+	latestVerification := detail.VerificationResults[len(detail.VerificationResults)-1]
+	if !latestVerification.Automated || latestVerification.Decision != "verified" {
+		t.Fatalf("expected automated verified decision, got %+v", latestVerification)
+	}
+
 	auditEvents := getList[types.AuditEvent](t, server.URL+"/api/v1/audit-events", token, orgID)
-	if len(auditEvents) < 7 {
+	if len(auditEvents) < 12 {
 		t.Fatalf("expected audit events to be recorded, got %d", len(auditEvents))
 	}
 	if auditEvents[0].ActorType == "" {

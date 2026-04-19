@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,51 +12,75 @@ import (
 )
 
 type InMemoryStore struct {
-	mu                  sync.RWMutex
-	organizations       map[string]types.Organization
-	projects            map[string]types.Project
-	teams               map[string]types.Team
-	services            map[string]types.Service
-	environments        map[string]types.Environment
-	changeSets          map[string]types.ChangeSet
-	riskAssessments     map[string]types.RiskAssessment
-	rolloutPlans        map[string]types.RolloutPlan
-	rolloutExecutions   map[string]types.RolloutExecution
-	verificationResults map[string]types.VerificationResult
-	auditEvents         map[string]types.AuditEvent
-	integrations        map[string]types.Integration
-	repositories        map[string]types.Repository
-	graphRelationships  map[string]types.GraphRelationship
-	users               map[string]types.User
-	usersByEmail        map[string]string
-	orgMemberships      map[string]types.OrganizationMembership
-	projectMemberships  map[string]types.ProjectMembership
-	serviceAccounts     map[string]types.ServiceAccount
-	apiTokens           map[string]types.APIToken
+	mu                   sync.RWMutex
+	organizations        map[string]types.Organization
+	projects             map[string]types.Project
+	teams                map[string]types.Team
+	services             map[string]types.Service
+	environments         map[string]types.Environment
+	changeSets           map[string]types.ChangeSet
+	riskAssessments      map[string]types.RiskAssessment
+	rolloutPlans         map[string]types.RolloutPlan
+	rolloutExecutions    map[string]types.RolloutExecution
+	verificationResults  map[string]types.VerificationResult
+	signalSnapshots      map[string]types.SignalSnapshot
+	auditEvents          map[string]types.AuditEvent
+	integrations         map[string]types.Integration
+	integrationSyncRuns  map[string]types.IntegrationSyncRun
+	repositories         map[string]types.Repository
+	discoveredResources  map[string]types.DiscoveredResource
+	graphRelationships   map[string]types.GraphRelationship
+	users                map[string]types.User
+	usersByEmail         map[string]string
+	identityProviders    map[string]types.IdentityProvider
+	identityLinks        map[string]types.IdentityLink
+	orgMemberships       map[string]types.OrganizationMembership
+	projectMemberships   map[string]types.ProjectMembership
+	serviceAccounts      map[string]types.ServiceAccount
+	apiTokens            map[string]types.APIToken
+	browserSessions      map[string]types.BrowserSession
+	webhookRegistrations map[string]types.WebhookRegistration
+	policies             map[string]types.Policy
+	policyDecisions      map[string]types.PolicyDecision
+	rollbackPolicies     map[string]types.RollbackPolicy
+	statusEvents         map[string]types.StatusEvent
+	outboxEvents         map[string]types.OutboxEvent
 }
 
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
-		organizations:       make(map[string]types.Organization),
-		projects:            make(map[string]types.Project),
-		teams:               make(map[string]types.Team),
-		services:            make(map[string]types.Service),
-		environments:        make(map[string]types.Environment),
-		changeSets:          make(map[string]types.ChangeSet),
-		riskAssessments:     make(map[string]types.RiskAssessment),
-		rolloutPlans:        make(map[string]types.RolloutPlan),
-		rolloutExecutions:   make(map[string]types.RolloutExecution),
-		verificationResults: make(map[string]types.VerificationResult),
-		auditEvents:         make(map[string]types.AuditEvent),
-		integrations:        make(map[string]types.Integration),
-		repositories:        make(map[string]types.Repository),
-		graphRelationships:  make(map[string]types.GraphRelationship),
-		users:               make(map[string]types.User),
-		usersByEmail:        make(map[string]string),
-		orgMemberships:      make(map[string]types.OrganizationMembership),
-		projectMemberships:  make(map[string]types.ProjectMembership),
-		serviceAccounts:     make(map[string]types.ServiceAccount),
-		apiTokens:           make(map[string]types.APIToken),
+		organizations:        make(map[string]types.Organization),
+		projects:             make(map[string]types.Project),
+		teams:                make(map[string]types.Team),
+		services:             make(map[string]types.Service),
+		environments:         make(map[string]types.Environment),
+		changeSets:           make(map[string]types.ChangeSet),
+		riskAssessments:      make(map[string]types.RiskAssessment),
+		rolloutPlans:         make(map[string]types.RolloutPlan),
+		rolloutExecutions:    make(map[string]types.RolloutExecution),
+		verificationResults:  make(map[string]types.VerificationResult),
+		signalSnapshots:      make(map[string]types.SignalSnapshot),
+		auditEvents:          make(map[string]types.AuditEvent),
+		integrations:         make(map[string]types.Integration),
+		integrationSyncRuns:  make(map[string]types.IntegrationSyncRun),
+		repositories:         make(map[string]types.Repository),
+		discoveredResources:  make(map[string]types.DiscoveredResource),
+		graphRelationships:   make(map[string]types.GraphRelationship),
+		users:                make(map[string]types.User),
+		usersByEmail:         make(map[string]string),
+		identityProviders:    make(map[string]types.IdentityProvider),
+		identityLinks:        make(map[string]types.IdentityLink),
+		orgMemberships:       make(map[string]types.OrganizationMembership),
+		projectMemberships:   make(map[string]types.ProjectMembership),
+		serviceAccounts:      make(map[string]types.ServiceAccount),
+		apiTokens:            make(map[string]types.APIToken),
+		browserSessions:      make(map[string]types.BrowserSession),
+		webhookRegistrations: make(map[string]types.WebhookRegistration),
+		policies:             make(map[string]types.Policy),
+		policyDecisions:      make(map[string]types.PolicyDecision),
+		rollbackPolicies:     make(map[string]types.RollbackPolicy),
+		statusEvents:         make(map[string]types.StatusEvent),
+		outboxEvents:         make(map[string]types.OutboxEvent),
 	}
 }
 
@@ -404,6 +429,12 @@ func (s *InMemoryStore) ListAuditEvents(_ context.Context, query storage.AuditEv
 		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
 			return false
 		}
+		if query.ResourceType != "" && item.ResourceType != query.ResourceType {
+			return false
+		}
+		if query.ResourceID != "" && item.ResourceID != query.ResourceID {
+			return false
+		}
 		return true
 	})
 	return paginate(items, query.Offset, query.Limit), nil
@@ -440,6 +471,27 @@ func (s *InMemoryStore) ListIntegrations(_ context.Context, query storage.Integr
 		if query.OrganizationID != "" && item.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
 			return false
 		}
+		if query.Kind != "" && item.Kind != query.Kind {
+			return false
+		}
+		if query.InstanceKey != "" && item.InstanceKey != query.InstanceKey {
+			return false
+		}
+		if query.ScopeType != "" && item.ScopeType != query.ScopeType {
+			return false
+		}
+		if query.AuthStrategy != "" && item.AuthStrategy != query.AuthStrategy {
+			return false
+		}
+		if query.Enabled != nil && item.Enabled != *query.Enabled {
+			return false
+		}
+		if query.Search != "" {
+			haystack := strings.ToLower(item.Name + " " + item.Kind + " " + item.ScopeName)
+			if !strings.Contains(haystack, strings.ToLower(query.Search)) {
+				return false
+			}
+		}
 		return true
 	})
 	return paginate(items, query.Offset, query.Limit), nil
@@ -455,11 +507,123 @@ func (s *InMemoryStore) UpdateIntegration(_ context.Context, integration types.I
 	return nil
 }
 
+func (s *InMemoryStore) ClaimIntegrationSync(_ context.Context, id string, dueBefore, staleClaimBefore, claimedAt time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	integration, ok := s.integrations[id]
+	if !ok {
+		return false, storage.ErrNotFound
+	}
+	if !integration.Enabled || !integration.ScheduleEnabled || integration.NextScheduledSyncAt == nil || integration.NextScheduledSyncAt.After(dueBefore) {
+		return false, nil
+	}
+	if integration.SyncClaimedAt != nil && !integration.SyncClaimedAt.Before(staleClaimBefore) {
+		return false, nil
+	}
+	integration.SyncClaimedAt = &claimedAt
+	integration.UpdatedAt = claimedAt
+	s.integrations[id] = integration
+	return true, nil
+}
+
+func (s *InMemoryStore) CreateIntegrationSyncRun(_ context.Context, run types.IntegrationSyncRun) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.integrationSyncRuns[run.ID] = run
+	return nil
+}
+
+func (s *InMemoryStore) ListIntegrationSyncRuns(_ context.Context, query storage.IntegrationSyncRunQuery) ([]types.IntegrationSyncRun, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.integrationSyncRuns, func(item types.IntegrationSyncRun) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.IntegrationID != "" && item.IntegrationID != query.IntegrationID {
+			return false
+		}
+		if query.Operation != "" && item.Operation != query.Operation {
+			return false
+		}
+		if query.Trigger != "" && item.Trigger != query.Trigger {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		if query.ExternalEventID != "" && item.ExternalEventID != query.ExternalEventID {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) CreateWebhookRegistration(_ context.Context, registration types.WebhookRegistration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.webhookRegistrations[registration.ID] = registration
+	return nil
+}
+
+func (s *InMemoryStore) GetWebhookRegistrationByIntegration(_ context.Context, integrationID string) (types.WebhookRegistration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, registration := range s.webhookRegistrations {
+		if registration.IntegrationID == integrationID {
+			return registration, nil
+		}
+	}
+	return types.WebhookRegistration{}, storage.ErrNotFound
+}
+
+func (s *InMemoryStore) ListWebhookRegistrations(_ context.Context, query storage.WebhookRegistrationQuery) ([]types.WebhookRegistration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.webhookRegistrations, func(item types.WebhookRegistration) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.IntegrationID != "" && item.IntegrationID != query.IntegrationID {
+			return false
+		}
+		if query.ProviderKind != "" && item.ProviderKind != query.ProviderKind {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateWebhookRegistration(_ context.Context, registration types.WebhookRegistration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.webhookRegistrations[registration.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.webhookRegistrations[registration.ID] = registration
+	return nil
+}
+
 func (s *InMemoryStore) UpsertRepository(_ context.Context, repository types.Repository) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.repositories[repository.ID] = repository
 	return nil
+}
+
+func (s *InMemoryStore) GetRepository(_ context.Context, id string) (types.Repository, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	repository, ok := s.repositories[id]
+	if !ok {
+		return types.Repository{}, storage.ErrNotFound
+	}
+	return repository, nil
 }
 
 func (s *InMemoryStore) GetRepositoryByURL(_ context.Context, organizationID, url string) (types.Repository, error) {
@@ -483,9 +647,109 @@ func (s *InMemoryStore) ListRepositories(_ context.Context, query storage.Reposi
 		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
 			return false
 		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.SourceIntegrationID != "" && item.SourceIntegrationID != query.SourceIntegrationID {
+			return false
+		}
+		if query.Provider != "" && item.Provider != query.Provider {
+			return false
+		}
 		return true
 	})
 	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateRepository(_ context.Context, repository types.Repository) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.repositories[repository.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.repositories[repository.ID] = repository
+	return nil
+}
+
+func (s *InMemoryStore) UpsertDiscoveredResource(_ context.Context, resource types.DiscoveredResource) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.discoveredResources[resource.ID] = resource
+	return nil
+}
+
+func (s *InMemoryStore) GetDiscoveredResource(_ context.Context, id string) (types.DiscoveredResource, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	resource, ok := s.discoveredResources[id]
+	if !ok {
+		return types.DiscoveredResource{}, storage.ErrNotFound
+	}
+	return resource, nil
+}
+
+func (s *InMemoryStore) ListDiscoveredResources(_ context.Context, query storage.DiscoveredResourceQuery) ([]types.DiscoveredResource, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.discoveredResources, func(item types.DiscoveredResource) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.IntegrationID != "" && item.IntegrationID != query.IntegrationID {
+			return false
+		}
+		if query.ResourceType != "" && item.ResourceType != query.ResourceType {
+			return false
+		}
+		if query.Provider != "" && item.Provider != query.Provider {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.RepositoryID != "" && item.RepositoryID != query.RepositoryID {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		if query.UnmappedOnly && (item.ServiceID != "" && item.EnvironmentID != "") {
+			return false
+		}
+		if query.Search != "" {
+			haystack := strings.ToLower(item.Name + " " + item.Namespace + " " + item.ExternalID + " " + item.Summary)
+			if !strings.Contains(haystack, strings.ToLower(query.Search)) {
+				return false
+			}
+		}
+		return true
+	})
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
+			return items[i].CreatedAt.After(items[j].CreatedAt)
+		}
+		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateDiscoveredResource(_ context.Context, resource types.DiscoveredResource) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.discoveredResources[resource.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.discoveredResources[resource.ID] = resource
+	return nil
 }
 
 func (s *InMemoryStore) UpsertGraphRelationship(_ context.Context, relationship types.GraphRelationship) error {
@@ -545,6 +809,99 @@ func (s *InMemoryStore) GetUserByEmail(_ context.Context, email string) (types.U
 		return types.User{}, storage.ErrNotFound
 	}
 	return s.users[id], nil
+}
+
+func (s *InMemoryStore) UpdateUser(_ context.Context, user types.User) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.users[user.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.users[user.ID] = user
+	s.usersByEmail[user.Email] = user.ID
+	return nil
+}
+
+func (s *InMemoryStore) CreateIdentityProvider(_ context.Context, provider types.IdentityProvider) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.identityProviders[provider.ID] = provider
+	return nil
+}
+
+func (s *InMemoryStore) GetIdentityProvider(_ context.Context, id string) (types.IdentityProvider, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	provider, ok := s.identityProviders[id]
+	if !ok {
+		return types.IdentityProvider{}, storage.ErrNotFound
+	}
+	return provider, nil
+}
+
+func (s *InMemoryStore) ListIdentityProviders(_ context.Context, query storage.IdentityProviderQuery) ([]types.IdentityProvider, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.identityProviders, func(item types.IdentityProvider) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.Kind != "" && item.Kind != query.Kind {
+			return false
+		}
+		if query.Enabled != nil && item.Enabled != *query.Enabled {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateIdentityProvider(_ context.Context, provider types.IdentityProvider) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.identityProviders[provider.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.identityProviders[provider.ID] = provider
+	return nil
+}
+
+func (s *InMemoryStore) CreateIdentityLink(_ context.Context, link types.IdentityLink) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.identityLinks[link.ID] = link
+	return nil
+}
+
+func (s *InMemoryStore) GetIdentityLinkBySubject(_ context.Context, providerID, subject string) (types.IdentityLink, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, link := range s.identityLinks {
+		if link.ProviderID == providerID && link.ExternalSubject == subject {
+			return link, nil
+		}
+	}
+	return types.IdentityLink{}, storage.ErrNotFound
+}
+
+func (s *InMemoryStore) ListIdentityLinksByUser(_ context.Context, userID string) ([]types.IdentityLink, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.identityLinks, func(item types.IdentityLink) bool {
+		return item.UserID == userID
+	})
+	return items, nil
+}
+
+func (s *InMemoryStore) UpdateIdentityLink(_ context.Context, link types.IdentityLink) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.identityLinks[link.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.identityLinks[link.ID] = link
+	return nil
 }
 
 func (s *InMemoryStore) CreateOrganizationMembership(_ context.Context, membership types.OrganizationMembership) error {
@@ -699,6 +1056,34 @@ func (s *InMemoryStore) UpdateAPIToken(_ context.Context, token types.APIToken) 
 	return nil
 }
 
+func (s *InMemoryStore) CreateBrowserSession(_ context.Context, session types.BrowserSession) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.browserSessions[session.ID] = session
+	return nil
+}
+
+func (s *InMemoryStore) GetBrowserSessionByHash(_ context.Context, sessionHash string) (types.BrowserSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, session := range s.browserSessions {
+		if session.SessionHash == sessionHash {
+			return session, nil
+		}
+	}
+	return types.BrowserSession{}, storage.ErrNotFound
+}
+
+func (s *InMemoryStore) UpdateBrowserSession(_ context.Context, session types.BrowserSession) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.browserSessions[session.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.browserSessions[session.ID] = session
+	return nil
+}
+
 func (s *InMemoryStore) CreateRolloutExecution(_ context.Context, execution types.RolloutExecution) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -750,6 +1135,22 @@ func (s *InMemoryStore) UpdateRolloutExecution(_ context.Context, execution type
 	return nil
 }
 
+func (s *InMemoryStore) ClaimRolloutExecution(_ context.Context, id string, staleBefore, claimedAt time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	execution, ok := s.rolloutExecutions[id]
+	if !ok {
+		return false, storage.ErrNotFound
+	}
+	if execution.LastReconciledAt != nil && !execution.LastReconciledAt.Before(staleBefore) {
+		return false, nil
+	}
+	execution.LastReconciledAt = &claimedAt
+	execution.UpdatedAt = claimedAt
+	s.rolloutExecutions[id] = execution
+	return true, nil
+}
+
 func (s *InMemoryStore) CreateVerificationResult(_ context.Context, result types.VerificationResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -773,6 +1174,411 @@ func (s *InMemoryStore) ListVerificationResults(_ context.Context, query storage
 		return true
 	})
 	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) CreateSignalSnapshot(_ context.Context, snapshot types.SignalSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.signalSnapshots[snapshot.ID] = snapshot
+	return nil
+}
+
+func (s *InMemoryStore) ListSignalSnapshots(_ context.Context, query storage.SignalSnapshotQuery) ([]types.SignalSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.signalSnapshots, func(item types.SignalSnapshot) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.RolloutExecutionID != "" && item.RolloutExecutionID != query.RolloutExecutionID {
+			return false
+		}
+		if query.ProviderType != "" && item.ProviderType != query.ProviderType {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) CreatePolicy(_ context.Context, policy types.Policy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policies[policy.ID] = policy
+	return nil
+}
+
+func (s *InMemoryStore) GetPolicy(_ context.Context, id string) (types.Policy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	policy, ok := s.policies[id]
+	if !ok {
+		return types.Policy{}, storage.ErrNotFound
+	}
+	return policy, nil
+}
+
+func (s *InMemoryStore) ListPolicies(_ context.Context, query storage.PolicyQuery) ([]types.Policy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.policies, func(item types.Policy) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.AppliesTo != "" && item.AppliesTo != query.AppliesTo {
+			return false
+		}
+		if query.EnabledOnly && !item.Enabled {
+			return false
+		}
+		return true
+	})
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Priority == items[j].Priority {
+			return items[i].CreatedAt.After(items[j].CreatedAt)
+		}
+		return items[i].Priority > items[j].Priority
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdatePolicy(_ context.Context, policy types.Policy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.policies[policy.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.policies[policy.ID] = policy
+	return nil
+}
+
+func (s *InMemoryStore) CreatePolicyDecision(_ context.Context, decision types.PolicyDecision) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policyDecisions[decision.ID] = decision
+	return nil
+}
+
+func (s *InMemoryStore) ListPolicyDecisions(_ context.Context, query storage.PolicyDecisionQuery) ([]types.PolicyDecision, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.policyDecisions, func(item types.PolicyDecision) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.PolicyID != "" && item.PolicyID != query.PolicyID {
+			return false
+		}
+		if query.ChangeSetID != "" && item.ChangeSetID != query.ChangeSetID {
+			return false
+		}
+		if query.RiskAssessmentID != "" && item.RiskAssessmentID != query.RiskAssessmentID {
+			return false
+		}
+		if query.RolloutPlanID != "" && item.RolloutPlanID != query.RolloutPlanID {
+			return false
+		}
+		if query.RolloutExecutionID != "" && item.RolloutExecutionID != query.RolloutExecutionID {
+			return false
+		}
+		if query.AppliesTo != "" && item.AppliesTo != query.AppliesTo {
+			return false
+		}
+		return true
+	})
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) CreateRollbackPolicy(_ context.Context, policy types.RollbackPolicy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rollbackPolicies[policy.ID] = policy
+	return nil
+}
+
+func (s *InMemoryStore) GetRollbackPolicy(_ context.Context, id string) (types.RollbackPolicy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	policy, ok := s.rollbackPolicies[id]
+	if !ok {
+		return types.RollbackPolicy{}, storage.ErrNotFound
+	}
+	return policy, nil
+}
+
+func (s *InMemoryStore) ListRollbackPolicies(_ context.Context, query storage.RollbackPolicyQuery) ([]types.RollbackPolicy, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.rollbackPolicies, func(item types.RollbackPolicy) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.EnabledOnly && !item.Enabled {
+			return false
+		}
+		return true
+	})
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Priority != items[j].Priority {
+			return items[i].Priority > items[j].Priority
+		}
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateRollbackPolicy(_ context.Context, policy types.RollbackPolicy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.rollbackPolicies[policy.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.rollbackPolicies[policy.ID] = policy
+	return nil
+}
+
+func (s *InMemoryStore) CreateStatusEvent(_ context.Context, event types.StatusEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.statusEvents[event.ID] = event
+	return nil
+}
+
+func (s *InMemoryStore) GetStatusEvent(_ context.Context, id string) (types.StatusEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	event, ok := s.statusEvents[id]
+	if !ok {
+		return types.StatusEvent{}, storage.ErrNotFound
+	}
+	return event, nil
+}
+
+func (s *InMemoryStore) ListStatusEvents(_ context.Context, query storage.StatusEventQuery) ([]types.StatusEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.statusEvents, func(item types.StatusEvent) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.TeamID != "" && item.TeamID != query.TeamID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.RolloutExecutionID != "" && item.RolloutExecutionID != query.RolloutExecutionID {
+			return false
+		}
+		if query.ChangeSetID != "" && item.ChangeSetID != query.ChangeSetID {
+			return false
+		}
+		if query.ResourceType != "" && item.ResourceType != query.ResourceType {
+			return false
+		}
+		if query.ResourceID != "" && item.ResourceID != query.ResourceID {
+			return false
+		}
+		if len(query.EventTypes) > 0 && !matchIDs(query.EventTypes, item.EventType) {
+			return false
+		}
+		if query.ActorType != "" && item.ActorType != query.ActorType {
+			return false
+		}
+		if query.ActorID != "" && item.ActorID != query.ActorID {
+			return false
+		}
+		if query.Source != "" && item.Source != query.Source {
+			return false
+		}
+		if query.Outcome != "" && item.Outcome != query.Outcome {
+			return false
+		}
+		if query.Automated != nil && item.Automated != *query.Automated {
+			return false
+		}
+		if query.RollbackOnly && !strings.Contains(strings.ToLower(item.EventType), "rollback") && item.NewState != "rolled_back" && !strings.Contains(strings.ToLower(item.Summary), "rollback") {
+			return false
+		}
+		if query.Since != nil && item.CreatedAt.Before(*query.Since) {
+			return false
+		}
+		if query.Until != nil && item.CreatedAt.After(*query.Until) {
+			return false
+		}
+		if query.Search != "" {
+			haystack := strings.ToLower(item.EventType + " " + item.Summary + " " + strings.Join(item.Explanation, " "))
+			if !strings.Contains(haystack, strings.ToLower(query.Search)) {
+				return false
+			}
+		}
+		return true
+	})
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) CountStatusEvents(ctx context.Context, query storage.StatusEventQuery) (int, error) {
+	items, err := s.ListStatusEvents(ctx, storage.StatusEventQuery{
+		OrganizationID:     query.OrganizationID,
+		ProjectID:          query.ProjectID,
+		TeamID:             query.TeamID,
+		ServiceID:          query.ServiceID,
+		EnvironmentID:      query.EnvironmentID,
+		RolloutExecutionID: query.RolloutExecutionID,
+		ChangeSetID:        query.ChangeSetID,
+		ResourceType:       query.ResourceType,
+		ResourceID:         query.ResourceID,
+		EventTypes:         query.EventTypes,
+		ActorType:          query.ActorType,
+		ActorID:            query.ActorID,
+		Source:             query.Source,
+		Outcome:            query.Outcome,
+		Automated:          query.Automated,
+		RollbackOnly:       query.RollbackOnly,
+		Search:             query.Search,
+		Since:              query.Since,
+		Until:              query.Until,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(items), nil
+}
+
+func (s *InMemoryStore) CreateOutboxEvent(_ context.Context, event types.OutboxEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.outboxEvents[event.ID] = event
+	return nil
+}
+
+func (s *InMemoryStore) GetOutboxEvent(_ context.Context, id string) (types.OutboxEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	event, ok := s.outboxEvents[id]
+	if !ok {
+		return types.OutboxEvent{}, storage.ErrNotFound
+	}
+	return event, nil
+}
+
+func (s *InMemoryStore) ListOutboxEvents(_ context.Context, query storage.OutboxEventQuery) ([]types.OutboxEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.outboxEvents, func(item types.OutboxEvent) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.EventType != "" && item.EventType != query.EventType {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) ClaimOutboxEvents(_ context.Context, now time.Time, limit int, staleClaimBefore time.Time) ([]types.OutboxEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	type candidate struct {
+		id    string
+		event types.OutboxEvent
+	}
+	candidates := make([]candidate, 0, len(s.outboxEvents))
+	for id, event := range s.outboxEvents {
+		if event.Status == "processed" || event.Status == "dead_letter" {
+			continue
+		}
+		if event.NextAttemptAt != nil && event.NextAttemptAt.After(now) {
+			continue
+		}
+		if event.ClaimedAt != nil && !event.ClaimedAt.Before(staleClaimBefore) {
+			continue
+		}
+		candidates = append(candidates, candidate{id: id, event: event})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].event.CreatedAt.Before(candidates[j].event.CreatedAt)
+	})
+	items := make([]types.OutboxEvent, 0, limit)
+	for _, candidate := range candidates {
+		event := candidate.event
+		event.Status = "processing"
+		event.ClaimedAt = &now
+		event.UpdatedAt = now
+		s.outboxEvents[candidate.id] = event
+		items = append(items, event)
+		if limit > 0 && len(items) >= limit {
+			break
+		}
+	}
+	return items, nil
+}
+
+func (s *InMemoryStore) UpdateOutboxEvent(_ context.Context, event types.OutboxEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.outboxEvents[event.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.outboxEvents[event.ID] = event
+	return nil
+}
+
+func (s *InMemoryStore) UpdateOutboxEventIfStatus(_ context.Context, event types.OutboxEvent, expectedStatus string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.outboxEvents[event.ID]
+	if !ok {
+		return false, nil
+	}
+	if current.Status != expectedStatus {
+		return false, nil
+	}
+	s.outboxEvents[event.ID] = event
+	return true, nil
 }
 
 func sortedValues[T interface{ CreatedTime() time.Time }](items map[string]T) []T {

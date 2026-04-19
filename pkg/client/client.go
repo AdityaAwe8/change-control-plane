@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -38,6 +39,10 @@ func (c *Client) SetOrganizationID(orgID string) {
 	c.orgID = strings.TrimSpace(orgID)
 }
 
+func (c *Client) OrganizationID() string {
+	return c.orgID
+}
+
 func (c *Client) CreateOrganization(ctx context.Context, req types.CreateOrganizationRequest) (types.Organization, error) {
 	return doItem[types.Organization](ctx, c, http.MethodPost, "/api/v1/organizations", req)
 }
@@ -48,6 +53,26 @@ func (c *Client) ListOrganizations(ctx context.Context) ([]types.Organization, e
 
 func (c *Client) CreateProject(ctx context.Context, req types.CreateProjectRequest) (types.Project, error) {
 	return doItem[types.Project](ctx, c, http.MethodPost, "/api/v1/projects", req)
+}
+
+func (c *Client) CreateTeam(ctx context.Context, req types.CreateTeamRequest) (types.Team, error) {
+	return doItem[types.Team](ctx, c, http.MethodPost, "/api/v1/teams", req)
+}
+
+func (c *Client) GetTeam(ctx context.Context, id string) (types.Team, error) {
+	return doItem[types.Team](ctx, c, http.MethodGet, "/api/v1/teams/"+id, nil)
+}
+
+func (c *Client) ListTeams(ctx context.Context) ([]types.Team, error) {
+	return doList[types.Team](ctx, c, http.MethodGet, "/api/v1/teams")
+}
+
+func (c *Client) UpdateTeam(ctx context.Context, id string, req types.UpdateTeamRequest) (types.Team, error) {
+	return doItem[types.Team](ctx, c, http.MethodPatch, "/api/v1/teams/"+id, req)
+}
+
+func (c *Client) ArchiveTeam(ctx context.Context, id string) (types.Team, error) {
+	return doItem[types.Team](ctx, c, http.MethodPost, "/api/v1/teams/"+id+"/archive", struct{}{})
 }
 
 func (c *Client) UpdateProject(ctx context.Context, id string, req types.UpdateProjectRequest) (types.Project, error) {
@@ -106,12 +131,52 @@ func (c *Client) CreateChangeSet(ctx context.Context, req types.CreateChangeSetR
 	return doItem[types.ChangeSet](ctx, c, http.MethodPost, "/api/v1/changes", req)
 }
 
+func (c *Client) ListChangeSets(ctx context.Context) ([]types.ChangeSet, error) {
+	return doList[types.ChangeSet](ctx, c, http.MethodGet, "/api/v1/changes")
+}
+
+func (c *Client) GetChangeSet(ctx context.Context, id string) (types.ChangeSet, error) {
+	return doItem[types.ChangeSet](ctx, c, http.MethodGet, "/api/v1/changes/"+id, nil)
+}
+
 func (c *Client) AssessRisk(ctx context.Context, req types.CreateRiskAssessmentRequest) (types.RiskAssessmentResult, error) {
 	return doItem[types.RiskAssessmentResult](ctx, c, http.MethodPost, "/api/v1/risk-assessments", req)
 }
 
+func (c *Client) ListRiskAssessments(ctx context.Context) ([]types.RiskAssessment, error) {
+	return doList[types.RiskAssessment](ctx, c, http.MethodGet, "/api/v1/risk-assessments")
+}
+
 func (c *Client) CreateRolloutPlan(ctx context.Context, req types.CreateRolloutPlanRequest) (types.RolloutPlanResult, error) {
 	return doItem[types.RolloutPlanResult](ctx, c, http.MethodPost, "/api/v1/rollout-plans", req)
+}
+
+func (c *Client) ListRolloutPlans(ctx context.Context) ([]types.RolloutPlan, error) {
+	return doList[types.RolloutPlan](ctx, c, http.MethodGet, "/api/v1/rollout-plans")
+}
+
+func (c *Client) ListPolicies(ctx context.Context) ([]types.Policy, error) {
+	return doList[types.Policy](ctx, c, http.MethodGet, "/api/v1/policies")
+}
+
+func (c *Client) GetPolicy(ctx context.Context, id string) (types.Policy, error) {
+	return doItem[types.Policy](ctx, c, http.MethodGet, "/api/v1/policies/"+id, nil)
+}
+
+func (c *Client) CreatePolicy(ctx context.Context, req types.CreatePolicyRequest) (types.Policy, error) {
+	return doItem[types.Policy](ctx, c, http.MethodPost, "/api/v1/policies", req)
+}
+
+func (c *Client) UpdatePolicy(ctx context.Context, id string, req types.UpdatePolicyRequest) (types.Policy, error) {
+	return doItem[types.Policy](ctx, c, http.MethodPatch, "/api/v1/policies/"+id, req)
+}
+
+func (c *Client) ListPolicyDecisions(ctx context.Context, rawQuery string) ([]types.PolicyDecision, error) {
+	path := "/api/v1/policy-decisions"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.PolicyDecision](ctx, c, http.MethodGet, path)
 }
 
 func (c *Client) ListRolloutExecutions(ctx context.Context) ([]types.RolloutExecution, error) {
@@ -130,24 +195,144 @@ func (c *Client) AdvanceRolloutExecution(ctx context.Context, id string, req typ
 	return doItem[types.RolloutExecution](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+id+"/advance", req)
 }
 
+func (c *Client) ReconcileRolloutExecution(ctx context.Context, id string) (types.RolloutExecutionDetail, error) {
+	return doItem[types.RolloutExecutionDetail](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+id+"/reconcile", struct{}{})
+}
+
+func (c *Client) PauseRolloutExecution(ctx context.Context, id, reason string) (types.RolloutExecution, error) {
+	return doItem[types.RolloutExecution](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+id+"/pause?reason="+url.QueryEscape(reason), nil)
+}
+
+func (c *Client) ResumeRolloutExecution(ctx context.Context, id, reason string) (types.RolloutExecution, error) {
+	return doItem[types.RolloutExecution](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+id+"/resume?reason="+url.QueryEscape(reason), nil)
+}
+
+func (c *Client) RollbackRolloutExecution(ctx context.Context, id, reason string) (types.RolloutExecution, error) {
+	return doItem[types.RolloutExecution](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+id+"/rollback?reason="+url.QueryEscape(reason), nil)
+}
+
+func (c *Client) CreateSignalSnapshot(ctx context.Context, executionID string, req types.CreateSignalSnapshotRequest) (types.SignalSnapshot, error) {
+	return doItem[types.SignalSnapshot](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+executionID+"/signal-snapshots", req)
+}
+
 func (c *Client) RecordVerificationResult(ctx context.Context, executionID string, req types.RecordVerificationResultRequest) (types.VerificationResult, error) {
 	return doItem[types.VerificationResult](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+executionID+"/verification", req)
 }
 
 func (c *Client) ListIntegrations(ctx context.Context) ([]types.Integration, error) {
-	return doList[types.Integration](ctx, c, http.MethodGet, "/api/v1/integrations")
+	return c.ListIntegrationsWithQuery(ctx, "")
+}
+
+func (c *Client) ListIntegrationsWithQuery(ctx context.Context, rawQuery string) ([]types.Integration, error) {
+	path := "/api/v1/integrations"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.Integration](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) CreateIntegration(ctx context.Context, req types.CreateIntegrationRequest) (types.Integration, error) {
+	return doItem[types.Integration](ctx, c, http.MethodPost, "/api/v1/integrations", req)
 }
 
 func (c *Client) UpdateIntegration(ctx context.Context, id string, req types.UpdateIntegrationRequest) (types.Integration, error) {
 	return doItem[types.Integration](ctx, c, http.MethodPatch, "/api/v1/integrations/"+id, req)
 }
 
+func (c *Client) TestIntegration(ctx context.Context, id string) (types.IntegrationTestResult, error) {
+	return doItem[types.IntegrationTestResult](ctx, c, http.MethodPost, "/api/v1/integrations/"+id+"/test", struct{}{})
+}
+
+func (c *Client) SyncIntegration(ctx context.Context, id string) (types.IntegrationSyncResult, error) {
+	return doItem[types.IntegrationSyncResult](ctx, c, http.MethodPost, "/api/v1/integrations/"+id+"/sync", struct{}{})
+}
+
+func (c *Client) ListIntegrationSyncRuns(ctx context.Context, id string) ([]types.IntegrationSyncRun, error) {
+	return doList[types.IntegrationSyncRun](ctx, c, http.MethodGet, "/api/v1/integrations/"+id+"/sync-runs")
+}
+
+func (c *Client) StartGitHubOnboarding(ctx context.Context, id string) (types.GitHubOnboardingStartResult, error) {
+	return doItem[types.GitHubOnboardingStartResult](ctx, c, http.MethodPost, "/api/v1/integrations/"+id+"/github/onboarding/start", struct{}{})
+}
+
+func (c *Client) IntegrationCoverageSummary(ctx context.Context) (types.CoverageSummary, error) {
+	return doItem[types.CoverageSummary](ctx, c, http.MethodGet, "/api/v1/integrations/coverage", nil)
+}
+
+func (c *Client) GetWebhookRegistration(ctx context.Context, id string) (types.WebhookRegistrationResult, error) {
+	return doItem[types.WebhookRegistrationResult](ctx, c, http.MethodGet, "/api/v1/integrations/"+id+"/webhook-registration", nil)
+}
+
+func (c *Client) SyncWebhookRegistration(ctx context.Context, id string) (types.WebhookRegistrationResult, error) {
+	return doItem[types.WebhookRegistrationResult](ctx, c, http.MethodPost, "/api/v1/integrations/"+id+"/webhook-registration/sync", struct{}{})
+}
+
+func (c *Client) ListIdentityProviders(ctx context.Context) ([]types.IdentityProvider, error) {
+	return doList[types.IdentityProvider](ctx, c, http.MethodGet, "/api/v1/identity-providers")
+}
+
+func (c *Client) CreateIdentityProvider(ctx context.Context, req types.CreateIdentityProviderRequest) (types.IdentityProvider, error) {
+	return doItem[types.IdentityProvider](ctx, c, http.MethodPost, "/api/v1/identity-providers", req)
+}
+
+func (c *Client) UpdateIdentityProvider(ctx context.Context, id string, req types.UpdateIdentityProviderRequest) (types.IdentityProvider, error) {
+	return doItem[types.IdentityProvider](ctx, c, http.MethodPatch, "/api/v1/identity-providers/"+id, req)
+}
+
+func (c *Client) TestIdentityProvider(ctx context.Context, id string) (types.IdentityProviderTestResult, error) {
+	return doItem[types.IdentityProviderTestResult](ctx, c, http.MethodPost, "/api/v1/identity-providers/"+id+"/test", struct{}{})
+}
+
+func (c *Client) ListOutboxEvents(ctx context.Context, rawQuery string) ([]types.OutboxEvent, error) {
+	path := "/api/v1/outbox-events"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.OutboxEvent](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) RetryOutboxEvent(ctx context.Context, id string) (types.OutboxEvent, error) {
+	return doItem[types.OutboxEvent](ctx, c, http.MethodPost, "/api/v1/outbox-events/"+id+"/retry", struct{}{})
+}
+
+func (c *Client) RequeueOutboxEvent(ctx context.Context, id string) (types.OutboxEvent, error) {
+	return doItem[types.OutboxEvent](ctx, c, http.MethodPost, "/api/v1/outbox-events/"+id+"/requeue", struct{}{})
+}
+
 func (c *Client) IngestIntegrationGraph(ctx context.Context, id string, req types.IntegrationGraphIngestRequest) ([]types.GraphRelationship, error) {
 	return doListBody[types.GraphRelationship](ctx, c, http.MethodPost, "/api/v1/integrations/"+id+"/graph-ingest", req)
 }
 
-func (c *Client) ListGraphRelationships(ctx context.Context) ([]types.GraphRelationship, error) {
-	return doList[types.GraphRelationship](ctx, c, http.MethodGet, "/api/v1/graph/relationships")
+func (c *Client) ListGraphRelationships(ctx context.Context, rawQuery string) ([]types.GraphRelationship, error) {
+	path := "/api/v1/graph/relationships"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.GraphRelationship](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) ListRepositories(ctx context.Context, rawQuery string) ([]types.Repository, error) {
+	path := "/api/v1/repositories"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.Repository](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) UpdateRepository(ctx context.Context, id string, req types.UpdateRepositoryRequest) (types.Repository, error) {
+	return doItem[types.Repository](ctx, c, http.MethodPatch, "/api/v1/repositories/"+id, req)
+}
+
+func (c *Client) ListDiscoveredResources(ctx context.Context, rawQuery string) ([]types.DiscoveredResource, error) {
+	path := "/api/v1/discovered-resources"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.DiscoveredResource](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) UpdateDiscoveredResource(ctx context.Context, id string, req types.UpdateDiscoveredResourceRequest) (types.DiscoveredResource, error) {
+	return doItem[types.DiscoveredResource](ctx, c, http.MethodPatch, "/api/v1/discovered-resources/"+id, req)
 }
 
 func (c *Client) CreateServiceAccount(ctx context.Context, req types.CreateServiceAccountRequest) (types.ServiceAccount, error) {
@@ -178,16 +363,64 @@ func (c *Client) RotateServiceAccountToken(ctx context.Context, serviceAccountID
 	return doItem[types.IssuedAPITokenResponse](ctx, c, http.MethodPost, "/api/v1/service-accounts/"+serviceAccountID+"/tokens/"+tokenID+"/rotate", req)
 }
 
-func (c *Client) ListIncidents(ctx context.Context) ([]types.Incident, error) {
-	return doList[types.Incident](ctx, c, http.MethodGet, "/api/v1/incidents")
+func (c *Client) ListIncidents(ctx context.Context, rawQuery string) ([]types.Incident, error) {
+	path := "/api/v1/incidents"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.Incident](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) GetIncidentDetail(ctx context.Context, id string) (types.IncidentDetail, error) {
+	return doItem[types.IncidentDetail](ctx, c, http.MethodGet, "/api/v1/incidents/"+id, nil)
 }
 
 func (c *Client) ListAuditEvents(ctx context.Context) ([]types.AuditEvent, error) {
 	return doList[types.AuditEvent](ctx, c, http.MethodGet, "/api/v1/audit-events")
 }
 
+func (c *Client) ListStatusEvents(ctx context.Context, rawQuery string) ([]types.StatusEvent, error) {
+	path := "/api/v1/status-events"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.StatusEvent](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) SearchStatusEvents(ctx context.Context, rawQuery string) (types.StatusEventQueryResult, error) {
+	path := "/api/v1/status-events/search"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doItem[types.StatusEventQueryResult](ctx, c, http.MethodGet, path, nil)
+}
+
+func (c *Client) ListRolloutExecutionTimeline(ctx context.Context, id string) ([]types.StatusEvent, error) {
+	return doList[types.StatusEvent](ctx, c, http.MethodGet, "/api/v1/rollout-executions/"+id+"/timeline")
+}
+
+func (c *Client) ListRollbackPolicies(ctx context.Context) ([]types.RollbackPolicy, error) {
+	return doList[types.RollbackPolicy](ctx, c, http.MethodGet, "/api/v1/rollback-policies")
+}
+
+func (c *Client) CreateRollbackPolicy(ctx context.Context, req types.CreateRollbackPolicyRequest) (types.RollbackPolicy, error) {
+	return doItem[types.RollbackPolicy](ctx, c, http.MethodPost, "/api/v1/rollback-policies", req)
+}
+
+func (c *Client) UpdateRollbackPolicy(ctx context.Context, id string, req types.UpdateRollbackPolicyRequest) (types.RollbackPolicy, error) {
+	return doItem[types.RollbackPolicy](ctx, c, http.MethodPatch, "/api/v1/rollback-policies/"+id, req)
+}
+
 func (c *Client) Session(ctx context.Context) (types.SessionInfo, error) {
 	return doItem[types.SessionInfo](ctx, c, http.MethodGet, "/api/v1/auth/session", nil)
+}
+
+func (c *Client) SignUp(ctx context.Context, req types.SignUpRequest) (types.AuthResponse, error) {
+	return doItem[types.AuthResponse](ctx, c, http.MethodPost, "/api/v1/auth/sign-up", req)
+}
+
+func (c *Client) SignIn(ctx context.Context, req types.SignInRequest) (types.AuthResponse, error) {
+	return doItem[types.AuthResponse](ctx, c, http.MethodPost, "/api/v1/auth/sign-in", req)
 }
 
 func (c *Client) DevLogin(ctx context.Context, req types.DevLoginRequest) (types.DevLoginResponse, error) {

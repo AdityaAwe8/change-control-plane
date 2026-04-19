@@ -343,6 +343,87 @@ func (a *Application) GetChangeSet(ctx context.Context, id string) (types.Change
 	return change, nil
 }
 
+func (a *Application) CreateIntegration(ctx context.Context, req types.CreateIntegrationRequest) (types.Integration, error) {
+	identity, err := a.requireIdentity(ctx)
+	if err != nil {
+		return types.Integration{}, err
+	}
+	if strings.TrimSpace(req.OrganizationID) == "" || strings.TrimSpace(req.Kind) == "" || strings.TrimSpace(req.Name) == "" {
+		return types.Integration{}, fmt.Errorf("%w: organization_id, kind, and name are required", ErrValidation)
+	}
+	if !a.Authorizer.CanManageIntegrations(identity, req.OrganizationID) {
+		return types.Integration{}, a.forbidden(ctx, identity, "integration.create.denied", "integration", "", req.OrganizationID, "", []string{"actor lacks integration management permission"})
+	}
+	descriptor, ok := a.Integrations.FindByKind(strings.ToLower(strings.TrimSpace(req.Kind)))
+	if !ok {
+		return types.Integration{}, fmt.Errorf("%w: unsupported integration kind %s", ErrValidation, req.Kind)
+	}
+	now := time.Now().UTC()
+	instanceKey := normalizeIntegrationInstanceKey(req.InstanceKey, req.Name)
+	if existing, err := a.Store.ListIntegrations(ctx, storage.IntegrationQuery{
+		OrganizationID: req.OrganizationID,
+		Kind:           descriptor.Kind,
+		InstanceKey:    instanceKey,
+		Limit:          1,
+	}); err != nil {
+		return types.Integration{}, err
+	} else if len(existing) > 0 {
+		return types.Integration{}, fmt.Errorf("%w: %s integration instance %s already exists", ErrValidation, descriptor.Kind, instanceKey)
+	}
+	integration := descriptor
+	integration.BaseRecord = types.BaseRecord{
+		ID:        common.NewID("int"),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  req.Metadata,
+	}
+	integration.OrganizationID = req.OrganizationID
+	integration.Name = strings.TrimSpace(req.Name)
+	integration.Kind = descriptor.Kind
+	integration.InstanceKey = instanceKey
+	integration.ScopeType = normalizeIntegrationScopeType(req.ScopeType)
+	integration.ScopeName = strings.TrimSpace(req.ScopeName)
+	if integration.ScopeName == "" {
+		integration.ScopeName = integration.Name
+	}
+	integration.Mode = normalizeIntegrationMode(req.Mode)
+	if integration.Mode == "" {
+		integration.Mode = "advisory"
+	}
+	integration.AuthStrategy = normalizeIntegrationAuthStrategy(integration.Kind, req.AuthStrategy, req.Metadata)
+	integration.OnboardingStatus = initialIntegrationOnboardingStatus(integration)
+	integration.Enabled = req.Enabled
+	integration.ControlEnabled = req.ControlEnabled
+	integration.ScheduleEnabled = req.ScheduleEnabled
+	integration.ScheduleIntervalSeconds = req.ScheduleIntervalSeconds
+	integration.SyncStaleAfterSeconds = req.SyncStaleAfterSeconds
+	if strings.TrimSpace(req.Description) != "" {
+		integration.Description = strings.TrimSpace(req.Description)
+	}
+	if integration.Enabled && integration.Status == "available" {
+		integration.Status = "configured"
+	}
+	if !integration.Enabled {
+		integration.Status = "disabled"
+		integration.ControlEnabled = false
+		integration.ScheduleEnabled = false
+	}
+	integration = applyIntegrationScheduleDefaults(integration, now)
+	if err := validateIntegrationConfiguration(integration, false); err != nil {
+		return types.Integration{}, err
+	}
+	if err := a.Store.CreateIntegration(ctx, integration); err != nil {
+		return types.Integration{}, err
+	}
+	if err := a.record(ctx, identity, "integration.created", "integration", integration.ID, integration.OrganizationID, "", []string{integration.Kind, integration.InstanceKey, integration.ScopeType, integration.ScopeName}); err != nil {
+		return types.Integration{}, err
+	}
+	if isSCMIntegrationKind(integration.Kind) {
+		_, _ = a.ensureWebhookRegistration(ctx, integration, false)
+	}
+	return hydrateIntegrationRuntimeState(integration, now), nil
+}
+
 func (a *Application) UpdateIntegration(ctx context.Context, id string, req types.UpdateIntegrationRequest) (types.Integration, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
@@ -358,11 +439,41 @@ func (a *Application) UpdateIntegration(ctx context.Context, id string, req type
 	if req.Name != nil {
 		integration.Name = strings.TrimSpace(*req.Name)
 	}
+	if req.InstanceKey != nil {
+		integration.InstanceKey = normalizeIntegrationInstanceKey(*req.InstanceKey, integration.Name)
+	}
+	if req.ScopeType != nil {
+		integration.ScopeType = normalizeIntegrationScopeType(*req.ScopeType)
+	}
+	if req.ScopeName != nil {
+		integration.ScopeName = strings.TrimSpace(*req.ScopeName)
+	}
 	if req.Mode != nil {
-		integration.Mode = strings.TrimSpace(*req.Mode)
+		integration.Mode = normalizeIntegrationMode(strings.TrimSpace(*req.Mode))
+	}
+	if req.AuthStrategy != nil {
+		integration.AuthStrategy = normalizeIntegrationAuthStrategy(integration.Kind, *req.AuthStrategy, integration.Metadata)
+	}
+	if req.OnboardingStatus != nil {
+		integration.OnboardingStatus = strings.TrimSpace(*req.OnboardingStatus)
 	}
 	if req.Status != nil {
 		integration.Status = strings.TrimSpace(*req.Status)
+	}
+	if req.Enabled != nil {
+		integration.Enabled = *req.Enabled
+	}
+	if req.ControlEnabled != nil {
+		integration.ControlEnabled = *req.ControlEnabled
+	}
+	if req.ScheduleEnabled != nil {
+		integration.ScheduleEnabled = *req.ScheduleEnabled
+	}
+	if req.ScheduleIntervalSeconds != nil {
+		integration.ScheduleIntervalSeconds = *req.ScheduleIntervalSeconds
+	}
+	if req.SyncStaleAfterSeconds != nil {
+		integration.SyncStaleAfterSeconds = *req.SyncStaleAfterSeconds
 	}
 	if req.Description != nil {
 		integration.Description = *req.Description
@@ -372,6 +483,54 @@ func (a *Application) UpdateIntegration(ctx context.Context, id string, req type
 	}
 	if req.Metadata != nil {
 		integration.Metadata = req.Metadata
+		integration.AuthStrategy = normalizeIntegrationAuthStrategy(integration.Kind, integration.AuthStrategy, integration.Metadata)
+	}
+	if integration.Mode == "" {
+		integration.Mode = "advisory"
+	}
+	if integration.InstanceKey == "" {
+		integration.InstanceKey = normalizeIntegrationInstanceKey("", integration.Name)
+	}
+	if integration.ScopeType == "" {
+		integration.ScopeType = "organization"
+	}
+	if integration.ScopeName == "" {
+		integration.ScopeName = integration.Name
+	}
+	if existing, err := a.Store.ListIntegrations(ctx, storage.IntegrationQuery{
+		OrganizationID: integration.OrganizationID,
+		Kind:           integration.Kind,
+		InstanceKey:    integration.InstanceKey,
+		Limit:          5,
+	}); err != nil {
+		return types.Integration{}, err
+	} else {
+		for _, candidate := range existing {
+			if candidate.ID != integration.ID {
+				return types.Integration{}, fmt.Errorf("%w: %s integration instance %s already exists", ErrValidation, integration.Kind, integration.InstanceKey)
+			}
+		}
+	}
+	if integration.Enabled && integration.Status == "available" {
+		integration.Status = "configured"
+	}
+	if !integration.Enabled {
+		integration.Status = "disabled"
+		integration.ControlEnabled = false
+		integration.ScheduleEnabled = false
+	}
+	if req.OnboardingStatus == nil {
+		switch strings.TrimSpace(integration.OnboardingStatus) {
+		case "", "not_started", "configured":
+			integration.OnboardingStatus = initialIntegrationOnboardingStatus(integration)
+		}
+	}
+	if strings.TrimSpace(integration.OnboardingStatus) == "" {
+		integration.OnboardingStatus = initialIntegrationOnboardingStatus(integration)
+	}
+	integration = applyIntegrationScheduleDefaults(integration, time.Now().UTC())
+	if err := validateIntegrationConfiguration(integration, false); err != nil {
+		return types.Integration{}, err
 	}
 	integration.UpdatedAt = time.Now().UTC()
 	if err := a.Store.UpdateIntegration(ctx, integration); err != nil {
@@ -380,7 +539,10 @@ func (a *Application) UpdateIntegration(ctx context.Context, id string, req type
 	if err := a.record(ctx, identity, "integration.updated", "integration", integration.ID, integration.OrganizationID, "", []string{"integration updated"}); err != nil {
 		return types.Integration{}, err
 	}
-	return integration, nil
+	if isSCMIntegrationKind(integration.Kind) {
+		_, _ = a.ensureWebhookRegistration(ctx, integration, false)
+	}
+	return hydrateIntegrationRuntimeState(integration, time.Now().UTC()), nil
 }
 
 func (a *Application) CreateServiceAccount(ctx context.Context, req types.CreateServiceAccountRequest) (types.ServiceAccount, error) {
@@ -633,19 +795,62 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 			if err != nil {
 				return err
 			}
+			repositoryMetadata := repositoryInput.Metadata
+			if repositoryMetadata == nil {
+				repositoryMetadata = types.Metadata{}
+			}
+			repositoryMetadata["source_integration_id"] = integration.ID
+			repositoryMetadata["integration_instances"] = appendUniqueMetadataStrings(repositoryMetadata["integration_instances"], integration.ID)
+			setMappingProvenance(repositoryMetadata, "project", mappingSourceIntegrationIngest, now, "repository project set from integration graph ingest")
+			if strings.TrimSpace(repositoryInput.ServiceID) != "" {
+				setMappingProvenance(repositoryMetadata, "service", mappingSourceIntegrationIngest, now, "repository service set from integration graph ingest")
+			}
 			repository := types.Repository{
 				BaseRecord: types.BaseRecord{
 					ID:        stableResourceID("repo", integration.OrganizationID, repositoryInput.Provider, repositoryInput.URL),
 					CreatedAt: now,
 					UpdatedAt: now,
-					Metadata:  repositoryInput.Metadata,
+					Metadata:  repositoryMetadata,
 				},
-				OrganizationID: integration.OrganizationID,
-				ProjectID:      projectID,
-				Name:           repositoryInput.Name,
-				Provider:       valueOrDefault(repositoryInput.Provider, integration.Kind),
-				URL:            repositoryInput.URL,
-				DefaultBranch:  valueOrDefault(repositoryInput.DefaultBranch, "main"),
+				OrganizationID:      integration.OrganizationID,
+				ProjectID:           projectID,
+				ServiceID:           strings.TrimSpace(repositoryInput.ServiceID),
+				SourceIntegrationID: integration.ID,
+				Name:                repositoryInput.Name,
+				Provider:            valueOrDefault(repositoryInput.Provider, integration.Kind),
+				URL:                 repositoryInput.URL,
+				DefaultBranch:       valueOrDefault(repositoryInput.DefaultBranch, "main"),
+			}
+			if existing, lookupErr := a.Store.GetRepositoryByURL(txCtx, integration.OrganizationID, repositoryInput.URL); lookupErr == nil {
+				repository = existing
+				if repository.Metadata == nil {
+					repository.Metadata = types.Metadata{}
+				}
+				repository.ProjectID = projectID
+				repository.Name = valueOrDefault(repositoryInput.Name, repository.Name)
+				repository.Provider = valueOrDefault(repositoryInput.Provider, repository.Provider)
+				repository.URL = repositoryInput.URL
+				repository.DefaultBranch = valueOrDefault(repositoryInput.DefaultBranch, repository.DefaultBranch)
+				if strings.TrimSpace(repositoryInput.ServiceID) != "" {
+					repository.ServiceID = strings.TrimSpace(repositoryInput.ServiceID)
+				}
+				if repository.SourceIntegrationID == "" {
+					repository.SourceIntegrationID = integration.ID
+				}
+				for key, value := range repositoryInput.Metadata {
+					repository.Metadata[key] = value
+				}
+				repository.Metadata["source_integration_id"] = integration.ID
+				repository.Metadata["integration_instances"] = appendUniqueMetadataStrings(repository.Metadata["integration_instances"], integration.ID)
+				setMappingProvenance(repository.Metadata, "project", mappingSourceIntegrationIngest, now, "repository project set from integration graph ingest")
+				if strings.TrimSpace(repositoryInput.ServiceID) != "" {
+					setMappingProvenance(repository.Metadata, "service", mappingSourceIntegrationIngest, now, "repository service set from integration graph ingest")
+				}
+				repository.UpdatedAt = now
+			}
+			repository, err = a.applyRepositoryInferredOwnership(txCtx, repository, now)
+			if err != nil {
+				return err
 			}
 			if err := a.Store.UpsertRepository(txCtx, repository); err != nil {
 				return err
@@ -660,10 +865,19 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 				}
 				touchedServiceIDs[service.ID] = service.ProjectID
 				relationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, service.ProjectID, "service_repository", "service", service.ID, "repository", repository.ID)
+				relationship.Metadata = relationshipProvenance(mappingSourceIntegrationIngest, "service_repository", repository.URL)
 				if err := a.Store.UpsertGraphRelationship(txCtx, relationship); err != nil {
 					return err
 				}
 				relationships = append(relationships, relationship)
+				if teamID := ownershipTeamID(repository.Metadata); teamID != "" {
+					ownerRelationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, service.ProjectID, "team_repository_owner", "team", teamID, "repository", repository.ID)
+					ownerRelationship.Metadata = relationshipProvenance("inferred_owner", repository.ServiceID, repository.URL)
+					if err := a.Store.UpsertGraphRelationship(txCtx, ownerRelationship); err != nil {
+						return err
+					}
+					relationships = append(relationships, ownerRelationship)
+				}
 			}
 		}
 
@@ -681,7 +895,11 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 			}
 			touchedServiceIDs[service.ID] = service.ProjectID
 			relationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, service.ProjectID, "service_dependency", "service", service.ID, "service", dependsOnService.ID)
-			relationship.Metadata = types.Metadata{"critical_dependency": dependency.CriticalDependency}
+			relationship.Metadata = types.Metadata{
+				"critical_dependency": dependency.CriticalDependency,
+				"provenance_source":  mappingSourceIntegrationIngest,
+				"evidence":           compactDetailList([]string{"service_dependency", service.ID, dependsOnService.ID}),
+			}
 			if err := a.Store.UpsertGraphRelationship(txCtx, relationship); err != nil {
 				return err
 			}
@@ -702,6 +920,7 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 			}
 			touchedServiceIDs[service.ID] = service.ProjectID
 			relationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, service.ProjectID, "service_environment", "service", service.ID, "environment", environment.ID)
+			relationship.Metadata = relationshipProvenance(mappingSourceIntegrationIngest, "service_environment", service.ID, environment.ID)
 			if err := a.Store.UpsertGraphRelationship(txCtx, relationship); err != nil {
 				return err
 			}
@@ -718,6 +937,7 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 				return err
 			}
 			relationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, change.ProjectID, "change_repository", "change_set", change.ID, "repository", repository.ID)
+			relationship.Metadata = relationshipProvenance(mappingSourceIntegrationIngest, "change_repository", change.ID, repository.URL)
 			if err := a.Store.UpsertGraphRelationship(txCtx, relationship); err != nil {
 				return err
 			}
@@ -726,6 +946,7 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 
 		for serviceID, projectID := range touchedServiceIDs {
 			relationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, projectID, "service_integration_source", "service", serviceID, "integration", integration.ID)
+			relationship.Metadata = relationshipProvenance(mappingSourceIntegrationIngest, "service_integration_source", serviceID, integration.ID)
 			if err := a.Store.UpsertGraphRelationship(txCtx, relationship); err != nil {
 				return err
 			}
@@ -745,7 +966,7 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 	return relationships, nil
 }
 
-func (a *Application) ListGraphRelationships(ctx context.Context) ([]types.GraphRelationship, error) {
+func (a *Application) ListGraphRelationships(ctx context.Context, query storage.GraphRelationshipQuery) ([]types.GraphRelationship, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
 		return nil, err
@@ -754,7 +975,8 @@ func (a *Application) ListGraphRelationships(ctx context.Context) ([]types.Graph
 	if err != nil {
 		return nil, err
 	}
-	return a.Store.ListGraphRelationships(ctx, storage.GraphRelationshipQuery{OrganizationID: orgID})
+	query.OrganizationID = orgID
+	return a.Store.ListGraphRelationships(ctx, query)
 }
 
 func (a *Application) CreateRolloutExecution(ctx context.Context, req types.CreateRolloutExecutionRequest) (types.RolloutExecution, error) {
@@ -780,19 +1002,25 @@ func (a *Application) CreateRolloutExecution(ctx context.Context, req types.Crea
 			CreatedAt: now,
 			UpdatedAt: now,
 		},
-		OrganizationID: plan.OrganizationID,
-		ProjectID:      plan.ProjectID,
-		RolloutPlanID:  plan.ID,
-		ChangeSetID:    change.ID,
-		ServiceID:      change.ServiceID,
-		EnvironmentID:  change.EnvironmentID,
-		Status:         rollouts.InitialExecutionStatus(plan),
-		CurrentStep:    rollouts.InitialExecutionStep(plan),
+		OrganizationID:       plan.OrganizationID,
+		ProjectID:            plan.ProjectID,
+		RolloutPlanID:        plan.ID,
+		ChangeSetID:          change.ID,
+		ServiceID:            change.ServiceID,
+		EnvironmentID:        change.EnvironmentID,
+		BackendType:          valueOrDefault(req.BackendType, "simulated"),
+		BackendIntegrationID: strings.TrimSpace(req.BackendIntegrationID),
+		SignalProviderType:   valueOrDefault(req.SignalProviderType, valueOrDefault(req.BackendType, "simulated")),
+		SignalIntegrationID:  strings.TrimSpace(req.SignalIntegrationID),
+		BackendStatus:        "pending_submission",
+		ProgressPercent:      0,
+		Status:               rollouts.InitialExecutionStatus(plan),
+		CurrentStep:          rollouts.InitialExecutionStep(plan),
 	}
 	if err := a.Store.CreateRolloutExecution(ctx, execution); err != nil {
 		return types.RolloutExecution{}, err
 	}
-	if err := a.record(ctx, identity, "rollout.execution.created", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{execution.Status}); err != nil {
+	if err := a.record(ctx, identity, "rollout.execution.created", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{execution.Status, execution.BackendType, execution.SignalProviderType}); err != nil {
 		return types.RolloutExecution{}, err
 	}
 	return execution, nil
@@ -811,22 +1039,88 @@ func (a *Application) ListRolloutExecutions(ctx context.Context) ([]types.Rollou
 }
 
 func (a *Application) GetRolloutExecutionDetail(ctx context.Context, id string) (types.RolloutExecutionDetail, error) {
-	identity, err := a.requireIdentity(ctx)
+	runtimeContext, err := a.GetRolloutExecutionRuntimeContext(ctx, id)
 	if err != nil {
 		return types.RolloutExecutionDetail{}, err
 	}
-	execution, err := a.Store.GetRolloutExecution(ctx, id)
+	timeline, err := a.Store.ListAuditEvents(ctx, storage.AuditEventQuery{
+		OrganizationID: runtimeContext.Execution.OrganizationID,
+		ProjectID:      runtimeContext.Execution.ProjectID,
+		ResourceType:   "rollout_execution",
+		ResourceID:     runtimeContext.Execution.ID,
+		Limit:          100,
+	})
 	if err != nil {
 		return types.RolloutExecutionDetail{}, err
 	}
-	if !a.Authorizer.CanReadProject(identity, execution.OrganizationID, execution.ProjectID) {
-		return types.RolloutExecutionDetail{}, ErrForbidden
-	}
-	results, err := a.Store.ListVerificationResults(ctx, storage.VerificationResultQuery{OrganizationID: execution.OrganizationID, ProjectID: execution.ProjectID, RolloutExecutionID: execution.ID})
+	statusTimeline, err := a.Store.ListStatusEvents(ctx, storage.StatusEventQuery{
+		OrganizationID:     runtimeContext.Execution.OrganizationID,
+		ProjectID:          runtimeContext.Execution.ProjectID,
+		RolloutExecutionID: runtimeContext.Execution.ID,
+		Limit:              200,
+	})
 	if err != nil {
 		return types.RolloutExecutionDetail{}, err
 	}
-	return types.RolloutExecutionDetail{Execution: execution, VerificationResults: results}, nil
+
+	summary := types.RolloutExecutionRuntimeSummary{
+		BackendType:     runtimeContext.Execution.BackendType,
+		BackendStatus:   runtimeContext.Execution.BackendStatus,
+		ProgressPercent: runtimeContext.Execution.ProgressPercent,
+	}
+	if runtimeContext.BackendIntegration != nil {
+		summary.ControlMode = normalizeIntegrationMode(runtimeContext.BackendIntegration.Mode)
+		summary.ControlEnabled = integrationAllowsActiveControl(runtimeContext.BackendIntegration)
+		summary.AdvisoryOnly = advisoryOnlyRuntime(runtimeContext)
+		if summary.AdvisoryOnly {
+			summary.ControlRationale = "Advisory mode is active for the live backend integration, so external submit, pause, resume, and rollback actions are suppressed."
+		} else if summary.ControlMode == "active_control" {
+			summary.ControlRationale = "Active control is enabled for the backend integration, so provider actions can be executed."
+		}
+	}
+	if runtimeContext.Execution.Metadata != nil {
+		summary.RecommendedAction = metadataString(runtimeContext.Execution.Metadata, "recommended_action")
+		summary.LastProviderAction = metadataString(runtimeContext.Execution.Metadata, "last_provider_action")
+		summary.LastActionDisposition = metadataString(runtimeContext.Execution.Metadata, "last_action_disposition")
+		summary.LastProviderActionSummary = metadataString(runtimeContext.Execution.Metadata, "backend_summary")
+		if summary.ControlMode == "" {
+			summary.ControlMode = metadataString(runtimeContext.Execution.Metadata, "control_mode")
+		}
+		if summary.ControlRationale == "" {
+			summary.ControlRationale = metadataString(runtimeContext.Execution.Metadata, "control_rationale")
+		}
+		if summary.RecommendedAction != "" {
+			summary.AdvisoryOnly = true
+		}
+	}
+	if len(runtimeContext.SignalSnapshots) > 0 {
+		latest := runtimeContext.SignalSnapshots[len(runtimeContext.SignalSnapshots)-1]
+		summary.LatestSignalHealth = latest.Health
+		summary.LatestSignalSummary = latest.Summary
+	}
+	if len(runtimeContext.VerificationResults) > 0 {
+		latest := runtimeContext.VerificationResults[len(runtimeContext.VerificationResults)-1]
+		summary.LatestDecision = latest.Decision
+		if latest.Automated {
+			summary.LatestDecisionMode = "automated"
+		} else {
+			summary.LatestDecisionMode = valueOrDefault(latest.DecisionSource, "manual")
+		}
+	}
+	verificationResults := make([]types.VerificationResult, 0, len(runtimeContext.VerificationResults))
+	for _, item := range runtimeContext.VerificationResults {
+		verificationResults = append(verificationResults, decorateVerificationResult(item, summary))
+	}
+
+	return types.RolloutExecutionDetail{
+		Execution:               runtimeContext.Execution,
+		VerificationResults:     verificationResults,
+		SignalSnapshots:         runtimeContext.SignalSnapshots,
+		Timeline:                timeline,
+		StatusTimeline:          statusTimeline,
+		EffectiveRollbackPolicy: runtimeContext.EffectiveRollbackPolicy,
+		RuntimeSummary:          summary,
+	}, nil
 }
 
 func (a *Application) AdvanceRolloutExecution(ctx context.Context, id string, req types.AdvanceRolloutExecutionRequest) (types.RolloutExecution, error) {
@@ -838,10 +1132,20 @@ func (a *Application) AdvanceRolloutExecution(ctx context.Context, id string, re
 	if err != nil {
 		return types.RolloutExecution{}, err
 	}
+	action := strings.TrimSpace(req.Action)
 	if !a.Authorizer.CanExecuteRollout(identity, execution.OrganizationID, execution.ProjectID) {
 		return types.RolloutExecution{}, a.forbidden(ctx, identity, "rollout.execution.transition.denied", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{"actor lacks rollout transition permission"})
 	}
-	execution, err = rollouts.AdvanceExecution(execution, strings.TrimSpace(req.Action), req.Reason, time.Now().UTC())
+	if contains([]string{"pause", "resume", "continue", "rollback", "fail"}, action) && !a.Authorizer.CanOverrideRollout(identity, execution.OrganizationID, execution.ProjectID) {
+		return types.RolloutExecution{}, a.forbidden(ctx, identity, "rollout.execution.override.denied", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{"actor lacks rollout override permission"})
+	}
+	if advisoryOnly, err := a.manualControlBlockedByAdvisoryMode(ctx, execution, action); err != nil {
+		return types.RolloutExecution{}, err
+	} else if advisoryOnly {
+		return types.RolloutExecution{}, fmt.Errorf("%w: advisory mode blocks manual %s for live %s backends; reconcile can observe and recommend, but external deployment control stays disabled until the integration is switched to active_control with control_enabled=true", ErrValidation, action, valueOrDefault(execution.BackendType, "runtime"))
+	}
+	previousStatus := execution.Status
+	execution, err = rollouts.AdvanceExecution(execution, action, req.Reason, time.Now().UTC())
 	if err != nil {
 		return types.RolloutExecution{}, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
@@ -849,7 +1153,19 @@ func (a *Application) AdvanceRolloutExecution(ctx context.Context, id string, re
 	if err := a.Store.UpdateRolloutExecution(ctx, execution); err != nil {
 		return types.RolloutExecution{}, err
 	}
-	if err := a.record(ctx, identity, "rollout.execution.transitioned", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{execution.Status, req.Action}); err != nil {
+	if err := a.record(ctx, identity, "rollout.execution.transitioned", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{execution.Status, req.Action},
+		withStatusStates(previousStatus, execution.Status),
+		withStatusSource("api"),
+		withStatusSummary(fmt.Sprintf("rollout execution moved from %s to %s via %s", previousStatus, execution.Status, action)),
+		withStatusSeverity(statusSeverityForTransition(action, execution.Status)),
+		withStatusScope(statusScope{
+			projectID:          execution.ProjectID,
+			serviceID:          execution.ServiceID,
+			environmentID:      execution.EnvironmentID,
+			rolloutExecutionID: execution.ID,
+			changeSetID:        execution.ChangeSetID,
+		}),
+	); err != nil {
 		return types.RolloutExecution{}, err
 	}
 	return execution, nil
@@ -867,12 +1183,22 @@ func (a *Application) RecordVerificationResult(ctx context.Context, executionID 
 	if !a.Authorizer.CanRecordVerification(identity, execution.OrganizationID, execution.ProjectID) {
 		return types.VerificationResult{}, a.forbidden(ctx, identity, "verification.record.denied", "verification_result", "", execution.OrganizationID, execution.ProjectID, []string{"actor lacks verification permission"})
 	}
+	if !req.Automated && contains([]string{"rollback", "pause", "failed"}, strings.TrimSpace(req.Decision)) && !a.Authorizer.CanOverrideRollout(identity, execution.OrganizationID, execution.ProjectID) {
+		return types.VerificationResult{}, a.forbidden(ctx, identity, "verification.override.denied", "verification_result", "", execution.OrganizationID, execution.ProjectID, []string{"actor lacks verification override permission"})
+	}
+	if advisoryOnly, advisoryMessage, err := a.executionAdvisoryModeState(ctx, execution); err != nil {
+		return types.VerificationResult{}, err
+	} else if advisoryOnly && !strings.HasPrefix(strings.TrimSpace(req.Decision), "advisory_") {
+		req = advisoryVerificationRequest(req)
+		req.Explanation = compactDetailList(append(req.Explanation, advisoryMessage))
+	}
 	now := time.Now().UTC()
 	result := types.VerificationResult{
 		BaseRecord: types.BaseRecord{
 			ID:        common.NewID("verify"),
 			CreatedAt: now,
 			UpdatedAt: now,
+			Metadata:  req.Metadata,
 		},
 		OrganizationID:         execution.OrganizationID,
 		ProjectID:              execution.ProjectID,
@@ -887,6 +1213,9 @@ func (a *Application) RecordVerificationResult(ctx context.Context, executionID 
 		Signals:                req.Signals,
 		TechnicalSignalSummary: req.TechnicalSignalSummary,
 		BusinessSignalSummary:  req.BusinessSignalSummary,
+		Automated:              req.Automated,
+		DecisionSource:         valueOrDefault(req.DecisionSource, "manual"),
+		SignalSnapshotIDs:      req.SignalSnapshotIDs,
 		Summary:                req.Summary,
 		Explanation:            req.Explanation,
 	}
@@ -908,10 +1237,47 @@ func (a *Application) RecordVerificationResult(ctx context.Context, executionID 
 	if err != nil {
 		return types.VerificationResult{}, err
 	}
-	if err := a.record(ctx, identity, "verification.recorded", "verification_result", result.ID, result.OrganizationID, result.ProjectID, []string{result.Outcome, result.Decision}); err != nil {
+	if err := a.record(ctx, identity, "verification.recorded", "rollout_execution", execution.ID, result.OrganizationID, result.ProjectID, []string{result.ID, result.Outcome, result.Decision, result.DecisionSource},
+		withStatusCategory("verification"),
+		withStatusSeverity(statusSeverityForVerification(result)),
+		withStatusSource(valueOrDefault(result.DecisionSource, "manual")),
+		withStatusAutomated(result.Automated),
+		withStatusSummary(result.Summary),
+		withStatusScope(statusScope{
+			projectID:          result.ProjectID,
+			serviceID:          result.ServiceID,
+			environmentID:      result.EnvironmentID,
+			rolloutExecutionID: result.RolloutExecutionID,
+			changeSetID:        result.ChangeSetID,
+		}),
+	); err != nil {
 		return types.VerificationResult{}, err
 	}
 	return result, nil
+}
+
+func (a *Application) manualControlBlockedByAdvisoryMode(ctx context.Context, execution types.RolloutExecution, action string) (bool, error) {
+	switch strings.TrimSpace(action) {
+	case "pause", "resume", "continue", "rollback":
+		advisoryOnly, _, err := a.executionAdvisoryModeState(ctx, execution)
+		return advisoryOnly, err
+	default:
+		return false, nil
+	}
+}
+
+func (a *Application) executionAdvisoryModeState(ctx context.Context, execution types.RolloutExecution) (bool, string, error) {
+	if strings.EqualFold(strings.TrimSpace(execution.BackendType), "simulated") || strings.TrimSpace(execution.BackendIntegrationID) == "" {
+		return false, "", nil
+	}
+	integration, err := a.Store.GetIntegration(ctx, execution.BackendIntegrationID)
+	if err != nil {
+		return false, "", err
+	}
+	if integrationAllowsActiveControl(&integration) {
+		return false, "", nil
+	}
+	return true, "external deployment control is disabled for the configured backend integration; the control plane can observe state and record recommendations, but it will not execute provider mutations", nil
 }
 
 func (a *Application) resolveRepositoryProject(ctx context.Context, organizationID, projectID, serviceID string) (string, error) {
@@ -977,4 +1343,38 @@ func notFoundAsValidation(err error, format string, args ...any) error {
 		return fmt.Errorf("%w: %s", ErrValidation, fmt.Sprintf(format, args...))
 	}
 	return err
+}
+
+func decorateVerificationResult(result types.VerificationResult, summary types.RolloutExecutionRuntimeSummary) types.VerificationResult {
+	updated := result
+	switch {
+	case strings.HasPrefix(strings.TrimSpace(result.Decision), "advisory_"):
+		updated.ActionState = "recommended"
+		updated.ControlMode = "advisory"
+	case summary.AdvisoryOnly:
+		updated.ActionState = "recommended"
+		updated.ControlMode = "advisory"
+	default:
+		updated.ActionState = "control_decision"
+		updated.ControlMode = valueOrDefault(summary.ControlMode, "active_control")
+	}
+	return updated
+}
+
+func metadataString(metadata types.Metadata, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", typed))
+	}
 }

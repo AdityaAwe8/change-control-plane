@@ -33,7 +33,7 @@ func AdvanceExecution(execution types.RolloutExecution, action, reason string, n
 	if action == "start" && execution.StartedAt == nil {
 		execution.StartedAt = &now
 	}
-	if next == "completed" || next == "rolled_back" {
+	if next == "completed" || next == "rolled_back" || next == "failed" {
 		execution.CompletedAt = &now
 	}
 	if next == "in_progress" && execution.StartedAt == nil {
@@ -48,13 +48,18 @@ func ApplyVerificationDecision(execution types.RolloutExecution, result types.Ve
 	execution.LastDecisionReason = result.Summary
 
 	switch result.Decision {
-	case "continue":
+	case "continue", "verified":
 		execution.Status = "verified"
 	case "pause", "manual_review_required":
 		execution.Status = "paused"
 	case "rollback":
 		execution.Status = "rolled_back"
 		execution.CompletedAt = &now
+	case "failed":
+		execution.Status = "failed"
+		execution.CompletedAt = &now
+	case "advisory_continue", "advisory_verified", "advisory_pause", "advisory_rollback", "advisory_failed":
+		// Advisory decisions record evidence without changing the desired rollout state.
 	default:
 		return execution, fmt.Errorf("unsupported verification decision %q", result.Decision)
 	}
@@ -84,6 +89,7 @@ func nextExecutionState(current, action string) (string, error) {
 		},
 		"paused": {
 			"continue": "in_progress",
+			"resume":   "in_progress",
 			"rollback": "rolled_back",
 			"fail":     "failed",
 		},

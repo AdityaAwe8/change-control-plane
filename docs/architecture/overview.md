@@ -14,10 +14,13 @@ flowchart LR
     C --> G["Policy Evaluator"]
     C --> H["Audit Recorder"]
     C --> I["Integration Registry"]
-    C --> J["Event Bus"]
-    C --> K["Repository Interfaces"]
-    K --> L["In-Memory Dev Store"]
-    K --> M["PostgreSQL (planned runtime backend)"]
+    C --> J["Python Intelligence Adapter"]
+    C --> K["Event Bus"]
+    C --> L["Repository Interfaces"]
+    C --> M["Worker Control Loop"]
+    J --> N["Python Analytics / Simulation CLI"]
+    L --> O["In-Memory Dev Store"]
+    L --> P["PostgreSQL Runtime Backend"]
 ```
 
 ## Why This Shape
@@ -30,11 +33,19 @@ flowchart LR
 ## Primary Runtime Components
 
 - API service for control-plane operations
-- worker service for asynchronous and long-running workloads
+- worker service for authenticated rollout reconciliation and long-running workloads
 - CLI for automation, scripting, and operator workflows
 - web application for operational visibility and governance UX
 - PostgreSQL-first schema and migrations
 - pluggable event bus and integration adapters
+- Python intelligence subprocess for supplemental analytics and simulation
+
+## Runtime Truths
+
+- PostgreSQL is the default runtime store; the in-memory store remains for tests and lightweight local fallback.
+- The worker is no longer a heartbeat stub. It authenticates as a machine actor and advances rollout executions through safe automatic transitions such as `planned -> in_progress` and `verified -> completed`.
+- Python is now a real subsystem. The Go application invokes it for supplemental risk augmentation and rollout simulation, then persists the structured outputs into risk-assessment and rollout-plan metadata.
+- The in-process event bus is still the only operational event transport. NATS is configured but not wired yet.
 
 ## Domain Modules
 

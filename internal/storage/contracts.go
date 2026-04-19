@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/change-control-plane/change-control-plane/pkg/types"
 )
@@ -13,6 +14,14 @@ type OrganizationQuery struct {
 	IDs    []string
 	Limit  int
 	Offset int
+}
+
+type IdentityProviderQuery struct {
+	OrganizationID string
+	Kind           string
+	Enabled        *bool
+	Limit          int
+	Offset         int
 }
 
 type ProjectQuery struct {
@@ -74,12 +83,40 @@ type RolloutPlanQuery struct {
 type AuditEventQuery struct {
 	OrganizationID string
 	ProjectID      string
+	ResourceType   string
+	ResourceID     string
 	Limit          int
 	Offset         int
 }
 
 type IntegrationQuery struct {
 	OrganizationID string
+	Kind           string
+	InstanceKey    string
+	ScopeType      string
+	AuthStrategy   string
+	Enabled        *bool
+	Search         string
+	Limit          int
+	Offset         int
+}
+
+type IntegrationSyncRunQuery struct {
+	OrganizationID  string
+	IntegrationID   string
+	Operation       string
+	Trigger         string
+	Status          string
+	ExternalEventID string
+	Limit           int
+	Offset          int
+}
+
+type WebhookRegistrationQuery struct {
+	OrganizationID string
+	IntegrationID  string
+	ProviderKind   string
+	Status         string
 	Limit          int
 	Offset         int
 }
@@ -100,8 +137,28 @@ type APITokenQuery struct {
 }
 
 type RepositoryQuery struct {
+	OrganizationID      string
+	ProjectID           string
+	ServiceID           string
+	EnvironmentID       string
+	SourceIntegrationID string
+	Provider            string
+	Limit               int
+	Offset              int
+}
+
+type DiscoveredResourceQuery struct {
 	OrganizationID string
+	IntegrationID  string
+	ResourceType   string
+	Provider       string
 	ProjectID      string
+	ServiceID      string
+	EnvironmentID  string
+	RepositoryID   string
+	Status         string
+	Search         string
+	UnmappedOnly   bool
 	Limit          int
 	Offset         int
 }
@@ -132,6 +189,81 @@ type VerificationResultQuery struct {
 	RolloutExecutionID string
 	Limit              int
 	Offset             int
+}
+
+type SignalSnapshotQuery struct {
+	OrganizationID     string
+	ProjectID          string
+	RolloutExecutionID string
+	ProviderType       string
+	Limit              int
+	Offset             int
+}
+
+type RollbackPolicyQuery struct {
+	OrganizationID string
+	ProjectID      string
+	ServiceID      string
+	EnvironmentID  string
+	EnabledOnly    bool
+	Limit          int
+	Offset         int
+}
+
+type PolicyQuery struct {
+	OrganizationID string
+	ProjectID      string
+	ServiceID      string
+	EnvironmentID  string
+	AppliesTo      string
+	EnabledOnly    bool
+	Limit          int
+	Offset         int
+}
+
+type PolicyDecisionQuery struct {
+	OrganizationID     string
+	ProjectID          string
+	PolicyID           string
+	ChangeSetID        string
+	RiskAssessmentID   string
+	RolloutPlanID      string
+	RolloutExecutionID string
+	AppliesTo          string
+	Limit              int
+	Offset             int
+}
+
+type StatusEventQuery struct {
+	OrganizationID     string
+	ProjectID          string
+	TeamID             string
+	ServiceID          string
+	EnvironmentID      string
+	RolloutExecutionID string
+	ChangeSetID        string
+	ResourceType       string
+	ResourceID         string
+	EventTypes         []string
+	ActorType          string
+	ActorID            string
+	Source             string
+	Outcome            string
+	Automated          *bool
+	RollbackOnly       bool
+	Search             string
+	Since              *time.Time
+	Until              *time.Time
+	Limit              int
+	Offset             int
+}
+
+type OutboxEventQuery struct {
+	OrganizationID string
+	EventType      string
+	Status         string
+	Limit          int
+	Offset         int
 }
 
 type Store interface {
@@ -184,10 +316,25 @@ type Store interface {
 	UpsertIntegration(context.Context, types.Integration) error
 	ListIntegrations(context.Context, IntegrationQuery) ([]types.Integration, error)
 	UpdateIntegration(context.Context, types.Integration) error
+	ClaimIntegrationSync(context.Context, string, time.Time, time.Time, time.Time) (bool, error)
+	CreateIntegrationSyncRun(context.Context, types.IntegrationSyncRun) error
+	ListIntegrationSyncRuns(context.Context, IntegrationSyncRunQuery) ([]types.IntegrationSyncRun, error)
+
+	CreateWebhookRegistration(context.Context, types.WebhookRegistration) error
+	GetWebhookRegistrationByIntegration(context.Context, string) (types.WebhookRegistration, error)
+	ListWebhookRegistrations(context.Context, WebhookRegistrationQuery) ([]types.WebhookRegistration, error)
+	UpdateWebhookRegistration(context.Context, types.WebhookRegistration) error
 
 	UpsertRepository(context.Context, types.Repository) error
+	GetRepository(context.Context, string) (types.Repository, error)
 	GetRepositoryByURL(context.Context, string, string) (types.Repository, error)
 	ListRepositories(context.Context, RepositoryQuery) ([]types.Repository, error)
+	UpdateRepository(context.Context, types.Repository) error
+
+	UpsertDiscoveredResource(context.Context, types.DiscoveredResource) error
+	GetDiscoveredResource(context.Context, string) (types.DiscoveredResource, error)
+	ListDiscoveredResources(context.Context, DiscoveredResourceQuery) ([]types.DiscoveredResource, error)
+	UpdateDiscoveredResource(context.Context, types.DiscoveredResource) error
 
 	UpsertGraphRelationship(context.Context, types.GraphRelationship) error
 	ListGraphRelationships(context.Context, GraphRelationshipQuery) ([]types.GraphRelationship, error)
@@ -195,6 +342,17 @@ type Store interface {
 	CreateUser(context.Context, types.User) error
 	GetUser(context.Context, string) (types.User, error)
 	GetUserByEmail(context.Context, string) (types.User, error)
+	UpdateUser(context.Context, types.User) error
+
+	CreateIdentityProvider(context.Context, types.IdentityProvider) error
+	GetIdentityProvider(context.Context, string) (types.IdentityProvider, error)
+	ListIdentityProviders(context.Context, IdentityProviderQuery) ([]types.IdentityProvider, error)
+	UpdateIdentityProvider(context.Context, types.IdentityProvider) error
+
+	CreateIdentityLink(context.Context, types.IdentityLink) error
+	GetIdentityLinkBySubject(context.Context, string, string) (types.IdentityLink, error)
+	ListIdentityLinksByUser(context.Context, string) ([]types.IdentityLink, error)
+	UpdateIdentityLink(context.Context, types.IdentityLink) error
 
 	CreateOrganizationMembership(context.Context, types.OrganizationMembership) error
 	GetOrganizationMembership(context.Context, string, string) (types.OrganizationMembership, error)
@@ -215,11 +373,44 @@ type Store interface {
 	ListAPITokens(context.Context, APITokenQuery) ([]types.APIToken, error)
 	UpdateAPIToken(context.Context, types.APIToken) error
 
+	CreateBrowserSession(context.Context, types.BrowserSession) error
+	GetBrowserSessionByHash(context.Context, string) (types.BrowserSession, error)
+	UpdateBrowserSession(context.Context, types.BrowserSession) error
+
 	CreateRolloutExecution(context.Context, types.RolloutExecution) error
 	GetRolloutExecution(context.Context, string) (types.RolloutExecution, error)
 	ListRolloutExecutions(context.Context, RolloutExecutionQuery) ([]types.RolloutExecution, error)
 	UpdateRolloutExecution(context.Context, types.RolloutExecution) error
+	ClaimRolloutExecution(context.Context, string, time.Time, time.Time) (bool, error)
 
 	CreateVerificationResult(context.Context, types.VerificationResult) error
 	ListVerificationResults(context.Context, VerificationResultQuery) ([]types.VerificationResult, error)
+
+	CreateSignalSnapshot(context.Context, types.SignalSnapshot) error
+	ListSignalSnapshots(context.Context, SignalSnapshotQuery) ([]types.SignalSnapshot, error)
+
+	CreateRollbackPolicy(context.Context, types.RollbackPolicy) error
+	GetRollbackPolicy(context.Context, string) (types.RollbackPolicy, error)
+	ListRollbackPolicies(context.Context, RollbackPolicyQuery) ([]types.RollbackPolicy, error)
+	UpdateRollbackPolicy(context.Context, types.RollbackPolicy) error
+
+	CreatePolicy(context.Context, types.Policy) error
+	GetPolicy(context.Context, string) (types.Policy, error)
+	ListPolicies(context.Context, PolicyQuery) ([]types.Policy, error)
+	UpdatePolicy(context.Context, types.Policy) error
+
+	CreatePolicyDecision(context.Context, types.PolicyDecision) error
+	ListPolicyDecisions(context.Context, PolicyDecisionQuery) ([]types.PolicyDecision, error)
+
+	CreateStatusEvent(context.Context, types.StatusEvent) error
+	GetStatusEvent(context.Context, string) (types.StatusEvent, error)
+	ListStatusEvents(context.Context, StatusEventQuery) ([]types.StatusEvent, error)
+	CountStatusEvents(context.Context, StatusEventQuery) (int, error)
+
+	CreateOutboxEvent(context.Context, types.OutboxEvent) error
+	GetOutboxEvent(context.Context, string) (types.OutboxEvent, error)
+	ListOutboxEvents(context.Context, OutboxEventQuery) ([]types.OutboxEvent, error)
+	ClaimOutboxEvents(context.Context, time.Time, int, time.Time) ([]types.OutboxEvent, error)
+	UpdateOutboxEventIfStatus(context.Context, types.OutboxEvent, string) (bool, error)
+	UpdateOutboxEvent(context.Context, types.OutboxEvent) error
 }

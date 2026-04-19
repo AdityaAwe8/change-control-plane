@@ -18,11 +18,14 @@ import (
 var ErrInvalidToken = errors.New("invalid token")
 
 type Claims struct {
-	Version   string          `json:"version"`
-	Subject   string          `json:"sub"`
-	ActorType types.ActorType `json:"actor_type"`
-	IssuedAt  int64           `json:"iat"`
-	ExpiresAt int64           `json:"exp"`
+	Version        string          `json:"version"`
+	Subject        string          `json:"sub"`
+	ActorType      types.ActorType `json:"actor_type"`
+	AuthMethod     string          `json:"auth_method,omitempty"`
+	AuthProviderID string          `json:"auth_provider_id,omitempty"`
+	AuthProvider   string          `json:"auth_provider,omitempty"`
+	IssuedAt       int64           `json:"iat"`
+	ExpiresAt      int64           `json:"exp"`
 }
 
 type TokenService struct {
@@ -38,12 +41,19 @@ func NewTokenService(secret string, ttl time.Duration) *TokenService {
 }
 
 func (s *TokenService) Sign(subject string, actorType types.ActorType) (string, error) {
+	return s.SignDetailed(subject, actorType, "", "", "")
+}
+
+func (s *TokenService) SignDetailed(subject string, actorType types.ActorType, authMethod, authProviderID, authProvider string) (string, error) {
 	claims := Claims{
-		Version:   "v1",
-		Subject:   subject,
-		ActorType: actorType,
-		IssuedAt:  time.Now().UTC().Unix(),
-		ExpiresAt: time.Now().UTC().Add(s.ttl).Unix(),
+		Version:        "v1",
+		Subject:        subject,
+		ActorType:      actorType,
+		AuthMethod:     strings.TrimSpace(authMethod),
+		AuthProviderID: strings.TrimSpace(authProviderID),
+		AuthProvider:   strings.TrimSpace(authProvider),
+		IssuedAt:       time.Now().UTC().Unix(),
+		ExpiresAt:      time.Now().UTC().Add(s.ttl).Unix(),
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {
@@ -96,6 +106,16 @@ func (s *TokenService) GenerateAPIToken() (raw string, prefix string, hash strin
 	raw = prefix + "_" + hex.EncodeToString(secret)
 	hash = s.HashOpaqueToken(raw)
 	return raw, prefix, hash, nil
+}
+
+func (s *TokenService) GenerateBrowserSessionToken() (raw string, hash string, err error) {
+	secret := make([]byte, 32)
+	if _, err = rand.Read(secret); err != nil {
+		return "", "", err
+	}
+	raw = "ccps_" + hex.EncodeToString(secret)
+	hash = s.HashOpaqueToken(raw)
+	return raw, hash, nil
 }
 
 func (s *TokenService) HashOpaqueToken(token string) string {

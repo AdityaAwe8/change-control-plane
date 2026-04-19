@@ -19,6 +19,10 @@ paths:
       responses:
         '200':
           description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponseItemResponse'
   /readyz:
     get:
       summary: Readiness probe
@@ -26,6 +30,10 @@ paths:
       responses:
         '200':
           description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponseItemResponse'
   /api/v1/auth/dev/login:
     post:
       summary: Development bootstrap login
@@ -38,31 +46,153 @@ paths:
               $ref: '#/components/schemas/DevLoginRequest'
       responses:
         '200':
-          description: Session bootstrap issued
+          description: Session bootstrap issued; browser clients also receive an HttpOnly session cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseItemResponse'
+  /api/v1/auth/sign-up:
+    post:
+      summary: Create a password-backed account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '200':
+          description: Authenticated session issued; browser clients also receive an HttpOnly session cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseItemResponse'
+  /api/v1/auth/sign-in:
+    post:
+      summary: Sign in with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        '200':
+          description: Authenticated session issued; browser clients also receive an HttpOnly session cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseItemResponse'
+  /api/v1/auth/providers:
+    get:
+      summary: List public enterprise identity providers that are enabled for browser sign-in
+      security: []
+      responses:
+        '200':
+          description: Public identity provider list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicIdentityProviderListResponse'
+  /api/v1/auth/providers/{id}/start:
+    post:
+      summary: Start browser sign-in for a specific enterprise identity provider
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityProviderStartRequest'
+      responses:
+        '200':
+          description: Provider authorize URL and callback metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityProviderStartResultItemResponse'
+  /api/v1/auth/providers/callback:
+    get:
+      summary: Complete enterprise identity-provider callback and redirect back to the web app
+      security: []
+      parameters:
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+        - in: query
+          name: code
+          schema: { type: string }
+        - in: query
+          name: error
+          schema: { type: string }
+        - in: query
+          name: error_description
+          schema: { type: string }
+      responses:
+        '200':
+          description: Authenticated session response for internal callback flows that do not carry a stored return target
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseItemResponse'
+        '302':
+          description: Redirect back to the caller after establishing the browser session cookie; the redirect no longer carries a bearer token in the URL
   /api/v1/auth/session:
     get:
-      summary: Placeholder session info
+      summary: Resolve the current session for bearer-token or browser-cookie auth
       responses:
         '200':
           description: Session information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfoItemResponse'
+  /api/v1/auth/logout:
+    post:
+      summary: Invalidate the current browser session and clear the session cookie
+      security: []
+      responses:
+        '200':
+          description: Anonymous session after logout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfoItemResponse'
   /api/v1/catalog:
     get:
       summary: Combined service and environment catalog summary
       responses:
         '200':
           description: Catalog summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogSummaryItemResponse'
   /api/v1/metrics/basics:
     get:
       summary: Basic control-plane counts
       responses:
         '200':
           description: Basic metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BasicMetricsItemResponse'
   /api/v1/organizations:
     get:
       summary: List organizations
       responses:
         '200':
           description: Organization list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
     post:
       summary: Create organization
       requestBody:
@@ -74,14 +204,44 @@ paths:
       responses:
         '201':
           description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/organizations/{id}:
     get:
       summary: Get organization detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Organization detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
     patch:
       summary: Update organization
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -91,12 +251,30 @@ paths:
       responses:
         '200':
           description: Organization updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/projects:
     get:
       summary: List projects
       responses:
         '200':
           description: Project list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
     post:
       summary: Create project
       requestBody:
@@ -108,14 +286,44 @@ paths:
       responses:
         '201':
           description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/projects/{id}:
     get:
       summary: Get project detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Project detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
     patch:
       summary: Update project
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -125,18 +333,51 @@ paths:
       responses:
         '200':
           description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/projects/{id}/archive:
     post:
       summary: Archive project
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Project archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/teams:
     get:
       summary: List teams
       responses:
         '200':
           description: Team list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
     post:
       summary: Create team
       requestBody:
@@ -148,14 +389,44 @@ paths:
       responses:
         '201':
           description: Team created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/teams/{id}:
     get:
       summary: Get team detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Team detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
     patch:
       summary: Update team
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -165,18 +436,51 @@ paths:
       responses:
         '200':
           description: Team updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/teams/{id}/archive:
     post:
       summary: Archive team
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Team archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/services:
     get:
       summary: List services
       responses:
         '200':
           description: Service list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
     post:
       summary: Register service
       requestBody:
@@ -188,14 +492,44 @@ paths:
       responses:
         '201':
           description: Service created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/services/{id}:
     get:
       summary: Get service detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Service detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
     patch:
       summary: Update service
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -205,18 +539,51 @@ paths:
       responses:
         '200':
           description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/services/{id}/archive:
     post:
       summary: Archive service
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Service archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/environments:
     get:
       summary: List environments
       responses:
         '200':
           description: Environment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
     post:
       summary: Create environment
       requestBody:
@@ -228,14 +595,44 @@ paths:
       responses:
         '201':
           description: Environment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/environments/{id}:
     get:
       summary: Get environment detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Environment detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
     patch:
       summary: Update environment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -245,18 +642,53 @@ paths:
       responses:
         '200':
           description: Environment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/environments/{id}/archive:
     post:
       summary: Archive environment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Environment archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/changes:
     get:
       summary: List change sets
       responses:
         '200':
           description: Change set list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeSetListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
     post:
       summary: Ingest change set
       requestBody:
@@ -268,18 +700,54 @@ paths:
       responses:
         '201':
           description: Change set created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeSetItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/changes/{id}:
     get:
       summary: Get change-set detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Change-set detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeSetItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/risk-assessments:
     get:
       summary: List risk assessments
       responses:
         '200':
           description: Risk assessment list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessmentListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
     post:
       summary: Assess a change
       requestBody:
@@ -291,12 +759,32 @@ paths:
       responses:
         '201':
           description: Risk assessment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessmentResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-plans:
     get:
       summary: List rollout plans
       responses:
         '200':
           description: Rollout plan list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutPlanListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
     post:
       summary: Generate rollout plan
       requestBody:
@@ -308,12 +796,32 @@ paths:
       responses:
         '201':
           description: Rollout plan created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutPlanResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-executions:
     get:
       summary: List rollout executions
       responses:
         '200':
           description: Rollout execution list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
     post:
       summary: Create rollout execution
       requestBody:
@@ -325,15 +833,47 @@ paths:
       responses:
         '201':
           description: Rollout execution created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-executions/{id}:
     get:
       summary: Get rollout execution detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       responses:
         '200':
           description: Rollout execution detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-executions/{id}/advance:
     post:
       summary: Advance rollout execution lifecycle
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -343,9 +883,186 @@ paths:
       responses:
         '200':
           description: Rollout execution advanced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-executions/{id}/pause:
+    post:
+      summary: Pause rollout execution
+      description: >
+        For live non-simulated backends in advisory mode this returns a validation
+        error instead of issuing an external provider pause.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: reason
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolloutActionRequest'
+      responses:
+        '200':
+          description: Rollout execution paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-executions/{id}/resume:
+    post:
+      summary: Resume rollout execution
+      description: >
+        For live non-simulated backends in advisory mode this returns a validation
+        error instead of issuing an external provider resume.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: reason
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolloutActionRequest'
+      responses:
+        '200':
+          description: Rollout execution resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-executions/{id}/rollback:
+    post:
+      summary: Trigger rollout execution rollback
+      description: >
+        For live non-simulated backends in advisory mode this returns a validation
+        error instead of issuing an external provider rollback.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: reason
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolloutActionRequest'
+      responses:
+        '200':
+          description: Rollout execution rollback initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-executions/{id}/reconcile:
+    post:
+      summary: Reconcile rollout execution against backend and runtime signals
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rollout execution detail after reconcile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutExecutionDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-executions/{id}/signal-snapshots:
+    post:
+      summary: Ingest a normalized runtime signal snapshot
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSignalSnapshotRequest'
+      responses:
+        '201':
+          description: Signal snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignalSnapshotItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-executions/{id}/verification:
     post:
       summary: Record verification result for rollout execution
+      description: >
+        When a live backend integration is in advisory mode, rollback, pause, and
+        failed decisions are rewritten into advisory recommendations rather than
+        external control actions.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -355,33 +1072,647 @@ paths:
       responses:
         '201':
           description: Verification result recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResultItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/rollout-executions/{id}/timeline:
+    get:
+      summary: List canonical rollout execution status timeline events
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rollout execution status timeline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/status-events:
+    get:
+      summary: Search canonical operational status events
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: team_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: rollout_execution_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: resource_type
+          schema: { type: string }
+        - in: query
+          name: resource_id
+          schema: { type: string }
+        - in: query
+          name: actor_type
+          schema: { type: string }
+        - in: query
+          name: actor_id
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: outcome
+          schema: { type: string }
+        - in: query
+          name: event_type
+          schema:
+            type: string
+            description: Comma-separated event types
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: rollback_only
+          schema: { type: boolean }
+        - in: query
+          name: automated
+          schema: { type: boolean }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Status event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventListResponse'
+  /api/v1/status-events/search:
+    get:
+      summary: Search canonical operational status events with server-backed pagination summary
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: team_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: rollout_execution_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: resource_type
+          schema: { type: string }
+        - in: query
+          name: resource_id
+          schema: { type: string }
+        - in: query
+          name: actor_type
+          schema: { type: string }
+        - in: query
+          name: actor_id
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: outcome
+          schema: { type: string }
+        - in: query
+          name: event_type
+          schema:
+            type: string
+            description: Comma-separated event types
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: rollback_only
+          schema: { type: boolean }
+        - in: query
+          name: automated
+          schema: { type: boolean }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Status event query result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventQueryResultItemResponse'
+  /api/v1/status-events/{id}:
+    get:
+      summary: Get status-event detail
+      responses:
+        '200':
+          description: Status-event detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventItemResponse'
+  /api/v1/projects/{id}/status-events:
+    get:
+      summary: List project-scoped status events
+      responses:
+        '200':
+          description: Project status event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventListResponse'
+  /api/v1/services/{id}/status-events:
+    get:
+      summary: List service-scoped status events
+      responses:
+        '200':
+          description: Service status event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventListResponse'
+  /api/v1/environments/{id}/status-events:
+    get:
+      summary: List environment-scoped status events
+      responses:
+        '200':
+          description: Environment status event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusEventListResponse'
+  /api/v1/rollback-policies:
+    get:
+      summary: List rollback policies
+      responses:
+        '200':
+          description: Rollback policy list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackPolicyListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create rollback policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRollbackPolicyRequest'
+      responses:
+        '201':
+          description: Rollback policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackPolicyItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/rollback-policies/{id}:
+    patch:
+      summary: Update rollback policy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRollbackPolicyRequest'
+      responses:
+        '200':
+          description: Rollback policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackPolicyItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/policies:
     get:
       summary: List policies
       responses:
         '200':
           description: Policy list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePolicyRequest'
+      responses:
+        '201':
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/policies/{id}:
+    get:
+      summary: Get policy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Policy detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update policy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePolicyRequest'
+      responses:
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/policy-decisions:
+    get:
+      summary: List policy decisions
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: policy_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: risk_assessment_id
+          schema: { type: string }
+        - in: query
+          name: rollout_plan_id
+          schema: { type: string }
+        - in: query
+          name: rollout_execution_id
+          schema: { type: string }
+        - in: query
+          name: applies_to
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Policy decision list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyDecisionListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/incidents:
     get:
       summary: List incidents
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: severity
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
       responses:
         '200':
           description: Incident list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/incidents/{id}:
+    get:
+      summary: Get incident detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Incident detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/audit-events:
     get:
       summary: List audit events
       responses:
         '200':
           description: Audit event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/page-state/rollout:
+    get:
+      summary: Bundle the rollout route read-model for the active organization
+      responses:
+        '200':
+          description: Rollout page-state payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutPageStateItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/page-state/deployments:
+    get:
+      summary: Bundle the deployments route read-model for the active organization
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: rollback_only
+          schema: { type: boolean }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: event_type
+          schema: { type: string }
+        - in: query
+          name: automated
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Deployments page-state payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentsPageStateItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/page-state/integrations:
+    get:
+      summary: Bundle the integrations route read-model for the active organization
+      responses:
+        '200':
+          description: Integrations page-state payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationsPageStateItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/integrations:
     get:
       summary: List integrations
+      parameters:
+        - in: query
+          name: kind
+          schema: { type: string }
+        - in: query
+          name: instance_key
+          schema: { type: string }
+        - in: query
+          name: scope_type
+          schema: { type: string }
+        - in: query
+          name: auth_strategy
+          schema: { type: string }
+        - in: query
+          name: enabled
+          schema: { type: boolean }
+        - in: query
+          name: search
+          schema: { type: string }
       responses:
         '200':
           description: Integration list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create a new organization-scoped integration instance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationRequest'
+      responses:
+        '201':
+          description: Integration created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/integrations/coverage:
+    get:
+      summary: Summarize runtime integration freshness, mapping gaps, and coverage
+      responses:
+        '200':
+          description: Coverage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoverageSummaryItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/integrations/{id}:
     patch:
       summary: Update integration configuration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -391,9 +1722,160 @@ paths:
       responses:
         '200':
           description: Integration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/test:
+    post:
+      summary: Test integration connectivity and configuration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Integration test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationTestResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/sync:
+    post:
+      summary: Run an integration sync in pilot advisory mode
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Integration sync result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationSyncResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/sync-runs:
+    get:
+      summary: List recent integration test, sync, and webhook runs
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Integration sync-run history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationSyncRunListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/webhook-registration:
+    get:
+      summary: Show automatic webhook registration and delivery health for an integration instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Webhook registration diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookRegistrationResultItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/webhook-registration/sync:
+    post:
+      summary: Register, repair, or validate a provider webhook for an integration instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Webhook registration result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookRegistrationResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/github/onboarding/start:
+    post:
+      summary: Start a GitHub App installation onboarding flow for a specific integration instance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: GitHub onboarding start result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubOnboardingStartResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/integrations/{id}/graph-ingest:
     post:
       summary: Persist graph enrichment from an integration ingest payload
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
       requestBody:
         required: true
         content:
@@ -403,18 +1885,464 @@ paths:
       responses:
         '200':
           description: Graph relationships upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphRelationshipListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/integrations/{id}/webhooks/github:
+    post:
+      summary: Receive GitHub webhook deliveries for a configured integration
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Webhook delivery accepted and recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationSyncRunItemResponse'
+  /api/v1/integrations/{id}/webhooks/gitlab:
+    post:
+      summary: Receive GitLab webhook deliveries for a configured integration
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Webhook delivery accepted and recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationSyncRunItemResponse'
+  /api/v1/integrations/github/callback:
+    get:
+      summary: Complete the GitHub App installation callback for an integration instance
+      security: []
+      parameters:
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+        - in: query
+          name: installation_id
+          schema: { type: string }
+        - in: query
+          name: setup_action
+          schema: { type: string }
+        - in: query
+          name: error
+          schema: { type: string }
+        - in: query
+          name: error_description
+          schema: { type: string }
+      responses:
+        '200':
+          description: Integration updated from callback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/graph/relationships:
     get:
       summary: List persisted graph relationships
+      parameters:
+        - in: query
+          name: source_integration_id
+          schema: { type: string }
+        - in: query
+          name: relationship_type
+          schema: { type: string }
+        - in: query
+          name: from_resource_id
+          schema: { type: string }
+        - in: query
+          name: to_resource_id
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer }
+        - in: query
+          name: offset
+          schema: { type: integer }
       responses:
         '200':
           description: Graph relationship list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphRelationshipListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/page-state/graph:
+    get:
+      summary: Bundle the graph route read-model for the active organization
+      responses:
+        '200':
+          description: Graph page-state payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphPageStateItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/repositories:
+    get:
+      summary: List discovered and mapped repositories
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: source_integration_id
+          schema: { type: string }
+        - in: query
+          name: provider
+          schema: { type: string }
+      responses:
+        '200':
+          description: Repository list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/repositories/{id}:
+    patch:
+      summary: Update repository mapping and metadata
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepositoryRequest'
+      responses:
+        '200':
+          description: Repository updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/discovered-resources:
+    get:
+      summary: List discovered runtime resources and mapping candidates
+      parameters:
+        - in: query
+          name: integration_id
+          schema: { type: string }
+        - in: query
+          name: resource_type
+          schema: { type: string }
+        - in: query
+          name: provider
+          schema: { type: string }
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: repository_id
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: unmapped_only
+          schema: { type: boolean }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Discovered resource list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredResourceListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/discovered-resources/{id}:
+    patch:
+      summary: Update discovered runtime resource mapping and review status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDiscoveredResourceRequest'
+      responses:
+        '200':
+          description: Discovered resource updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveredResourceItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/identity-providers:
+    get:
+      summary: List organization-scoped enterprise identity providers
+      responses:
+        '200':
+          description: Identity provider list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityProviderListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create an enterprise identity provider configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIdentityProviderRequest'
+      responses:
+        '201':
+          description: Identity provider created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityProviderItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/identity-providers/{id}:
+    patch:
+      summary: Update enterprise identity provider configuration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIdentityProviderRequest'
+      responses:
+        '200':
+          description: Identity provider updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityProviderItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/identity-providers/{id}/test:
+    post:
+      summary: Test identity-provider discovery and callback configuration without signing a user in
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Identity provider connectivity result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityProviderTestResultItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/page-state/enterprise:
+    get:
+      summary: Bundle the enterprise route read-model for the active organization
+      responses:
+        '200':
+          description: Enterprise page-state payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnterprisePageStateItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/outbox-events:
+    get:
+      summary: List durable outbox events for runtime diagnostics
+      parameters:
+        - in: query
+          name: event_type
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Outbox event list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxEventListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/outbox-events/{id}/retry:
+    post:
+      summary: Mark an errored durable outbox event pending for immediate retry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Recovered outbox event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxEventItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/outbox-events/{id}/requeue:
+    post:
+      summary: Requeue a dead-lettered durable outbox event for another dispatch attempt
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Recovered outbox event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxEventItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /api/v1/page-state/simulation:
+    get:
+      summary: Bundle the simulation route read-model for the active organization
+      responses:
+        '200':
+          description: Simulation page-state payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationPageStateItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/service-accounts:
     get:
       summary: List service accounts
       responses:
         '200':
           description: Service account list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountListResponse'
     post:
       summary: Create service account
       requestBody:
@@ -426,18 +2354,30 @@ paths:
       responses:
         '201':
           description: Service account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountItemResponse'
   /api/v1/service-accounts/{id}/deactivate:
     post:
       summary: Deactivate service account
       responses:
         '200':
           description: Service account deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountItemResponse'
   /api/v1/service-accounts/{id}/tokens:
     get:
       summary: List service-account API tokens
       responses:
         '200':
           description: Token list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APITokenListResponse'
     post:
       summary: Issue service-account API token
       requestBody:
@@ -449,12 +2389,20 @@ paths:
       responses:
         '201':
           description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedAPITokenItemResponse'
   /api/v1/service-accounts/{id}/tokens/{token_id}/revoke:
     post:
       summary: Revoke service-account API token
       responses:
         '200':
           description: Token revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APITokenItemResponse'
   /api/v1/service-accounts/{id}/tokens/{token_id}/rotate:
     post:
       summary: Rotate service-account API token
@@ -467,13 +2415,54 @@ paths:
       responses:
         '200':
           description: Token rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedAPITokenItemResponse'
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: CCP-HMAC
+  responses:
+    ValidationError:
+      description: Validation or malformed request error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnauthorizedError:
+      description: Missing, invalid, or expired authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ForbiddenError:
+      description: Authenticated, but not permitted for the requested organization or resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFoundError:
+      description: Resource not found in the active tenant scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
     DevLoginRequest:
       type: object
       required: [email, display_name]
@@ -495,6 +2484,8 @@ components:
         slug:
           type: string
         tier:
+          type: string
+        mode:
           type: string
         metadata:
           type: object
@@ -518,6 +2509,13 @@ components:
           type: string
         slug:
           type: string
+        description:
+          type: string
+        adoption_mode:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
     UpdateProjectRequest:
       type: object
       properties:
@@ -531,6 +2529,9 @@ components:
           type: string
         status:
           type: string
+        metadata:
+          type: object
+          additionalProperties: true
     UpdateTeamRequest:
       type: object
       properties:
@@ -544,6 +2545,9 @@ components:
             type: string
         status:
           type: string
+        metadata:
+          type: object
+          additionalProperties: true
     UpdateServiceRequest:
       type: object
       properties:
@@ -569,6 +2573,9 @@ components:
           type: integer
         status:
           type: string
+        metadata:
+          type: object
+          additionalProperties: true
     UpdateEnvironmentRequest:
       type: object
       properties:
@@ -586,11 +2593,22 @@ components:
           type: string
         status:
           type: string
+        metadata:
+          type: object
+          additionalProperties: true
     CreateRolloutExecutionRequest:
       type: object
       required: [rollout_plan_id]
       properties:
         rollout_plan_id:
+          type: string
+        backend_type:
+          type: string
+        backend_integration_id:
+          type: string
+        signal_provider_type:
+          type: string
+        signal_integration_id:
           type: string
     AdvanceRolloutExecutionRequest:
       type: object
@@ -610,6 +2628,52 @@ components:
           type: string
         summary:
           type: string
+        automated:
+          type: boolean
+        decision_source:
+          type: string
+        signal_snapshot_ids:
+          type: array
+          items:
+            type: string
+        technical_signal_summary:
+          type: object
+          additionalProperties: true
+        business_signal_summary:
+          type: object
+          additionalProperties: true
+        explanation:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateSignalSnapshotRequest:
+      type: object
+      required: [health, summary]
+      properties:
+        provider_type:
+          type: string
+        source_integration_id:
+          type: string
+        health:
+          type: string
+        summary:
+          type: string
+        signals:
+          type: array
+          items:
+            type: object
+        window_seconds:
+          type: integer
+        explanation:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
     CreateServiceAccountRequest:
       type: object
       required: [organization_id, name, role]
@@ -637,21 +2701,298 @@ components:
           type: string
         expires_in_hours:
           type: integer
+    RolloutActionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateRollbackPolicyRequest:
+      type: object
+      required: [organization_id, name]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        max_error_rate:
+          type: number
+        max_latency_ms:
+          type: number
+        minimum_throughput:
+          type: number
+        max_unhealthy_instances:
+          type: integer
+        max_restart_rate:
+          type: number
+        max_verification_failures:
+          type: integer
+        rollback_on_provider_failure:
+          type: boolean
+        rollback_on_critical_signals:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateRollbackPolicyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        max_error_rate:
+          type: number
+        max_latency_ms:
+          type: number
+        minimum_throughput:
+          type: number
+        max_unhealthy_instances:
+          type: integer
+        max_restart_rate:
+          type: number
+        max_verification_failures:
+          type: integer
+        rollback_on_provider_failure:
+          type: boolean
+        rollback_on_critical_signals:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    RollbackPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        max_error_rate:
+          type: number
+        max_latency_ms:
+          type: number
+        minimum_throughput:
+          type: number
+        max_unhealthy_instances:
+          type: integer
+        max_restart_rate:
+          type: number
+        max_verification_failures:
+          type: integer
+        rollback_on_provider_failure:
+          type: boolean
+        rollback_on_critical_signals:
+          type: boolean
+    StatusEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        team_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        rollout_execution_id:
+          type: string
+        change_set_id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        event_type:
+          type: string
+        category:
+          type: string
+        severity:
+          type: string
+        previous_state:
+          type: string
+        new_state:
+          type: string
+        outcome:
+          type: string
+        actor_id:
+          type: string
+        actor_type:
+          type: string
+        actor:
+          type: string
+        source:
+          type: string
+        automated:
+          type: boolean
+        summary:
+          type: string
+        explanation:
+          type: array
+          items:
+            type: string
+        correlation_id:
+          type: string
     UpdateIntegrationRequest:
       type: object
       properties:
         name:
           type: string
+        instance_key:
+          type: string
+        scope_type:
+          type: string
+        scope_name:
+          type: string
         mode:
+          type: string
+        auth_strategy:
+          type: string
+        onboarding_status:
           type: string
         status:
           type: string
+        enabled:
+          type: boolean
+        control_enabled:
+          type: boolean
+        schedule_enabled:
+          type: boolean
+        schedule_interval_seconds:
+          type: integer
+        sync_stale_after_seconds:
+          type: integer
         description:
           type: string
         capabilities:
           type: array
           items:
             type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateIntegrationRequest:
+      type: object
+      required: [organization_id, kind, name]
+      properties:
+        organization_id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        instance_key:
+          type: string
+        scope_type:
+          type: string
+        scope_name:
+          type: string
+        mode:
+          type: string
+        auth_strategy:
+          type: string
+        enabled:
+          type: boolean
+        control_enabled:
+          type: boolean
+        schedule_enabled:
+          type: boolean
+        schedule_interval_seconds:
+          type: integer
+        sync_stale_after_seconds:
+          type: integer
+        description:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateRepositoryRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        default_branch:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateDiscoveredResourceRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        repository_id:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
     IntegrationGraphIngestRequest:
       type: object
       properties:
@@ -671,13 +3012,6 @@ components:
           type: array
           items:
             type: object
-        description:
-          type: string
-        adoption_mode:
-          type: string
-        metadata:
-          type: object
-          additionalProperties: true
     CreateTeamRequest:
       type: object
       required: [organization_id, project_id, name, slug]
@@ -690,6 +3024,10 @@ components:
           type: string
         slug:
           type: string
+        owner_user_ids:
+          type: array
+          items:
+            type: string
         metadata:
           type: object
           additionalProperties: true
@@ -721,6 +3059,8 @@ components:
           type: boolean
         regulated_zone:
           type: boolean
+        dependent_services_count:
+          type: integer
         metadata:
           type: object
           additionalProperties: true
@@ -747,6 +3087,729 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        name:
+          type: string
+        slug:
+          type: string
+        tier:
+          type: string
+        mode:
+          type: string
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        adoption_mode:
+          type: string
+        status:
+          type: string
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        owner_user_ids:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        team_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        criticality:
+          type: string
+        tier:
+          type: string
+        customer_facing:
+          type: boolean
+        has_slo:
+          type: boolean
+        has_observability:
+          type: boolean
+        regulated_zone:
+          type: boolean
+        dependent_services_count:
+          type: integer
+        status:
+          type: string
+    Environment:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        type:
+          type: string
+        region:
+          type: string
+        production:
+          type: boolean
+        compliance_zone:
+          type: string
+        status:
+          type: string
+    OrganizationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organization'
+    OrganizationItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Organization'
+    ProjectListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+    ProjectItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Project'
+    TeamListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+    TeamItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Team'
+    ServiceListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+    ServiceItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Service'
+    EnvironmentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Environment'
+    EnvironmentItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Environment'
+    ChangeSet:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        summary:
+          type: string
+        change_types:
+          type: array
+          items:
+            type: string
+        file_count:
+          type: integer
+        resource_count:
+          type: integer
+        touches_infrastructure:
+          type: boolean
+        touches_iam:
+          type: boolean
+        touches_secrets:
+          type: boolean
+        touches_schema:
+          type: boolean
+        dependency_changes:
+          type: boolean
+        historical_incident_count:
+          type: integer
+        poor_rollback_history:
+          type: boolean
+        status:
+          type: string
+    ChangeSetListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeSet'
+    ChangeSetItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ChangeSet'
+    BlastRadius:
+      type: object
+      properties:
+        scope:
+          type: string
+        services_impacted:
+          type: integer
+        resources_impacted:
+          type: integer
+        customer_journeys:
+          type: array
+          items:
+            type: string
+        regulated_systems:
+          type: boolean
+        production_impact:
+          type: boolean
+        customer_facing_impact:
+          type: boolean
+        summary:
+          type: string
+    RiskAssessment:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        change_set_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        score:
+          type: integer
+        level:
+          type: string
+        confidence_score:
+          type: number
+        explanation:
+          type: array
+          items:
+            type: string
+        blast_radius:
+          $ref: '#/components/schemas/BlastRadius'
+        recommended_approval_level:
+          type: string
+        recommended_rollout_strategy:
+          type: string
+        recommended_deployment_window:
+          type: string
+        recommended_guardrails:
+          type: array
+          items:
+            type: string
+    RiskAssessmentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskAssessment'
+    PolicyDecision:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        policy_id:
+          type: string
+        policy_name:
+          type: string
+        policy_code:
+          type: string
+        policy_scope:
+          type: string
+        applies_to:
+          type: string
+        mode:
+          type: string
+        change_set_id:
+          type: string
+        risk_assessment_id:
+          type: string
+        rollout_plan_id:
+          type: string
+        rollout_execution_id:
+          type: string
+        outcome:
+          type: string
+        summary:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: string
+    PolicyDecisionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyDecision'
+    RiskAssessmentResult:
+      type: object
+      properties:
+        assessment:
+          $ref: '#/components/schemas/RiskAssessment'
+        policy_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyDecision'
+    RiskAssessmentResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RiskAssessmentResult'
+    RolloutStep:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        guards:
+          type: array
+          items:
+            type: string
+    RolloutPlan:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        change_set_id:
+          type: string
+        risk_assessment_id:
+          type: string
+        strategy:
+          type: string
+        approval_required:
+          type: boolean
+        approval_level:
+          type: string
+        deployment_window:
+          type: string
+        additional_verification:
+          type: boolean
+        rollback_precheck_required:
+          type: boolean
+        business_hours_restriction:
+          type: boolean
+        off_hours_preferred:
+          type: boolean
+        verification_signals:
+          type: array
+          items:
+            type: string
+        rollback_conditions:
+          type: array
+          items:
+            type: string
+        guardrails:
+          type: array
+          items:
+            type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutStep'
+        explanation:
+          type: array
+          items:
+            type: string
+    RolloutPlanListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutPlan'
+    RolloutPlanResult:
+      type: object
+      properties:
+        assessment:
+          $ref: '#/components/schemas/RiskAssessment'
+        plan:
+          $ref: '#/components/schemas/RolloutPlan'
+        policy_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyDecision'
+    RolloutPlanResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RolloutPlanResult'
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        actor_id:
+          type: string
+        actor_type:
+          type: string
+        actor:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        outcome:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+    AuditEventListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+    RollbackPolicyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RollbackPolicy'
+    RollbackPolicyItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RollbackPolicy'
+    Incident:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+        related_change:
+          type: string
+        impacted_paths:
+          type: array
+          items:
+            type: string
+    IncidentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Incident'
+    IncidentDetail:
+      type: object
+      properties:
+        incident:
+          $ref: '#/components/schemas/Incident'
+        rollout_execution_id:
+          type: string
+        status_timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusEvent'
+    IncidentDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IncidentDetail'
+    ServiceAccount:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        role:
+          type: string
+        created_by_user_id:
+          type: string
+        status:
+          type: string
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+    APIToken:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        user_id:
+          type: string
+        service_account_id:
+          type: string
+        name:
+          type: string
+        token_prefix:
+          type: string
+        status:
+          type: string
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    IssuedAPITokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        entry:
+          $ref: '#/components/schemas/APIToken'
+    ServiceAccountListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceAccount'
+    ServiceAccountItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ServiceAccount'
+    APITokenListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/APIToken'
+    APITokenItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/APIToken'
+    IssuedAPITokenItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IssuedAPITokenResponse'
     CreateChangeSetRequest:
       type: object
       required: [organization_id, project_id, service_id, environment_id, summary]
@@ -798,3 +3861,1519 @@ components:
       properties:
         change_set_id:
           type: string
+    SignUpRequest:
+      type: object
+      required: [email, display_name, password, password_confirmation]
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        password:
+          type: string
+        password_confirmation:
+          type: string
+    SignInRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    SessionOrganization:
+      type: object
+      properties:
+        organization_id:
+          type: string
+        organization:
+          type: string
+        role:
+          type: string
+    SessionProjectScope:
+      type: object
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        project:
+          type: string
+        role:
+          type: string
+    SessionInfo:
+      type: object
+      properties:
+        authenticated:
+          type: boolean
+        mode:
+          type: string
+        actor:
+          type: string
+        actor_id:
+          type: string
+        actor_type:
+          type: string
+        auth_method:
+          type: string
+        auth_provider_id:
+          type: string
+        auth_provider:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        email:
+          type: string
+        display_name:
+          type: string
+        active_organization_id:
+          type: string
+        organizations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionOrganization'
+        project_memberships:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionProjectScope'
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        session:
+          $ref: '#/components/schemas/SessionInfo'
+    AuthResponseItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthResponse'
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+    HealthResponseItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/HealthResponse'
+    CatalogSummary:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Environment'
+    CatalogSummaryItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CatalogSummary'
+    BasicMetrics:
+      type: object
+      properties:
+        organizations:
+          type: integer
+        projects:
+          type: integer
+        teams:
+          type: integer
+        services:
+          type: integer
+        environments:
+          type: integer
+        changes:
+          type: integer
+        risk_assessments:
+          type: integer
+        rollout_plans:
+          type: integer
+        audit_events:
+          type: integer
+        policies:
+          type: integer
+        integrations:
+          type: integer
+    BasicMetricsItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/BasicMetrics'
+    SessionInfoItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SessionInfo'
+    CreateIdentityProviderRequest:
+      type: object
+      required: [organization_id, name, kind]
+      properties:
+        organization_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        issuer_url:
+          type: string
+        authorization_endpoint:
+          type: string
+        token_endpoint:
+          type: string
+        userinfo_endpoint:
+          type: string
+        jwks_uri:
+          type: string
+        client_id:
+          type: string
+        client_secret_env:
+          type: string
+        scopes:
+          type: array
+          items: { type: string }
+        allowed_domains:
+          type: array
+          items: { type: string }
+        default_role:
+          type: string
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateIdentityProviderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        issuer_url:
+          type: string
+        authorization_endpoint:
+          type: string
+        token_endpoint:
+          type: string
+        userinfo_endpoint:
+          type: string
+        jwks_uri:
+          type: string
+        client_id:
+          type: string
+        client_secret_env:
+          type: string
+        scopes:
+          type: array
+          items: { type: string }
+        allowed_domains:
+          type: array
+          items: { type: string }
+        default_role:
+          type: string
+        enabled:
+          type: boolean
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    PublicIdentityProvider:
+      type: object
+      properties:
+        id:
+          type: string
+        organization_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+    PublicIdentityProviderListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicIdentityProvider'
+    IdentityProviderStartRequest:
+      type: object
+      properties:
+        return_to:
+          type: string
+    IdentityProvider:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        issuer_url:
+          type: string
+        authorization_endpoint:
+          type: string
+        token_endpoint:
+          type: string
+        userinfo_endpoint:
+          type: string
+        jwks_uri:
+          type: string
+        client_id:
+          type: string
+        client_secret_env:
+          type: string
+        scopes:
+          type: array
+          items: { type: string }
+        claim_mappings:
+          type: object
+          additionalProperties: true
+        role_mappings:
+          type: object
+          additionalProperties: true
+        allowed_domains:
+          type: array
+          items: { type: string }
+        default_role:
+          type: string
+        enabled:
+          type: boolean
+        status:
+          type: string
+        connection_health:
+          type: string
+        last_tested_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+        last_authenticated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    IdentityProviderListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityProvider'
+    IdentityProviderItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IdentityProvider'
+    IdentityProviderStartResult:
+      type: object
+      properties:
+        provider:
+          $ref: '#/components/schemas/IdentityProvider'
+        authorize_url:
+          type: string
+        callback_url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        strategy:
+          type: string
+        state_preview:
+          type: string
+    IdentityProviderStartResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IdentityProviderStartResult'
+    IdentityProviderTestResult:
+      type: object
+      properties:
+        provider:
+          $ref: '#/components/schemas/IdentityProvider'
+        status:
+          type: string
+        details:
+          type: array
+          items: { type: string }
+    IdentityProviderTestResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IdentityProviderTestResult'
+    Integration:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        instance_key:
+          type: string
+        scope_type:
+          type: string
+        scope_name:
+          type: string
+        mode:
+          type: string
+        auth_strategy:
+          type: string
+        onboarding_status:
+          type: string
+        status:
+          type: string
+        enabled:
+          type: boolean
+        control_enabled:
+          type: boolean
+        connection_health:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        last_tested_at:
+          type: string
+          format: date-time
+        last_synced_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+        schedule_enabled:
+          type: boolean
+        schedule_interval_seconds:
+          type: integer
+        sync_stale_after_seconds:
+          type: integer
+        next_scheduled_sync_at:
+          type: string
+          format: date-time
+        last_sync_attempted_at:
+          type: string
+          format: date-time
+        last_sync_succeeded_at:
+          type: string
+          format: date-time
+        last_sync_failed_at:
+          type: string
+          format: date-time
+        sync_consecutive_failures:
+          type: integer
+        freshness_state:
+          type: string
+        stale:
+          type: boolean
+        sync_lag_seconds:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+    IntegrationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Integration'
+    IntegrationItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Integration'
+    IntegrationSyncRunMap:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/IntegrationSyncRun'
+    WebhookRegistrationMap:
+      type: object
+      additionalProperties:
+        allOf:
+          - $ref: '#/components/schemas/WebhookRegistration'
+        nullable: true
+    IntegrationSyncRun:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        integration_id:
+          type: string
+        operation:
+          type: string
+        trigger:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+        resource_count:
+          type: integer
+        external_event_id:
+          type: string
+        error_class:
+          type: string
+        scheduled_for:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    IntegrationSyncRunListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegrationSyncRun'
+    IntegrationSyncRunItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IntegrationSyncRun'
+    IntegrationsPageState:
+      type: object
+      properties:
+        catalog:
+          $ref: '#/components/schemas/CatalogSummary'
+        teams:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        integrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Integration'
+        coverage_summary:
+          $ref: '#/components/schemas/CoverageSummary'
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Repository'
+        discovered_resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredResource'
+        integration_sync_runs:
+          $ref: '#/components/schemas/IntegrationSyncRunMap'
+        webhook_registrations:
+          $ref: '#/components/schemas/WebhookRegistrationMap'
+    IntegrationsPageStateItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IntegrationsPageState'
+    RolloutPageState:
+      type: object
+      properties:
+        rollout_plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutPlan'
+        rollout_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutExecution'
+        rollout_execution_detail:
+          allOf:
+            - $ref: '#/components/schemas/RolloutExecutionDetail'
+          nullable: true
+        integrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Integration'
+    RolloutPageStateItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RolloutPageState'
+    DeploymentsPageState:
+      type: object
+      properties:
+        catalog:
+          $ref: '#/components/schemas/CatalogSummary'
+        rollback_policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/RollbackPolicy'
+        status_dashboard:
+          $ref: '#/components/schemas/StatusEventQueryResult'
+        coverage_summary:
+          $ref: '#/components/schemas/CoverageSummary'
+    DeploymentsPageStateItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DeploymentsPageState'
+    IntegrationTestResult:
+      type: object
+      properties:
+        integration:
+          $ref: '#/components/schemas/Integration'
+        run:
+          $ref: '#/components/schemas/IntegrationSyncRun'
+    IntegrationTestResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IntegrationTestResult'
+    IntegrationSyncResult:
+      type: object
+      properties:
+        integration:
+          $ref: '#/components/schemas/Integration'
+        run:
+          $ref: '#/components/schemas/IntegrationSyncRun'
+        repositories:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Repository'
+        discovered_resources:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/DiscoveredResource'
+        relationships:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/GraphRelationship'
+    IntegrationSyncResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/IntegrationSyncResult'
+    GitHubOnboardingStartResult:
+      type: object
+      properties:
+        integration:
+          $ref: '#/components/schemas/Integration'
+        authorize_url:
+          type: string
+        callback_url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        strategy:
+          type: string
+        state_preview:
+          type: string
+    GitHubOnboardingStartResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/GitHubOnboardingStartResult'
+    WebhookRegistration:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        integration_id:
+          type: string
+        provider_kind:
+          type: string
+        scope_identifier:
+          type: string
+        callback_url:
+          type: string
+        external_hook_id:
+          type: string
+        status:
+          type: string
+        delivery_health:
+          type: string
+        auto_managed:
+          type: boolean
+        last_registered_at:
+          type: string
+          format: date-time
+        last_validated_at:
+          type: string
+          format: date-time
+        last_delivery_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+        failure_count:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+    Policy:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        scope:
+          type: string
+        applies_to:
+          type: string
+        mode:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        description:
+          type: string
+        conditions:
+          $ref: '#/components/schemas/PolicyCondition'
+        triggers:
+          type: array
+          items:
+            type: string
+    PolicyCondition:
+      type: object
+      properties:
+        min_risk_level:
+          type: string
+        production_only:
+          type: boolean
+        regulated_only:
+          type: boolean
+        required_change_types:
+          type: array
+          items:
+            type: string
+        required_touches:
+          type: array
+          items:
+            type: string
+        missing_capabilities:
+          type: array
+          items:
+            type: string
+    CreatePolicyRequest:
+      type: object
+      required:
+        - organization_id
+        - name
+        - applies_to
+        - mode
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        applies_to:
+          type: string
+        mode:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        description:
+          type: string
+        conditions:
+          $ref: '#/components/schemas/PolicyCondition'
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdatePolicyRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        applies_to:
+          type: string
+        mode:
+          type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+        description:
+          type: string
+        conditions:
+          $ref: '#/components/schemas/PolicyCondition'
+        metadata:
+          type: object
+          additionalProperties: true
+    PolicyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Policy'
+    PolicyItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Policy'
+    WebhookRegistrationResult:
+      type: object
+      properties:
+        registration:
+          $ref: '#/components/schemas/WebhookRegistration'
+        details:
+          type: array
+          items: { type: string }
+    WebhookRegistrationResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/WebhookRegistrationResult'
+    Repository:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        source_integration_id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+        url:
+          type: string
+        default_branch:
+          type: string
+        status:
+          type: string
+        last_synced_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    RepositoryListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Repository'
+    RepositoryItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Repository'
+    DiscoveredResource:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        integration_id:
+          type: string
+        project_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        repository_id:
+          type: string
+        resource_type:
+          type: string
+        provider:
+          type: string
+        external_id:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        health:
+          type: string
+        summary:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    DiscoveredResourceListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredResource'
+    DiscoveredResourceItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DiscoveredResource'
+    CoverageSummary:
+      type: object
+      properties:
+        enabled_integrations:
+          type: integer
+        stale_integrations:
+          type: integer
+        healthy_integrations:
+          type: integer
+        github_integrations:
+          type: integer
+        gitlab_integrations:
+          type: integer
+        kubernetes_integrations:
+          type: integer
+        prometheus_integrations:
+          type: integer
+        repositories:
+          type: integer
+        unmapped_repositories:
+          type: integer
+        discovered_resources:
+          type: integer
+        unmapped_discovered_resources:
+          type: integer
+        workload_coverage_environments:
+          type: integer
+        signal_coverage_services:
+          type: integer
+    CoverageSummaryItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/CoverageSummary'
+    OutboxEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        status:
+          type: string
+        attempts:
+          type: integer
+        next_attempt_at:
+          type: string
+          format: date-time
+        claimed_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    OutboxEventListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutboxEvent'
+    OutboxEventItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/OutboxEvent'
+    EnterprisePageState:
+      type: object
+      properties:
+        identity_providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityProvider'
+        integrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Integration'
+        webhook_registrations:
+          $ref: '#/components/schemas/WebhookRegistrationMap'
+        outbox_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutboxEvent'
+    EnterprisePageStateItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/EnterprisePageState'
+    StatusEventQuerySummary:
+      type: object
+      properties:
+        total:
+          type: integer
+        returned:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        rollback_events:
+          type: integer
+        automated_events:
+          type: integer
+        latest_event_at:
+          type: string
+          format: date-time
+        oldest_event_at:
+          type: string
+          format: date-time
+    StatusEventQueryResult:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusEvent'
+        summary:
+          $ref: '#/components/schemas/StatusEventQuerySummary'
+        filters:
+          type: object
+          additionalProperties: true
+    StatusEventItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/StatusEvent'
+    StatusEventQueryResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/StatusEventQueryResult'
+    StatusEventListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusEvent'
+    GraphRelationship:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        source_integration_id:
+          type: string
+        relationship_type:
+          type: string
+        from_resource_type:
+          type: string
+        from_resource_id:
+          type: string
+        to_resource_type:
+          type: string
+        to_resource_id:
+          type: string
+        status:
+          type: string
+        last_observed_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    GraphRelationshipListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphRelationship'
+    GraphPageState:
+      type: object
+      properties:
+        graph_relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphRelationship'
+        catalog:
+          $ref: '#/components/schemas/CatalogSummary'
+        integrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Integration'
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+        teams:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Repository'
+        discovered_resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredResource'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeSet'
+    GraphPageStateItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/GraphPageState'
+    VerificationResult:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        rollout_execution_id:
+          type: string
+        rollout_plan_id:
+          type: string
+        change_set_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        status:
+          type: string
+        outcome:
+          type: string
+        decision:
+          type: string
+        signals:
+          type: array
+          nullable: true
+          items:
+            type: string
+        technical_signal_summary:
+          type: object
+          additionalProperties: true
+        business_signal_summary:
+          type: object
+          additionalProperties: true
+        automated:
+          type: boolean
+        decision_source:
+          type: string
+        signal_snapshot_ids:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+        explanation:
+          type: array
+          items:
+            type: string
+        action_state:
+          type: string
+        control_mode:
+          type: string
+    VerificationResultItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/VerificationResult'
+    SignalValue:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+        status:
+          type: string
+        threshold:
+          type: number
+        comparator:
+          type: string
+    SignalSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        rollout_execution_id:
+          type: string
+        rollout_plan_id:
+          type: string
+        change_set_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        provider_type:
+          type: string
+        source_integration_id:
+          type: string
+        health:
+          type: string
+        summary:
+          type: string
+        signals:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/SignalValue'
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+    SignalSnapshotItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SignalSnapshot'
+    RolloutExecution:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        rollout_plan_id:
+          type: string
+        change_set_id:
+          type: string
+        service_id:
+          type: string
+        environment_id:
+          type: string
+        backend_type:
+          type: string
+        backend_integration_id:
+          type: string
+        signal_provider_type:
+          type: string
+        signal_integration_id:
+          type: string
+        backend_execution_id:
+          type: string
+        backend_status:
+          type: string
+        progress_percent:
+          type: integer
+        status:
+          type: string
+        current_step:
+          type: string
+        last_decision:
+          type: string
+        last_decision_reason:
+          type: string
+        last_verification_result:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        last_reconciled_at:
+          type: string
+          format: date-time
+        last_backend_sync_at:
+          type: string
+          format: date-time
+        last_signal_sync_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+    RolloutExecutionItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RolloutExecution'
+    RolloutExecutionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutExecution'
+    RolloutExecutionRuntimeSummary:
+      type: object
+      properties:
+        backend_type:
+          type: string
+        backend_status:
+          type: string
+        progress_percent:
+          type: integer
+        latest_signal_health:
+          type: string
+        latest_signal_summary:
+          type: string
+        latest_decision:
+          type: string
+        latest_decision_mode:
+          type: string
+        control_mode:
+          type: string
+        control_enabled:
+          type: boolean
+        advisory_only:
+          type: boolean
+        recommended_action:
+          type: string
+        last_provider_action:
+          type: string
+        last_action_disposition:
+          type: string
+        last_provider_action_summary:
+          type: string
+        control_rationale:
+          type: string
+    RolloutExecutionDetail:
+      type: object
+      properties:
+        execution:
+          $ref: '#/components/schemas/RolloutExecution'
+        verification_results:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/VerificationResult'
+        signal_snapshots:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/SignalSnapshot'
+        timeline:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        status_timeline:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/StatusEvent'
+        effective_rollback_policy:
+          $ref: '#/components/schemas/RollbackPolicy'
+        runtime_summary:
+          $ref: '#/components/schemas/RolloutExecutionRuntimeSummary'
+    RolloutExecutionDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RolloutExecutionDetail'
+    SimulationPageState:
+      type: object
+      properties:
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeSet'
+        risk_assessments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskAssessment'
+        rollout_plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutPlan'
+        rollout_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutExecution'
+        rollout_execution_detail:
+          allOf:
+            - $ref: '#/components/schemas/RolloutExecutionDetail'
+          nullable: true
+        rollback_policies:
+          type: array
+          items:
+            $ref: '#/components/schemas/RollbackPolicy'
+        status_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusEvent'
+    SimulationPageStateItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SimulationPageState'

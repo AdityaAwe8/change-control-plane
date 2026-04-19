@@ -30,6 +30,20 @@ export const routes: RouteDefinition[] = [
 export const defaultRoute = "dashboard";
 
 export function getCurrentRoute(): RouteDefinition {
-  const routeKey = window.location.hash.replace(/^#\/?/, "") || defaultRoute;
+  const routeKey = getCurrentRouteKey();
   return routes.find((route) => route.key === routeKey) ?? routes[0];
+}
+
+export function getCurrentRouteQuery(): URLSearchParams {
+  const trimmed = window.location.hash.replace(/^#\/?/, "");
+  const separator = trimmed.indexOf("?");
+  return new URLSearchParams(separator >= 0 ? trimmed.slice(separator + 1) : "");
+}
+
+function getCurrentRouteKey(): string {
+  const trimmed = window.location.hash.replace(/^#\/?/, "");
+  if (!trimmed) {
+    return defaultRoute;
+  }
+  return trimmed.split("?")[0] || defaultRoute;
 }

@@ -28,6 +28,11 @@ type SessionInfo struct {
 	Actor                string                `json:"actor"`
 	ActorID              string                `json:"actor_id,omitempty"`
 	ActorType            string                `json:"actor_type,omitempty"`
+	AuthMethod           string                `json:"auth_method,omitempty"`
+	AuthProviderID       string                `json:"auth_provider_id,omitempty"`
+	AuthProvider         string                `json:"auth_provider,omitempty"`
+	IssuedAt             string                `json:"issued_at,omitempty"`
+	ExpiresAt            string                `json:"expires_at,omitempty"`
 	Email                string                `json:"email,omitempty"`
 	DisplayName          string                `json:"display_name,omitempty"`
 	ActiveOrganizationID string                `json:"active_organization_id,omitempty"`
@@ -46,6 +51,23 @@ type SessionProjectScope struct {
 	ProjectID      string `json:"project_id"`
 	Project        string `json:"project"`
 	Role           string `json:"role"`
+}
+
+type SignUpRequest struct {
+	Email                string `json:"email"`
+	DisplayName          string `json:"display_name"`
+	Password             string `json:"password"`
+	PasswordConfirmation string `json:"password_confirmation"`
+}
+
+type SignInRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AuthResponse struct {
+	Token   string      `json:"token"`
+	Session SessionInfo `json:"session"`
 }
 
 type CatalogSummary struct {
@@ -200,7 +222,11 @@ type CreateRolloutPlanRequest struct {
 }
 
 type CreateRolloutExecutionRequest struct {
-	RolloutPlanID string `json:"rollout_plan_id"`
+	RolloutPlanID        string `json:"rollout_plan_id"`
+	BackendType          string `json:"backend_type,omitempty"`
+	BackendIntegrationID string `json:"backend_integration_id,omitempty"`
+	SignalProviderType   string `json:"signal_provider_type,omitempty"`
+	SignalIntegrationID  string `json:"signal_integration_id,omitempty"`
 }
 
 type AdvanceRolloutExecutionRequest struct {
@@ -214,8 +240,23 @@ type RecordVerificationResultRequest struct {
 	Signals                []string `json:"signals,omitempty"`
 	TechnicalSignalSummary Metadata `json:"technical_signal_summary,omitempty"`
 	BusinessSignalSummary  Metadata `json:"business_signal_summary,omitempty"`
+	Automated              bool     `json:"automated,omitempty"`
+	DecisionSource         string   `json:"decision_source,omitempty"`
+	SignalSnapshotIDs      []string `json:"signal_snapshot_ids,omitempty"`
 	Summary                string   `json:"summary"`
 	Explanation            []string `json:"explanation,omitempty"`
+	Metadata               Metadata `json:"metadata,omitempty"`
+}
+
+type CreateSignalSnapshotRequest struct {
+	ProviderType        string        `json:"provider_type,omitempty"`
+	SourceIntegrationID string        `json:"source_integration_id,omitempty"`
+	Health              string        `json:"health"`
+	Summary             string        `json:"summary"`
+	Signals             []SignalValue `json:"signals"`
+	WindowSeconds       int           `json:"window_seconds,omitempty"`
+	Explanation         []string      `json:"explanation,omitempty"`
+	Metadata            Metadata      `json:"metadata,omitempty"`
 }
 
 type CreateServiceAccountRequest struct {
@@ -250,12 +291,138 @@ type IssuedAPITokenResponse struct {
 }
 
 type UpdateIntegrationRequest struct {
-	Name         *string   `json:"name,omitempty"`
-	Mode         *string   `json:"mode,omitempty"`
-	Status       *string   `json:"status,omitempty"`
-	Description  *string   `json:"description,omitempty"`
-	Capabilities *[]string `json:"capabilities,omitempty"`
-	Metadata     Metadata  `json:"metadata,omitempty"`
+	Name                    *string   `json:"name,omitempty"`
+	InstanceKey             *string   `json:"instance_key,omitempty"`
+	ScopeType               *string   `json:"scope_type,omitempty"`
+	ScopeName               *string   `json:"scope_name,omitempty"`
+	Mode                    *string   `json:"mode,omitempty"`
+	AuthStrategy            *string   `json:"auth_strategy,omitempty"`
+	OnboardingStatus        *string   `json:"onboarding_status,omitempty"`
+	Status                  *string   `json:"status,omitempty"`
+	Enabled                 *bool     `json:"enabled,omitempty"`
+	ControlEnabled          *bool     `json:"control_enabled,omitempty"`
+	ScheduleEnabled         *bool     `json:"schedule_enabled,omitempty"`
+	ScheduleIntervalSeconds *int      `json:"schedule_interval_seconds,omitempty"`
+	SyncStaleAfterSeconds   *int      `json:"sync_stale_after_seconds,omitempty"`
+	Description             *string   `json:"description,omitempty"`
+	Capabilities            *[]string `json:"capabilities,omitempty"`
+	Metadata                Metadata  `json:"metadata,omitempty"`
+}
+
+type CreateIntegrationRequest struct {
+	OrganizationID          string   `json:"organization_id"`
+	Kind                    string   `json:"kind"`
+	Name                    string   `json:"name"`
+	InstanceKey             string   `json:"instance_key,omitempty"`
+	ScopeType               string   `json:"scope_type,omitempty"`
+	ScopeName               string   `json:"scope_name,omitempty"`
+	Mode                    string   `json:"mode,omitempty"`
+	AuthStrategy            string   `json:"auth_strategy,omitempty"`
+	Enabled                 bool     `json:"enabled,omitempty"`
+	ControlEnabled          bool     `json:"control_enabled,omitempty"`
+	ScheduleEnabled         bool     `json:"schedule_enabled,omitempty"`
+	ScheduleIntervalSeconds int      `json:"schedule_interval_seconds,omitempty"`
+	SyncStaleAfterSeconds   int      `json:"sync_stale_after_seconds,omitempty"`
+	Description             string   `json:"description,omitempty"`
+	Metadata                Metadata `json:"metadata,omitempty"`
+}
+
+type GitHubOnboardingStartResult struct {
+	Integration  Integration `json:"integration"`
+	AuthorizeURL string      `json:"authorize_url"`
+	CallbackURL  string      `json:"callback_url"`
+	ExpiresAt    string      `json:"expires_at"`
+	Strategy     string      `json:"strategy"`
+	StatePreview string      `json:"state_preview,omitempty"`
+}
+
+type CreateIdentityProviderRequest struct {
+	OrganizationID        string   `json:"organization_id"`
+	Name                  string   `json:"name"`
+	Kind                  string   `json:"kind"`
+	IssuerURL             string   `json:"issuer_url,omitempty"`
+	AuthorizationEndpoint string   `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint         string   `json:"token_endpoint,omitempty"`
+	UserInfoEndpoint      string   `json:"userinfo_endpoint,omitempty"`
+	JWKSURI               string   `json:"jwks_uri,omitempty"`
+	ClientID              string   `json:"client_id,omitempty"`
+	ClientSecretEnv       string   `json:"client_secret_env,omitempty"`
+	Scopes                []string `json:"scopes,omitempty"`
+	ClaimMappings         Metadata `json:"claim_mappings,omitempty"`
+	RoleMappings          Metadata `json:"role_mappings,omitempty"`
+	AllowedDomains        []string `json:"allowed_domains,omitempty"`
+	DefaultRole           string   `json:"default_role,omitempty"`
+	Enabled               bool     `json:"enabled,omitempty"`
+	Metadata              Metadata `json:"metadata,omitempty"`
+}
+
+type UpdateIdentityProviderRequest struct {
+	Name                  *string   `json:"name,omitempty"`
+	IssuerURL             *string   `json:"issuer_url,omitempty"`
+	AuthorizationEndpoint *string   `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint         *string   `json:"token_endpoint,omitempty"`
+	UserInfoEndpoint      *string   `json:"userinfo_endpoint,omitempty"`
+	JWKSURI               *string   `json:"jwks_uri,omitempty"`
+	ClientID              *string   `json:"client_id,omitempty"`
+	ClientSecretEnv       *string   `json:"client_secret_env,omitempty"`
+	Scopes                *[]string `json:"scopes,omitempty"`
+	ClaimMappings         Metadata  `json:"claim_mappings,omitempty"`
+	RoleMappings          Metadata  `json:"role_mappings,omitempty"`
+	AllowedDomains        *[]string `json:"allowed_domains,omitempty"`
+	DefaultRole           *string   `json:"default_role,omitempty"`
+	Enabled               *bool     `json:"enabled,omitempty"`
+	Status                *string   `json:"status,omitempty"`
+	Metadata              Metadata  `json:"metadata,omitempty"`
+}
+
+type PublicIdentityProvider struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organization_id"`
+	Name           string `json:"name"`
+	Kind           string `json:"kind"`
+}
+
+type IdentityProviderStartRequest struct {
+	ReturnTo string `json:"return_to,omitempty"`
+}
+
+type IdentityProviderStartResult struct {
+	Provider     IdentityProvider `json:"provider"`
+	AuthorizeURL string           `json:"authorize_url"`
+	CallbackURL  string           `json:"callback_url"`
+	ExpiresAt    string           `json:"expires_at"`
+	Strategy     string           `json:"strategy"`
+	StatePreview string           `json:"state_preview,omitempty"`
+}
+
+type IdentityProviderTestResult struct {
+	Provider IdentityProvider `json:"provider"`
+	Status   string           `json:"status"`
+	Details  []string         `json:"details,omitempty"`
+}
+
+type WebhookRegistrationResult struct {
+	Registration WebhookRegistration `json:"registration"`
+	Details      []string            `json:"details,omitempty"`
+}
+
+type UpdateRepositoryRequest struct {
+	ProjectID     *string  `json:"project_id,omitempty"`
+	ServiceID     *string  `json:"service_id,omitempty"`
+	EnvironmentID *string  `json:"environment_id,omitempty"`
+	Name          *string  `json:"name,omitempty"`
+	DefaultBranch *string  `json:"default_branch,omitempty"`
+	Status        *string  `json:"status,omitempty"`
+	Metadata      Metadata `json:"metadata,omitempty"`
+}
+
+type UpdateDiscoveredResourceRequest struct {
+	ProjectID     *string  `json:"project_id,omitempty"`
+	ServiceID     *string  `json:"service_id,omitempty"`
+	EnvironmentID *string  `json:"environment_id,omitempty"`
+	RepositoryID  *string  `json:"repository_id,omitempty"`
+	Status        *string  `json:"status,omitempty"`
+	Metadata      Metadata `json:"metadata,omitempty"`
 }
 
 type IntegrationRepositoryInput struct {
@@ -291,6 +458,105 @@ type IntegrationGraphIngestRequest struct {
 	ChangeRepositories  []ChangeRepositoryBindingInput   `json:"change_repositories,omitempty"`
 }
 
+type IntegrationTestResult struct {
+	Integration Integration        `json:"integration"`
+	Run         IntegrationSyncRun `json:"run"`
+}
+
+type IntegrationSyncResult struct {
+	Integration         Integration          `json:"integration"`
+	Run                 IntegrationSyncRun   `json:"run"`
+	Repositories        []Repository         `json:"repositories,omitempty"`
+	DiscoveredResources []DiscoveredResource `json:"discovered_resources,omitempty"`
+	Relationships       []GraphRelationship  `json:"relationships,omitempty"`
+}
+
+type StatusEventQuerySummary struct {
+	Total           int     `json:"total"`
+	Returned        int     `json:"returned"`
+	Limit           int     `json:"limit"`
+	Offset          int     `json:"offset"`
+	RollbackEvents  int     `json:"rollback_events"`
+	AutomatedEvents int     `json:"automated_events"`
+	LatestEventAt   *string `json:"latest_event_at,omitempty"`
+	OldestEventAt   *string `json:"oldest_event_at,omitempty"`
+}
+
+type StatusEventQueryResult struct {
+	Events  []StatusEvent           `json:"events"`
+	Summary StatusEventQuerySummary `json:"summary"`
+	Filters Metadata                `json:"filters,omitempty"`
+}
+
+type CoverageSummary struct {
+	EnabledIntegrations          int `json:"enabled_integrations"`
+	StaleIntegrations            int `json:"stale_integrations"`
+	HealthyIntegrations          int `json:"healthy_integrations"`
+	GitHubIntegrations           int `json:"github_integrations,omitempty"`
+	GitLabIntegrations           int `json:"gitlab_integrations,omitempty"`
+	KubernetesIntegrations       int `json:"kubernetes_integrations,omitempty"`
+	PrometheusIntegrations       int `json:"prometheus_integrations,omitempty"`
+	Repositories                 int `json:"repositories"`
+	UnmappedRepositories         int `json:"unmapped_repositories"`
+	DiscoveredResources          int `json:"discovered_resources"`
+	UnmappedDiscoveredResources  int `json:"unmapped_discovered_resources"`
+	WorkloadCoverageEnvironments int `json:"workload_coverage_environments"`
+	SignalCoverageServices       int `json:"signal_coverage_services"`
+}
+
+type RolloutPageState struct {
+	RolloutPlans           []RolloutPlan           `json:"rollout_plans"`
+	RolloutExecutions      []RolloutExecution      `json:"rollout_executions"`
+	RolloutExecutionDetail *RolloutExecutionDetail `json:"rollout_execution_detail,omitempty"`
+	Integrations           []Integration           `json:"integrations"`
+}
+
+type DeploymentsPageState struct {
+	Catalog          CatalogSummary         `json:"catalog"`
+	RollbackPolicies []RollbackPolicy       `json:"rollback_policies"`
+	StatusDashboard  StatusEventQueryResult `json:"status_dashboard"`
+	CoverageSummary  CoverageSummary        `json:"coverage_summary"`
+}
+
+type IntegrationsPageState struct {
+	Catalog              CatalogSummary                  `json:"catalog"`
+	Teams                []Team                          `json:"teams"`
+	Integrations         []Integration                   `json:"integrations"`
+	CoverageSummary      CoverageSummary                 `json:"coverage_summary"`
+	Repositories         []Repository                    `json:"repositories"`
+	DiscoveredResources  []DiscoveredResource            `json:"discovered_resources"`
+	IntegrationSyncRuns  map[string][]IntegrationSyncRun `json:"integration_sync_runs"`
+	WebhookRegistrations map[string]*WebhookRegistration `json:"webhook_registrations"`
+}
+
+type EnterprisePageState struct {
+	IdentityProviders    []IdentityProvider              `json:"identity_providers"`
+	Integrations         []Integration                   `json:"integrations"`
+	WebhookRegistrations map[string]*WebhookRegistration `json:"webhook_registrations"`
+	OutboxEvents         []OutboxEvent                   `json:"outbox_events"`
+}
+
+type GraphPageState struct {
+	GraphRelationships []GraphRelationship  `json:"graph_relationships"`
+	Catalog            CatalogSummary       `json:"catalog"`
+	Integrations       []Integration        `json:"integrations"`
+	Projects           []Project            `json:"projects"`
+	Teams              []Team               `json:"teams"`
+	Repositories       []Repository         `json:"repositories"`
+	DiscoveredResources []DiscoveredResource `json:"discovered_resources"`
+	Changes            []ChangeSet          `json:"changes"`
+}
+
+type SimulationPageState struct {
+	Changes                []ChangeSet             `json:"changes"`
+	RiskAssessments        []RiskAssessment        `json:"risk_assessments"`
+	RolloutPlans           []RolloutPlan           `json:"rollout_plans"`
+	RolloutExecutions      []RolloutExecution      `json:"rollout_executions"`
+	RolloutExecutionDetail *RolloutExecutionDetail `json:"rollout_execution_detail,omitempty"`
+	RollbackPolicies       []RollbackPolicy        `json:"rollback_policies"`
+	StatusEvents           []StatusEvent           `json:"status_events"`
+}
+
 type DevLoginRequest struct {
 	Email            string   `json:"email"`
 	DisplayName      string   `json:"display_name"`
@@ -299,10 +565,7 @@ type DevLoginRequest struct {
 	Roles            []string `json:"roles,omitempty"`
 }
 
-type DevLoginResponse struct {
-	Token   string      `json:"token"`
-	Session SessionInfo `json:"session"`
-}
+type DevLoginResponse = AuthResponse
 
 type RiskAssessmentResult struct {
 	Assessment      RiskAssessment   `json:"assessment"`
@@ -316,6 +579,11 @@ type RolloutPlanResult struct {
 }
 
 type RolloutExecutionDetail struct {
-	Execution           RolloutExecution     `json:"execution"`
-	VerificationResults []VerificationResult `json:"verification_results"`
+	Execution               RolloutExecution               `json:"execution"`
+	VerificationResults     []VerificationResult           `json:"verification_results"`
+	SignalSnapshots         []SignalSnapshot               `json:"signal_snapshots"`
+	Timeline                []AuditEvent                   `json:"timeline"`
+	StatusTimeline          []StatusEvent                  `json:"status_timeline"`
+	EffectiveRollbackPolicy *RollbackPolicy                `json:"effective_rollback_policy,omitempty"`
+	RuntimeSummary          RolloutExecutionRuntimeSummary `json:"runtime_summary"`
 }

@@ -2,6 +2,7 @@ FROM golang:1.26-alpine AS build
 
 WORKDIR /workspace
 COPY go.mod ./
+COPY go.sum ./
 COPY cmd ./cmd
 COPY db ./db
 COPY internal ./internal
@@ -11,7 +12,10 @@ RUN go build -o /out/change-control-plane-api ./cmd/api
 
 FROM alpine:3.21
 WORKDIR /app
+RUN apk add --no-cache python3
 COPY --from=build /out/change-control-plane-api /usr/local/bin/change-control-plane-api
+COPY db ./db
+COPY python ./python
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/change-control-plane-api"]

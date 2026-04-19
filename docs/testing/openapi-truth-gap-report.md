@@ -1,0 +1,138 @@
+# OpenAPI Truth Gap Report
+
+## Scope Reviewed
+
+- organization CRUD
+- project CRUD
+- team CRUD
+- service CRUD
+- environment CRUD
+- changes
+- risk-assessments
+- rollout-plans
+- audit-events
+- rollback-policies
+- incident list/detail
+- rollout execution list/detail/runtime routes
+- rollout pause/resume/rollback route parameters
+- integrations and runtime diagnostics routes
+- auth, session, health/readiness, catalog, metrics, and policy routes
+- status-history list/search/detail/scoped routes
+- integration graph-ingest, repository/discovered-resource mapping, and machine-auth lifecycle routes
+- enterprise auth callback wording
+- session schema
+
+## What Was Fixed
+
+- Older CRUD routes now document real JSON response envelopes instead of only status-code placeholders.
+- Older change, risk-assessment, rollout-plan, audit-event, and rollback-policy routes now document their real list/item response envelopes and common auth/error responses instead of shallow placeholders.
+- Incident list and incident detail now document concrete response schemas instead of a list-only placeholder route.
+- Incident list now documents the narrow query filters that the runtime actually supports: project, service, environment, change set, severity, status, search, and limit.
+- Rollout execution routes now document concrete response schemas instead of only status-code placeholders for:
+  - list
+  - create
+  - detail
+  - advance
+  - reconcile
+  - signal snapshot ingestion
+  - timeline
+- Dedicated rollout pause, resume, and rollback routes now document the rollout id path parameter, optional operator reason query parameter, and real auth/error responses.
+- Integration and runtime-diagnostics routes now document their real list/item response envelopes, path/query parameters, and common auth/error responses for:
+  - integrations
+  - integration coverage
+  - integration test/sync/sync-runs
+  - webhook registration read/sync
+  - GitHub onboarding start/callback
+  - repositories
+  - discovered resources
+  - graph relationships
+  - identity providers
+  - outbox events
+- Health/readiness, auth, session, catalog, metrics, policy, status-history, and machine-auth routes now document concrete response schemas instead of placeholder status-code-only descriptions for:
+  - `/healthz`
+  - `/readyz`
+  - `/api/v1/auth/dev/login`
+  - `/api/v1/auth/sign-up`
+  - `/api/v1/auth/sign-in`
+  - `/api/v1/auth/providers`
+  - `/api/v1/auth/providers/{id}/start`
+  - `/api/v1/auth/providers/callback`
+  - `/api/v1/auth/session`
+  - `/api/v1/catalog`
+  - `/api/v1/metrics/basics`
+  - `/api/v1/policies`
+  - `/api/v1/status-events`
+  - `/api/v1/status-events/search`
+  - `/api/v1/status-events/{id}`
+  - `/api/v1/projects/{id}/status-events`
+  - `/api/v1/services/{id}/status-events`
+  - `/api/v1/environments/{id}/status-events`
+  - `/api/v1/service-accounts`
+  - `/api/v1/service-accounts/{id}/deactivate`
+  - `/api/v1/service-accounts/{id}/tokens/{token_id}/revoke`
+  - `/api/v1/service-accounts/{id}/tokens/{token_id}/rotate`
+- Graph and mapping routes now document their concrete request/response shapes for:
+  - `/api/v1/integrations/{id}/graph-ingest`
+  - `/api/v1/graph/relationships`
+  - `/api/v1/repositories`
+  - `/api/v1/repositories/{id}`
+  - `/api/v1/discovered-resources`
+  - `/api/v1/discovered-resources/{id}`
+- Older CRUD paths now include path parameters and common auth/error response documentation.
+- New schemas now model the existing runtime domain objects and result envelopes for:
+  - `HealthResponse`
+  - `CatalogSummary`
+  - `BasicMetrics`
+  - `Policy`
+  - `PublicIdentityProvider`
+  - `IdentityProviderStartResult`
+  - `ChangeSet`
+  - `RiskAssessment`
+  - `RiskAssessmentResult`
+  - `RolloutPlan`
+  - `RolloutPlanResult`
+  - `RolloutExecution`
+  - `RolloutExecutionDetail`
+  - `RolloutExecutionRuntimeSummary`
+  - `SignalValue`
+  - `SignalSnapshot`
+  - `AuditEvent`
+  - `RollbackPolicy`
+  - `PolicyDecision`
+  - `BlastRadius`
+  - `RolloutStep`
+- Wrapper schemas now exist for item/list envelopes that previously only appeared as implied runtime patterns, including:
+  - `AuthResponseItemResponse`
+  - `HealthResponseItemResponse`
+  - `SessionInfoItemResponse`
+  - `CatalogSummaryItemResponse`
+  - `BasicMetricsItemResponse`
+  - `PublicIdentityProviderListResponse`
+  - `IdentityProviderStartResultItemResponse`
+  - `PolicyListResponse`
+  - `StatusEventItemResponse`
+  - `StatusEventQueryResultItemResponse`
+- Request schemas were corrected for fields that existed in code but were missing or incomplete in the spec:
+  - `CreateOrganizationRequest.mode`
+  - `CreateProjectRequest.description`
+  - `CreateProjectRequest.adoption_mode`
+  - `CreateProjectRequest.metadata`
+  - `CreateTeamRequest.owner_user_ids`
+  - `UpdateTeamRequest.metadata`
+  - `CreateServiceRequest.dependent_services_count`
+  - `UpdateServiceRequest.metadata`
+  - `UpdateEnvironmentRequest.metadata`
+- Session schemas now include `issued_at` and `expires_at`.
+- Enterprise auth callback docs now describe the real redirect-first browser flow more honestly: `302` is the normal sign-in path emitted by the public start route, and the `200` JSON path is only a fallback for internal flows without a stored return target.
+- Contract tests now assert that every registered HTTP route in [internal/app/http.go](/Users/aditya/Documents/ChangeControlPlane/internal/app/http.go) has a documented OpenAPI path/method entry, in addition to the route-family fragment checks.
+- Contract tests now also validate real runtime JSON responses for registered success-path routes across:
+  - health/readiness and auth/session
+  - catalog/metrics/policies/incidents
+  - organization/project/team/service/environment/change/risk/plan/audit/rollback-policy
+  - rollout execution detail/runtime/manual-control/status-history
+  - integrations, graph ingest, repositories, discovered resources, identity providers, and machine-auth lifecycle
+
+## Remaining Truth Gaps
+
+- The spec still uses many per-route inline descriptions instead of fully normalized reusable response components.
+- Contract verification is now route-presence, schema-fragment, and broad runtime-response based across nearly all registered success-path JSON surfaces rather than only spot-check based, but it is still not a generated exhaustive schema/runtime diff across every status code, alternate redirect branch, or failure envelope.

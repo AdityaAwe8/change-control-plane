@@ -17,6 +17,8 @@ jobs:
           go-version: '1.26'
       - name: Format check
         run: test -z "$(gofmt -l $(find . -name '*.go' -not -path './vendor/*'))"
+      - name: Vet
+        run: go vet ./...
       - name: Test
         run: go test ./...
       - name: Build
@@ -24,6 +26,64 @@ jobs:
           go build ./cmd/api
           go build ./cmd/worker
           go build ./cmd/cli
+
+  contract-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: OpenAPI contract proof
+        run: make proof-contract
+
+  provider-harness-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Hosted-like provider harness proof
+        run: make proof-harness
+
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: change_control_plane
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d change_control_plane"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Postgres-backed integration tests
+        env:
+          CCP_TEST_DB_DSN: postgres://postgres:postgres@localhost:5432/change_control_plane?sslmode=disable
+          CCP_DB_DSN: postgres://postgres:postgres@localhost:5432/change_control_plane?sslmode=disable
+        run: |
+          go test ./internal/storage ./test/integration
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test
+        run: python3 -m unittest discover -s python/tests -v
 
   web:
     runs-on: ubuntu-latest
@@ -40,5 +100,81 @@ jobs:
           version: 10
       - name: Install
         run: pnpm install
+      - name: Typecheck
+        run: pnpm typecheck
       - name: Build
         run: pnpm build
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Install
+        run: pnpm install
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser verification
+        run: pnpm test:e2e
+
+  smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: change_control_plane
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d change_control_plane"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Start API
+        env:
+          CCP_API_HOST: 127.0.0.1
+          CCP_API_PORT: 8080
+          CCP_DB_DSN: postgres://postgres:postgres@localhost:5432/change_control_plane?sslmode=disable
+          CCP_ENABLE_PYTHON_INTELLIGENCE: "true"
+          CCP_PYTHON_EXECUTABLE: python3
+          CCP_PYTHON_WORKSPACE: python
+        run: go run ./cmd/api >/tmp/change-control-plane-api.log 2>&1 &
+      - name: Wait for API
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/readyz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/change-control-plane-api.log
+          exit 1
+      - name: Smoke
+        env:
+          BASE_URL: http://127.0.0.1:8080
+        run: ./scripts/smoke.sh
+      - name: API log on failure
+        if: failure()
+        run: cat /tmp/change-control-plane-api.log

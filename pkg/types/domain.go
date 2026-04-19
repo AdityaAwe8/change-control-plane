@@ -54,10 +54,49 @@ type Team struct {
 
 type User struct {
 	BaseRecord
-	OrganizationID string `json:"organization_id"`
-	Email          string `json:"email"`
-	DisplayName    string `json:"display_name"`
-	Status         string `json:"status"`
+	OrganizationID     string `json:"organization_id"`
+	Email              string `json:"email"`
+	DisplayName        string `json:"display_name"`
+	Status             string `json:"status"`
+	PasswordSalt       string `json:"-"`
+	PasswordHash       string `json:"-"`
+	PasswordIterations int    `json:"-"`
+}
+
+type IdentityProvider struct {
+	BaseRecord
+	OrganizationID        string     `json:"organization_id"`
+	Name                  string     `json:"name"`
+	Kind                  string     `json:"kind"`
+	IssuerURL             string     `json:"issuer_url,omitempty"`
+	AuthorizationEndpoint string     `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint         string     `json:"token_endpoint,omitempty"`
+	UserInfoEndpoint      string     `json:"userinfo_endpoint,omitempty"`
+	JWKSURI               string     `json:"jwks_uri,omitempty"`
+	ClientID              string     `json:"client_id,omitempty"`
+	ClientSecretEnv       string     `json:"client_secret_env,omitempty"`
+	Scopes                []string   `json:"scopes,omitempty"`
+	ClaimMappings         Metadata   `json:"claim_mappings,omitempty"`
+	RoleMappings          Metadata   `json:"role_mappings,omitempty"`
+	AllowedDomains        []string   `json:"allowed_domains,omitempty"`
+	DefaultRole           string     `json:"default_role,omitempty"`
+	Enabled               bool       `json:"enabled"`
+	Status                string     `json:"status"`
+	ConnectionHealth      string     `json:"connection_health,omitempty"`
+	LastTestedAt          *time.Time `json:"last_tested_at,omitempty"`
+	LastError             string     `json:"last_error,omitempty"`
+	LastAuthenticatedAt   *time.Time `json:"last_authenticated_at,omitempty"`
+}
+
+type IdentityLink struct {
+	BaseRecord
+	OrganizationID  string     `json:"organization_id"`
+	ProviderID      string     `json:"provider_id"`
+	UserID          string     `json:"user_id"`
+	ExternalSubject string     `json:"external_subject"`
+	Email           string     `json:"email,omitempty"`
+	Status          string     `json:"status"`
+	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
 }
 
 type Role struct {
@@ -101,24 +140,105 @@ type Service struct {
 
 type Repository struct {
 	BaseRecord
-	OrganizationID string `json:"organization_id"`
-	ProjectID      string `json:"project_id"`
-	Name           string `json:"name"`
-	Provider       string `json:"provider"`
-	URL            string `json:"url"`
-	DefaultBranch  string `json:"default_branch"`
+	OrganizationID      string     `json:"organization_id"`
+	ProjectID           string     `json:"project_id,omitempty"`
+	ServiceID           string     `json:"service_id,omitempty"`
+	EnvironmentID       string     `json:"environment_id,omitempty"`
+	SourceIntegrationID string     `json:"source_integration_id,omitempty"`
+	Name                string     `json:"name"`
+	Provider            string     `json:"provider"`
+	URL                 string     `json:"url"`
+	DefaultBranch       string     `json:"default_branch"`
+	Status              string     `json:"status"`
+	LastSyncedAt        *time.Time `json:"last_synced_at,omitempty"`
+}
+
+type DiscoveredResource struct {
+	BaseRecord
+	OrganizationID string     `json:"organization_id"`
+	IntegrationID  string     `json:"integration_id"`
+	ProjectID      string     `json:"project_id,omitempty"`
+	ServiceID      string     `json:"service_id,omitempty"`
+	EnvironmentID  string     `json:"environment_id,omitempty"`
+	RepositoryID   string     `json:"repository_id,omitempty"`
+	ResourceType   string     `json:"resource_type"`
+	Provider       string     `json:"provider"`
+	ExternalID     string     `json:"external_id"`
+	Namespace      string     `json:"namespace,omitempty"`
+	Name           string     `json:"name"`
+	Status         string     `json:"status"`
+	Health         string     `json:"health,omitempty"`
+	Summary        string     `json:"summary,omitempty"`
+	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
 }
 
 type Integration struct {
 	BaseRecord
-	OrganizationID string     `json:"organization_id,omitempty"`
-	Name           string     `json:"name"`
-	Kind           string     `json:"kind"`
-	Mode           string     `json:"mode"`
-	Status         string     `json:"status"`
-	Capabilities   []string   `json:"capabilities"`
-	Description    string     `json:"description"`
-	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
+	OrganizationID          string     `json:"organization_id,omitempty"`
+	Name                    string     `json:"name"`
+	Kind                    string     `json:"kind"`
+	InstanceKey             string     `json:"instance_key,omitempty"`
+	ScopeType               string     `json:"scope_type,omitempty"`
+	ScopeName               string     `json:"scope_name,omitempty"`
+	Mode                    string     `json:"mode"`
+	AuthStrategy            string     `json:"auth_strategy,omitempty"`
+	OnboardingStatus        string     `json:"onboarding_status,omitempty"`
+	Status                  string     `json:"status"`
+	Enabled                 bool       `json:"enabled"`
+	ControlEnabled          bool       `json:"control_enabled"`
+	ConnectionHealth        string     `json:"connection_health"`
+	Capabilities            []string   `json:"capabilities"`
+	Description             string     `json:"description"`
+	LastTestedAt            *time.Time `json:"last_tested_at,omitempty"`
+	LastSyncedAt            *time.Time `json:"last_synced_at,omitempty"`
+	LastError               string     `json:"last_error,omitempty"`
+	ScheduleEnabled         bool       `json:"schedule_enabled"`
+	ScheduleIntervalSeconds int        `json:"schedule_interval_seconds,omitempty"`
+	SyncStaleAfterSeconds   int        `json:"sync_stale_after_seconds,omitempty"`
+	NextScheduledSyncAt     *time.Time `json:"next_scheduled_sync_at,omitempty"`
+	LastSyncAttemptedAt     *time.Time `json:"last_sync_attempted_at,omitempty"`
+	LastSyncSucceededAt     *time.Time `json:"last_sync_succeeded_at,omitempty"`
+	LastSyncFailedAt        *time.Time `json:"last_sync_failed_at,omitempty"`
+	SyncClaimedAt           *time.Time `json:"-"`
+	SyncConsecutiveFailures int        `json:"sync_consecutive_failures,omitempty"`
+	FreshnessState          string     `json:"freshness_state,omitempty"`
+	Stale                   bool       `json:"stale,omitempty"`
+	SyncLagSeconds          int        `json:"sync_lag_seconds,omitempty"`
+}
+
+type IntegrationSyncRun struct {
+	BaseRecord
+	OrganizationID  string     `json:"organization_id"`
+	IntegrationID   string     `json:"integration_id"`
+	Operation       string     `json:"operation"`
+	Trigger         string     `json:"trigger,omitempty"`
+	Status          string     `json:"status"`
+	Summary         string     `json:"summary"`
+	Details         []string   `json:"details,omitempty"`
+	ResourceCount   int        `json:"resource_count"`
+	ExternalEventID string     `json:"external_event_id,omitempty"`
+	ErrorClass      string     `json:"error_class,omitempty"`
+	ScheduledFor    *time.Time `json:"scheduled_for,omitempty"`
+	StartedAt       time.Time  `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+}
+
+type WebhookRegistration struct {
+	BaseRecord
+	OrganizationID   string     `json:"organization_id"`
+	IntegrationID    string     `json:"integration_id"`
+	ProviderKind     string     `json:"provider_kind"`
+	ScopeIdentifier  string     `json:"scope_identifier,omitempty"`
+	CallbackURL      string     `json:"callback_url"`
+	ExternalHookID   string     `json:"external_hook_id,omitempty"`
+	Status           string     `json:"status"`
+	DeliveryHealth   string     `json:"delivery_health,omitempty"`
+	AutoManaged      bool       `json:"auto_managed"`
+	LastRegisteredAt *time.Time `json:"last_registered_at,omitempty"`
+	LastValidatedAt  *time.Time `json:"last_validated_at,omitempty"`
+	LastDeliveryAt   *time.Time `json:"last_delivery_at,omitempty"`
+	LastError        string     `json:"last_error,omitempty"`
+	FailureCount     int        `json:"failure_count,omitempty"`
 }
 
 type Deployment struct {
@@ -251,8 +371,13 @@ type VerificationResult struct {
 	Signals                []string `json:"signals"`
 	TechnicalSignalSummary Metadata `json:"technical_signal_summary,omitempty"`
 	BusinessSignalSummary  Metadata `json:"business_signal_summary,omitempty"`
+	Automated              bool     `json:"automated"`
+	DecisionSource         string   `json:"decision_source"`
+	SignalSnapshotIDs      []string `json:"signal_snapshot_ids,omitempty"`
 	Summary                string   `json:"summary"`
 	Explanation            []string `json:"explanation,omitempty"`
+	ActionState            string   `json:"action_state,omitempty"`
+	ControlMode            string   `json:"control_mode,omitempty"`
 }
 
 type Incident struct {
@@ -268,6 +393,12 @@ type Incident struct {
 	ImpactedPaths  []string `json:"impacted_paths,omitempty"`
 }
 
+type IncidentDetail struct {
+	Incident           Incident      `json:"incident"`
+	RolloutExecutionID string        `json:"rollout_execution_id"`
+	StatusTimeline     []StatusEvent `json:"status_timeline,omitempty"`
+}
+
 type Runbook struct {
 	BaseRecord
 	OrganizationID string `json:"organization_id"`
@@ -280,25 +411,50 @@ type Runbook struct {
 
 type Policy struct {
 	BaseRecord
-	OrganizationID string   `json:"organization_id,omitempty"`
-	Name           string   `json:"name"`
-	Code           string   `json:"code"`
-	Scope          string   `json:"scope"`
-	Mode           string   `json:"mode"`
-	Enabled        bool     `json:"enabled"`
-	Description    string   `json:"description"`
-	Triggers       []string `json:"triggers,omitempty"`
+	OrganizationID string          `json:"organization_id,omitempty"`
+	ProjectID      string          `json:"project_id,omitempty"`
+	ServiceID      string          `json:"service_id,omitempty"`
+	EnvironmentID  string          `json:"environment_id,omitempty"`
+	Name           string          `json:"name"`
+	Code           string          `json:"code"`
+	Scope          string          `json:"scope"`
+	AppliesTo      string          `json:"applies_to"`
+	Mode           string          `json:"mode"`
+	Enabled        bool            `json:"enabled"`
+	Priority       int             `json:"priority"`
+	Description    string          `json:"description"`
+	Conditions     PolicyCondition `json:"conditions,omitempty"`
+	Triggers       []string        `json:"triggers,omitempty"`
+}
+
+type PolicyCondition struct {
+	MinRiskLevel        string   `json:"min_risk_level,omitempty"`
+	ProductionOnly      bool     `json:"production_only,omitempty"`
+	RegulatedOnly       bool     `json:"regulated_only,omitempty"`
+	RequiredChangeTypes []string `json:"required_change_types,omitempty"`
+	RequiredTouches     []string `json:"required_touches,omitempty"`
+	MissingCapabilities []string `json:"missing_capabilities,omitempty"`
 }
 
 type PolicyDecision struct {
 	BaseRecord
-	OrganizationID string   `json:"organization_id"`
-	ProjectID      string   `json:"project_id"`
-	PolicyID       string   `json:"policy_id"`
-	ChangeSetID    string   `json:"change_set_id"`
-	Outcome        string   `json:"outcome"`
-	Summary        string   `json:"summary"`
-	Reasons        []string `json:"reasons"`
+	OrganizationID  string   `json:"organization_id"`
+	ProjectID       string   `json:"project_id"`
+	ServiceID       string   `json:"service_id,omitempty"`
+	EnvironmentID   string   `json:"environment_id,omitempty"`
+	PolicyID        string   `json:"policy_id"`
+	PolicyName      string   `json:"policy_name"`
+	PolicyCode      string   `json:"policy_code"`
+	PolicyScope     string   `json:"policy_scope"`
+	AppliesTo       string   `json:"applies_to"`
+	Mode            string   `json:"mode"`
+	ChangeSetID     string   `json:"change_set_id,omitempty"`
+	RiskAssessmentID string  `json:"risk_assessment_id,omitempty"`
+	RolloutPlanID   string   `json:"rollout_plan_id,omitempty"`
+	RolloutExecutionID string `json:"rollout_execution_id,omitempty"`
+	Outcome         string   `json:"outcome"`
+	Summary         string   `json:"summary"`
+	Reasons         []string `json:"reasons"`
 }
 
 type AuditEvent struct {
@@ -417,6 +573,34 @@ type GraphRelationship struct {
 	LastObservedAt      time.Time `json:"last_observed_at"`
 }
 
+type SignalValue struct {
+	Name       string  `json:"name"`
+	Category   string  `json:"category"`
+	Value      float64 `json:"value"`
+	Unit       string  `json:"unit,omitempty"`
+	Status     string  `json:"status"`
+	Threshold  float64 `json:"threshold,omitempty"`
+	Comparator string  `json:"comparator,omitempty"`
+}
+
+type SignalSnapshot struct {
+	BaseRecord
+	OrganizationID      string        `json:"organization_id"`
+	ProjectID           string        `json:"project_id"`
+	RolloutExecutionID  string        `json:"rollout_execution_id"`
+	RolloutPlanID       string        `json:"rollout_plan_id"`
+	ChangeSetID         string        `json:"change_set_id"`
+	ServiceID           string        `json:"service_id"`
+	EnvironmentID       string        `json:"environment_id"`
+	ProviderType        string        `json:"provider_type"`
+	SourceIntegrationID string        `json:"source_integration_id,omitempty"`
+	Health              string        `json:"health"`
+	Summary             string        `json:"summary"`
+	Signals             []SignalValue `json:"signals"`
+	WindowStart         time.Time     `json:"window_start"`
+	WindowEnd           time.Time     `json:"window_end"`
+}
+
 type RolloutExecution struct {
 	BaseRecord
 	OrganizationID         string     `json:"organization_id"`
@@ -425,13 +609,57 @@ type RolloutExecution struct {
 	ChangeSetID            string     `json:"change_set_id"`
 	ServiceID              string     `json:"service_id"`
 	EnvironmentID          string     `json:"environment_id"`
+	BackendType            string     `json:"backend_type"`
+	BackendIntegrationID   string     `json:"backend_integration_id,omitempty"`
+	SignalProviderType     string     `json:"signal_provider_type"`
+	SignalIntegrationID    string     `json:"signal_integration_id,omitempty"`
+	BackendExecutionID     string     `json:"backend_execution_id,omitempty"`
+	BackendStatus          string     `json:"backend_status,omitempty"`
+	ProgressPercent        int        `json:"progress_percent"`
 	Status                 string     `json:"status"`
 	CurrentStep            string     `json:"current_step"`
 	LastDecision           string     `json:"last_decision,omitempty"`
 	LastDecisionReason     string     `json:"last_decision_reason,omitempty"`
 	LastVerificationResult string     `json:"last_verification_result,omitempty"`
+	SubmittedAt            *time.Time `json:"submitted_at,omitempty"`
 	StartedAt              *time.Time `json:"started_at,omitempty"`
 	CompletedAt            *time.Time `json:"completed_at,omitempty"`
+	LastReconciledAt       *time.Time `json:"last_reconciled_at,omitempty"`
+	LastBackendSyncAt      *time.Time `json:"last_backend_sync_at,omitempty"`
+	LastSignalSyncAt       *time.Time `json:"last_signal_sync_at,omitempty"`
+	LastError              string     `json:"last_error,omitempty"`
+}
+
+type RolloutExecutionRuntimeSummary struct {
+	BackendType               string `json:"backend_type"`
+	BackendStatus             string `json:"backend_status"`
+	ProgressPercent           int    `json:"progress_percent"`
+	LatestSignalHealth        string `json:"latest_signal_health,omitempty"`
+	LatestSignalSummary       string `json:"latest_signal_summary,omitempty"`
+	LatestDecision            string `json:"latest_decision,omitempty"`
+	LatestDecisionMode        string `json:"latest_decision_mode,omitempty"`
+	ControlMode               string `json:"control_mode,omitempty"`
+	ControlEnabled            bool   `json:"control_enabled,omitempty"`
+	AdvisoryOnly              bool   `json:"advisory_only,omitempty"`
+	RecommendedAction         string `json:"recommended_action,omitempty"`
+	LastProviderAction        string `json:"last_provider_action,omitempty"`
+	LastActionDisposition     string `json:"last_action_disposition,omitempty"`
+	LastProviderActionSummary string `json:"last_provider_action_summary,omitempty"`
+	ControlRationale          string `json:"control_rationale,omitempty"`
+}
+
+type RolloutExecutionRuntimeContext struct {
+	Execution               RolloutExecution     `json:"execution"`
+	Plan                    RolloutPlan          `json:"plan"`
+	Assessment              RiskAssessment       `json:"assessment"`
+	ChangeSet               ChangeSet            `json:"change_set"`
+	Service                 Service              `json:"service"`
+	Environment             Environment          `json:"environment"`
+	BackendIntegration      *Integration         `json:"backend_integration,omitempty"`
+	SignalIntegration       *Integration         `json:"signal_integration,omitempty"`
+	EffectiveRollbackPolicy *RollbackPolicy      `json:"effective_rollback_policy,omitempty"`
+	VerificationResults     []VerificationResult `json:"verification_results"`
+	SignalSnapshots         []SignalSnapshot     `json:"signal_snapshots"`
 }
 
 type ApprovalRequest struct {
@@ -479,4 +707,19 @@ type DomainEvent struct {
 	ResourceID     string    `json:"resource_id"`
 	OccurredAt     time.Time `json:"occurred_at"`
 	Payload        Metadata  `json:"payload,omitempty"`
+}
+
+type OutboxEvent struct {
+	BaseRecord
+	EventType      string     `json:"event_type"`
+	OrganizationID string     `json:"organization_id,omitempty"`
+	ProjectID      string     `json:"project_id,omitempty"`
+	ResourceType   string     `json:"resource_type"`
+	ResourceID     string     `json:"resource_id"`
+	Status         string     `json:"status"`
+	Attempts       int        `json:"attempts,omitempty"`
+	NextAttemptAt  *time.Time `json:"next_attempt_at,omitempty"`
+	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
+	ProcessedAt    *time.Time `json:"processed_at,omitempty"`
+	LastError      string     `json:"last_error,omitempty"`
 }

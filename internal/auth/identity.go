@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/change-control-plane/change-control-plane/pkg/types"
 )
@@ -17,6 +18,13 @@ type Identity struct {
 	Authenticated           bool
 	ActorID                 string
 	ActorType               types.ActorType
+	AuthMethod              string
+	AuthProviderID          string
+	AuthProvider            string
+	TokenIssuedAt           time.Time
+	TokenExpiresAt          time.Time
+	BrowserSessionID        string
+	BrowserSessionRevokedAt *time.Time
 	User                    types.User
 	ServiceAccount          types.ServiceAccount
 	ActiveOrganizationID    string

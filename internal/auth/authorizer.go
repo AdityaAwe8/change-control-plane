@@ -96,6 +96,34 @@ func (a *Authorizer) CanRecordVerification(identity Identity, organizationID, pr
 	return a.CanExecuteRollout(identity, organizationID, projectID)
 }
 
+func (a *Authorizer) CanOverrideRollout(identity Identity, organizationID, projectID string) bool {
+	return hasAnyRole(identity.OrganizationRole(organizationID), "org_admin") ||
+		hasAnyRole(identity.ProjectRole(projectID), "project_admin", "service_owner")
+}
+
+func (a *Authorizer) CanManageRollbackPolicies(identity Identity, organizationID, projectID string) bool {
+	return a.CanOverrideRollout(identity, organizationID, projectID)
+}
+
+func (a *Authorizer) CanManagePolicies(identity Identity, organizationID, projectID string) bool {
+	return hasAnyRole(identity.OrganizationRole(organizationID), "org_admin") ||
+		hasAnyRole(identity.ProjectRole(projectID), "project_admin")
+}
+
+func (a *Authorizer) CanViewPolicies(identity Identity, organizationID, projectID string) bool {
+	if projectID == "" {
+		return identity.HasOrganizationAccess(organizationID)
+	}
+	return a.CanReadProject(identity, organizationID, projectID)
+}
+
+func (a *Authorizer) CanViewStatusHistory(identity Identity, organizationID, projectID string) bool {
+	if projectID == "" {
+		return identity.HasOrganizationAccess(organizationID)
+	}
+	return a.CanReadProject(identity, organizationID, projectID)
+}
+
 func hasAnyRole(role string, allowed ...string) bool {
 	for _, candidate := range allowed {
 		if role == candidate {

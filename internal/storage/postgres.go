@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
@@ -461,6 +463,8 @@ func (s *PostgresStore) ListAuditEvents(ctx context.Context, query AuditEventQue
 		query.Offset,
 		filterEqual("organization_id", query.OrganizationID),
 		filterEqual("project_id", query.ProjectID),
+		filterEqual("resource_type", query.ResourceType),
+		filterEqual("resource_id", query.ResourceID),
 	)
 	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
@@ -480,38 +484,77 @@ func (s *PostgresStore) ListAuditEvents(ctx context.Context, query AuditEventQue
 
 func (s *PostgresStore) CreateIntegration(ctx context.Context, integration types.Integration) error {
 	_, err := s.runner(ctx).ExecContext(ctx, `
-		INSERT INTO integrations (id, organization_id, name, kind, mode, status, capabilities, description, last_synced_at, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, integration.ID, nullIfEmpty(integration.OrganizationID), integration.Name, integration.Kind, integration.Mode, integration.Status, jsonValue(integration.Capabilities), integration.Description, integration.LastSyncedAt, jsonValue(integration.Metadata), integration.CreatedAt, integration.UpdatedAt)
+		INSERT INTO integrations (
+			id, organization_id, name, kind, instance_key, scope_type, scope_name, mode, auth_strategy, onboarding_status,
+			status, enabled, control_enabled, connection_health, capabilities, description, last_tested_at, last_synced_at,
+			last_error, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+	`, integration.ID, nullIfEmpty(integration.OrganizationID), integration.Name, integration.Kind, integration.InstanceKey, integration.ScopeType, integration.ScopeName, integration.Mode, integration.AuthStrategy, integration.OnboardingStatus, integration.Status, integration.Enabled, integration.ControlEnabled, integration.ConnectionHealth, jsonValue(integration.Capabilities), integration.Description, integration.LastTestedAt, integration.LastSyncedAt, integration.LastError, jsonValue(integration.Metadata), integration.CreatedAt, integration.UpdatedAt)
 	return err
 }
 
 func (s *PostgresStore) UpsertIntegration(ctx context.Context, integration types.Integration) error {
 	_, err := s.runner(ctx).ExecContext(ctx, `
-		INSERT INTO integrations (id, organization_id, name, kind, mode, status, capabilities, description, last_synced_at, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO integrations (
+			id, organization_id, name, kind, instance_key, scope_type, scope_name, mode, auth_strategy, onboarding_status,
+			status, enabled, control_enabled, connection_health, capabilities, description, last_tested_at, last_synced_at,
+			last_error, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 		ON CONFLICT (id) DO UPDATE SET
 			organization_id = EXCLUDED.organization_id,
 			name = EXCLUDED.name,
 			kind = EXCLUDED.kind,
+			instance_key = EXCLUDED.instance_key,
+			scope_type = EXCLUDED.scope_type,
+			scope_name = EXCLUDED.scope_name,
 			mode = EXCLUDED.mode,
+			auth_strategy = EXCLUDED.auth_strategy,
+			onboarding_status = EXCLUDED.onboarding_status,
 			status = EXCLUDED.status,
+			enabled = EXCLUDED.enabled,
+			control_enabled = EXCLUDED.control_enabled,
+			connection_health = EXCLUDED.connection_health,
 			capabilities = EXCLUDED.capabilities,
 			description = EXCLUDED.description,
+			last_tested_at = EXCLUDED.last_tested_at,
 			last_synced_at = EXCLUDED.last_synced_at,
+			last_error = EXCLUDED.last_error,
 			metadata = EXCLUDED.metadata,
 			updated_at = EXCLUDED.updated_at
-	`, integration.ID, nullIfEmpty(integration.OrganizationID), integration.Name, integration.Kind, integration.Mode, integration.Status, jsonValue(integration.Capabilities), integration.Description, integration.LastSyncedAt, jsonValue(integration.Metadata), integration.CreatedAt, integration.UpdatedAt)
+	`, integration.ID, nullIfEmpty(integration.OrganizationID), integration.Name, integration.Kind, integration.InstanceKey, integration.ScopeType, integration.ScopeName, integration.Mode, integration.AuthStrategy, integration.OnboardingStatus, integration.Status, integration.Enabled, integration.ControlEnabled, integration.ConnectionHealth, jsonValue(integration.Capabilities), integration.Description, integration.LastTestedAt, integration.LastSyncedAt, integration.LastError, jsonValue(integration.Metadata), integration.CreatedAt, integration.UpdatedAt)
 	return err
 }
 
 func (s *PostgresStore) ListIntegrations(ctx context.Context, query IntegrationQuery) ([]types.Integration, error) {
+	filters := []condition{
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("kind", query.Kind),
+		filterEqual("instance_key", query.InstanceKey),
+		filterEqual("scope_type", query.ScopeType),
+		filterEqual("auth_strategy", query.AuthStrategy),
+		filterBool("enabled", query.Enabled),
+	}
+	if trimmed := strings.TrimSpace(query.Search); trimmed != "" {
+		pattern := "%" + trimmed + "%"
+		filters = append(filters, condition{
+			sql:    "(name ILIKE $1 OR scope_name ILIKE $2 OR kind ILIKE $3)",
+			values: []any{pattern, pattern, pattern},
+		})
+	}
 	sqlQuery, args := buildListQuery(
-		`SELECT id, organization_id, name, kind, mode, status, capabilities, description, last_synced_at, metadata, created_at, updated_at FROM integrations`,
+		`SELECT id, organization_id, name, kind, instance_key, scope_type, scope_name, mode, auth_strategy, onboarding_status, status, enabled, control_enabled, connection_health,
+			capabilities, description, last_tested_at, last_synced_at, last_error,
+			schedule_enabled, schedule_interval_seconds, sync_stale_after_seconds, next_scheduled_sync_at,
+			last_sync_attempted_at, last_sync_succeeded_at, last_sync_failed_at, sync_claimed_at, sync_consecutive_failures,
+			metadata, created_at, updated_at
+		FROM integrations`,
 		query.Limit,
 		query.Offset,
-		filterEqual("organization_id", query.OrganizationID),
+		filters...,
 	)
+	sqlQuery = strings.Replace(sqlQuery, " ORDER BY created_at", " ORDER BY kind ASC, name ASC, created_at DESC", 1)
 	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, err
@@ -530,15 +573,15 @@ func (s *PostgresStore) ListIntegrations(ctx context.Context, query IntegrationQ
 
 func (s *PostgresStore) CreateUser(ctx context.Context, user types.User) error {
 	_, err := s.runner(ctx).ExecContext(ctx, `
-		INSERT INTO users (id, organization_id, email, display_name, status, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, user.ID, user.OrganizationID, user.Email, user.DisplayName, user.Status, jsonValue(user.Metadata), user.CreatedAt, user.UpdatedAt)
+		INSERT INTO users (id, organization_id, email, display_name, status, password_salt, password_hash, password_iterations, metadata, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, user.ID, nullIfEmpty(user.OrganizationID), user.Email, user.DisplayName, user.Status, user.PasswordSalt, user.PasswordHash, user.PasswordIterations, jsonValue(user.Metadata), user.CreatedAt, user.UpdatedAt)
 	return err
 }
 
 func (s *PostgresStore) GetUser(ctx context.Context, id string) (types.User, error) {
 	row := s.runner(ctx).QueryRowContext(ctx, `
-		SELECT id, organization_id, email, display_name, status, metadata, created_at, updated_at
+		SELECT id, organization_id, email, display_name, status, password_salt, password_hash, password_iterations, metadata, created_at, updated_at
 		FROM users WHERE id = $1
 	`, id)
 	return scanUser(row)
@@ -546,10 +589,29 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (types.User, err
 
 func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (types.User, error) {
 	row := s.runner(ctx).QueryRowContext(ctx, `
-		SELECT id, organization_id, email, display_name, status, metadata, created_at, updated_at
+		SELECT id, organization_id, email, display_name, status, password_salt, password_hash, password_iterations, metadata, created_at, updated_at
 		FROM users WHERE email = $1
 	`, email)
 	return scanUser(row)
+}
+
+func (s *PostgresStore) UpdateUser(ctx context.Context, user types.User) error {
+	result, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE users
+		SET organization_id = $2, email = $3, display_name = $4, status = $5, password_salt = $6, password_hash = $7, password_iterations = $8, metadata = $9, updated_at = $10
+		WHERE id = $1
+	`, user.ID, nullIfEmpty(user.OrganizationID), user.Email, user.DisplayName, user.Status, user.PasswordSalt, user.PasswordHash, user.PasswordIterations, jsonValue(user.Metadata), user.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) CreateOrganizationMembership(ctx context.Context, membership types.OrganizationMembership) error {
@@ -643,6 +705,14 @@ type condition struct {
 }
 
 func buildListQuery(base string, limit, offset int, filters ...condition) (string, []any) {
+	return appendFilters(base, limit, offset, true, filters...)
+}
+
+func buildCountQuery(base string, filters ...condition) (string, []any) {
+	return appendFilters(base, 0, 0, false, filters...)
+}
+
+func appendFilters(base string, limit, offset int, orderByCreated bool, filters ...condition) (string, []any) {
 	query := base
 	args := make([]any, 0, 8)
 	clauses := make([]string, 0, len(filters))
@@ -661,7 +731,9 @@ func buildListQuery(base string, limit, offset int, filters ...condition) (strin
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
-	query += " ORDER BY created_at"
+	if orderByCreated {
+		query += " ORDER BY created_at"
+	}
 	if limit > 0 {
 		args = append(args, limit)
 		query += fmt.Sprintf(" LIMIT $%d", len(args))
@@ -680,6 +752,13 @@ func filterEqual(column, value string) condition {
 	return condition{sql: fmt.Sprintf("%s = $1", column), values: []any{value}}
 }
 
+func filterBool(column string, value *bool) condition {
+	if value == nil {
+		return condition{}
+	}
+	return condition{sql: fmt.Sprintf("%s = $1", column), values: []any{*value}}
+}
+
 func filterIDs(column string, ids []string) condition {
 	if len(ids) == 0 {
 		return condition{}
@@ -693,6 +772,76 @@ func filterIDs(column string, ids []string) condition {
 	return condition{
 		sql:    fmt.Sprintf("%s IN (%s)", column, strings.Join(parts, ", ")),
 		values: args,
+	}
+}
+
+func filterAny(column string, values []string) condition {
+	if len(values) == 0 {
+		return condition{}
+	}
+	return filterIDs(column, values)
+}
+
+func filterTSQuery(search string) condition {
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return condition{}
+	}
+	return condition{
+		sql:    "to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(explanation::text, '')) @@ plainto_tsquery('simple', $1)",
+		values: []any{search},
+	}
+}
+
+func filterTimeAfter(column string, value *time.Time) condition {
+	if value == nil {
+		return condition{}
+	}
+	return condition{
+		sql:    fmt.Sprintf("%s >= $1", column),
+		values: []any{*value},
+	}
+}
+
+func filterTimeBefore(column string, value *time.Time) condition {
+	if value == nil {
+		return condition{}
+	}
+	return condition{
+		sql:    fmt.Sprintf("%s <= $1", column),
+		values: []any{*value},
+	}
+}
+
+func filterRollbackEvents(enabled bool) condition {
+	if !enabled {
+		return condition{}
+	}
+	return condition{
+		sql: "(event_type ILIKE $1 OR new_state = $2 OR summary ILIKE $3)",
+		values: []any{
+			"%rollback%",
+			"rolled_back",
+			"%rollback%",
+		},
+	}
+}
+
+func filterUnmappedResources(enabled bool) condition {
+	if !enabled {
+		return condition{}
+	}
+	return condition{sql: "(service_id IS NULL OR service_id = '' OR environment_id IS NULL OR environment_id = '')"}
+}
+
+func filterDiscoveredResourceSearch(search string) condition {
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return condition{}
+	}
+	return condition{
+		sql:    "to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(namespace, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(external_id, '')) @@ plainto_tsquery('simple', $1)",
+		values: []any{search},
 	}
 }
 
@@ -727,12 +876,19 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+func normalizeNotFound(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
 func scanOrganization(row scanner) (types.Organization, error) {
 	var item types.Organization
 	var metadata []byte
 	err := row.Scan(&item.ID, &item.Name, &item.Slug, &item.Tier, &item.Mode, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
@@ -743,7 +899,7 @@ func scanProject(row scanner) (types.Project, error) {
 	var metadata []byte
 	err := row.Scan(&item.ID, &item.OrganizationID, &item.Name, &item.Slug, &item.Description, &item.AdoptionMode, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
@@ -755,7 +911,7 @@ func scanTeam(row scanner) (types.Team, error) {
 	var metadata []byte
 	err := row.Scan(&item.ID, &item.OrganizationID, &item.ProjectID, &item.Name, &item.Slug, &owners, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(owners, &item.OwnerUserIDs)
 	_ = json.Unmarshal(metadata, &item.Metadata)
@@ -771,7 +927,7 @@ func scanService(row scanner) (types.Service, error) {
 		&metadata, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
@@ -782,7 +938,7 @@ func scanEnvironment(row scanner) (types.Environment, error) {
 	var metadata []byte
 	err := row.Scan(&item.ID, &item.OrganizationID, &item.ProjectID, &item.Name, &item.Slug, &item.Type, &item.Region, &item.Production, &item.ComplianceZone, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
@@ -798,7 +954,7 @@ func scanChangeSet(row scanner) (types.ChangeSet, error) {
 		&item.HistoricalIncidentCount, &item.PoorRollbackHistory, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(changeTypes, &item.ChangeTypes)
 	_ = json.Unmarshal(metadata, &item.Metadata)
@@ -817,7 +973,7 @@ func scanRiskAssessment(row scanner) (types.RiskAssessment, error) {
 		&item.RecommendedDeploymentWindow, &guardrails, &metadata, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(explanation, &item.Explanation)
 	_ = json.Unmarshal(blastRadius, &item.BlastRadius)
@@ -841,7 +997,7 @@ func scanRolloutPlan(row scanner) (types.RolloutPlan, error) {
 		&guardrails, &steps, &explanation, &metadata, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(verificationSignals, &item.VerificationSignals)
 	_ = json.Unmarshal(rollbackConditions, &item.RollbackConditions)
@@ -863,7 +1019,7 @@ func scanAuditEvent(row scanner) (types.AuditEvent, error) {
 		&details, &metadata, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	item.OrganizationID = organizationID.String
 	item.ProjectID = projectID.String
@@ -875,16 +1031,72 @@ func scanAuditEvent(row scanner) (types.AuditEvent, error) {
 func scanIntegration(row scanner) (types.Integration, error) {
 	var item types.Integration
 	var organizationID sql.NullString
+	var lastTestedAt sql.NullTime
 	var lastSyncedAt sql.NullTime
+	var nextScheduledSyncAt sql.NullTime
+	var lastSyncAttemptedAt sql.NullTime
+	var lastSyncSucceededAt sql.NullTime
+	var lastSyncFailedAt sql.NullTime
+	var syncClaimedAt sql.NullTime
 	var capabilities []byte
 	var metadata []byte
-	err := row.Scan(&item.ID, &organizationID, &item.Name, &item.Kind, &item.Mode, &item.Status, &capabilities, &item.Description, &lastSyncedAt, &metadata, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(
+		&item.ID,
+		&organizationID,
+		&item.Name,
+		&item.Kind,
+		&item.InstanceKey,
+		&item.ScopeType,
+		&item.ScopeName,
+		&item.Mode,
+		&item.AuthStrategy,
+		&item.OnboardingStatus,
+		&item.Status,
+		&item.Enabled,
+		&item.ControlEnabled,
+		&item.ConnectionHealth,
+		&capabilities,
+		&item.Description,
+		&lastTestedAt,
+		&lastSyncedAt,
+		&item.LastError,
+		&item.ScheduleEnabled,
+		&item.ScheduleIntervalSeconds,
+		&item.SyncStaleAfterSeconds,
+		&nextScheduledSyncAt,
+		&lastSyncAttemptedAt,
+		&lastSyncSucceededAt,
+		&lastSyncFailedAt,
+		&syncClaimedAt,
+		&item.SyncConsecutiveFailures,
+		&metadata,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	item.OrganizationID = organizationID.String
+	if lastTestedAt.Valid {
+		item.LastTestedAt = &lastTestedAt.Time
+	}
 	if lastSyncedAt.Valid {
 		item.LastSyncedAt = &lastSyncedAt.Time
+	}
+	if nextScheduledSyncAt.Valid {
+		item.NextScheduledSyncAt = &nextScheduledSyncAt.Time
+	}
+	if lastSyncAttemptedAt.Valid {
+		item.LastSyncAttemptedAt = &lastSyncAttemptedAt.Time
+	}
+	if lastSyncSucceededAt.Valid {
+		item.LastSyncSucceededAt = &lastSyncSucceededAt.Time
+	}
+	if lastSyncFailedAt.Valid {
+		item.LastSyncFailedAt = &lastSyncFailedAt.Time
+	}
+	if syncClaimedAt.Valid {
+		item.SyncClaimedAt = &syncClaimedAt.Time
 	}
 	_ = json.Unmarshal(capabilities, &item.Capabilities)
 	_ = json.Unmarshal(metadata, &item.Metadata)
@@ -893,11 +1105,13 @@ func scanIntegration(row scanner) (types.Integration, error) {
 
 func scanUser(row scanner) (types.User, error) {
 	var item types.User
+	var organizationID sql.NullString
 	var metadata []byte
-	err := row.Scan(&item.ID, &item.OrganizationID, &item.Email, &item.DisplayName, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &organizationID, &item.Email, &item.DisplayName, &item.Status, &item.PasswordSalt, &item.PasswordHash, &item.PasswordIterations, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
+	item.OrganizationID = organizationID.String
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
 }
@@ -907,7 +1121,7 @@ func scanOrganizationMembership(row scanner) (types.OrganizationMembership, erro
 	var metadata []byte
 	err := row.Scan(&item.ID, &item.UserID, &item.OrganizationID, &item.Role, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
@@ -918,7 +1132,7 @@ func scanProjectMembership(row scanner) (types.ProjectMembership, error) {
 	var metadata []byte
 	err := row.Scan(&item.ID, &item.UserID, &item.OrganizationID, &item.ProjectID, &item.Role, &item.Status, &metadata, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
-		return item, err
+		return item, normalizeNotFound(err)
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil

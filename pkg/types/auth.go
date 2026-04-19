@@ -50,3 +50,15 @@ type APIToken struct {
 	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 }
+
+type BrowserSession struct {
+	BaseRecord
+	UserID         string     `json:"user_id"`
+	SessionHash    string     `json:"-"`
+	AuthMethod     string     `json:"auth_method,omitempty"`
+	AuthProviderID string     `json:"auth_provider_id,omitempty"`
+	AuthProvider   string     `json:"auth_provider,omitempty"`
+	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
+}

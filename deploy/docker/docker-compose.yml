@@ -7,23 +7,35 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - ccp-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d change_control_plane"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s
 
   redis:
     image: redis:7-alpine
     container_name: change-control-plane-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s
 
   nats:
     image: nats:2.10-alpine
     container_name: change-control-plane-nats
     command: ["-js"]
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "14222:4222"
+      - "18222:8222"
 
   api:
     build:
@@ -36,12 +48,18 @@ services:
       CCP_DB_DSN: postgres://postgres:postgres@postgres:5432/change_control_plane?sslmode=disable
       CCP_REDIS_ADDR: redis:6379
       CCP_NATS_URL: nats://nats:4222
+      CCP_ENABLE_PYTHON_INTELLIGENCE: "true"
+      CCP_PYTHON_EXECUTABLE: python3
+      CCP_PYTHON_WORKSPACE: /app/python
     depends_on:
-      - postgres
-      - redis
-      - nats
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
     ports:
-      - "8080:8080"
+      - "${CCP_DOCKER_API_HOST_PORT:-28080}:8080"
 
   worker:
     build:
@@ -52,8 +70,12 @@ services:
       CCP_DB_DSN: postgres://postgres:postgres@postgres:5432/change_control_plane?sslmode=disable
       CCP_REDIS_ADDR: redis:6379
       CCP_NATS_URL: nats://nats:4222
+      CCP_ENABLE_PYTHON_INTELLIGENCE: "true"
+      CCP_PYTHON_EXECUTABLE: python3
+      CCP_PYTHON_WORKSPACE: /app/python
     depends_on:
-      - api
+      api:
+        condition: service_started
 
 volumes:
   ccp-postgres:

@@ -8,5 +8,5 @@
     "lib": ["DOM", "ESNext"],
     "types": ["vite/client", "node"]
   },
-  "include": ["app/**/*.ts", "components/**/*.ts", "lib/**/*.ts", "vite.config.ts"]
+  "include": ["app/**/*.ts", "components/**/*.ts", "lib/**/*.ts", "e2e/**/*.ts", "vite.config.ts", "playwright.config.ts"]
 }

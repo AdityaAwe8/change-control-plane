@@ -72,7 +72,7 @@ func requiresApproval(assessment types.RiskAssessment, decisions []types.PolicyD
 		return true
 	}
 	for _, decision := range decisions {
-		if decision.Outcome == "require_approval" {
+		if decision.Outcome == "require_approval" || decision.Outcome == "require_manual_review" {
 			return true
 		}
 	}

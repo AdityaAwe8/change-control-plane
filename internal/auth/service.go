@@ -16,6 +16,8 @@ type IdentityStore interface {
 	GetServiceAccount(context.Context, string) (types.ServiceAccount, error)
 	GetAPITokenByPrefix(context.Context, string) (types.APIToken, error)
 	UpdateAPIToken(context.Context, types.APIToken) error
+	GetBrowserSessionByHash(context.Context, string) (types.BrowserSession, error)
+	UpdateBrowserSession(context.Context, types.BrowserSession) error
 }
 
 type Service struct {
@@ -50,6 +52,76 @@ func (s *Service) LoadIdentity(ctx context.Context, bearerToken, activeOrganizat
 	if err != nil {
 		return Identity{}, ErrUnauthorized
 	}
+	return s.loadUserIdentity(
+		ctx,
+		user,
+		claims.ActorType,
+		claims.AuthMethod,
+		claims.AuthProviderID,
+		claims.AuthProvider,
+		time.Unix(claims.IssuedAt, 0).UTC(),
+		time.Unix(claims.ExpiresAt, 0).UTC(),
+		activeOrganizationID,
+		"",
+		nil,
+	)
+}
+
+func (s *Service) LoadIdentityFromBrowserSession(ctx context.Context, rawSessionToken, activeOrganizationID string) (Identity, error) {
+	token := strings.TrimSpace(rawSessionToken)
+	if token == "" {
+		return Identity{}, ErrUnauthorized
+	}
+
+	session, err := s.store.GetBrowserSessionByHash(ctx, s.tokens.HashOpaqueToken(token))
+	if err != nil {
+		return Identity{}, ErrUnauthorized
+	}
+	if session.RevokedAt != nil {
+		return Identity{}, ErrUnauthorized
+	}
+	if time.Now().UTC().After(session.ExpiresAt) {
+		return Identity{}, ErrUnauthorized
+	}
+
+	user, err := s.store.GetUser(ctx, session.UserID)
+	if err != nil {
+		return Identity{}, ErrUnauthorized
+	}
+
+	now := time.Now().UTC()
+	if session.LastSeenAt == nil || session.LastSeenAt.Before(now.Add(-5*time.Minute)) {
+		session.LastSeenAt = &now
+		session.UpdatedAt = now
+		if err := s.store.UpdateBrowserSession(ctx, session); err != nil {
+			return Identity{}, err
+		}
+	}
+
+	return s.loadUserIdentity(
+		ctx,
+		user,
+		types.ActorTypeUser,
+		session.AuthMethod,
+		session.AuthProviderID,
+		session.AuthProvider,
+		session.CreatedAt.UTC(),
+		session.ExpiresAt.UTC(),
+		activeOrganizationID,
+		session.ID,
+		session.RevokedAt,
+	)
+}
+
+func (s *Service) loadUserIdentity(
+	ctx context.Context,
+	user types.User,
+	actorType types.ActorType,
+	authMethod, authProviderID, authProvider string,
+	issuedAt, expiresAt time.Time,
+	activeOrganizationID, browserSessionID string,
+	browserSessionRevokedAt *time.Time,
+) (Identity, error) {
 	orgMemberships, err := s.store.ListOrganizationMembershipsByUser(ctx, user.ID)
 	if err != nil {
 		return Identity{}, err
@@ -62,7 +134,14 @@ func (s *Service) LoadIdentity(ctx context.Context, bearerToken, activeOrganizat
 	identity := Identity{
 		Authenticated:           true,
 		ActorID:                 user.ID,
-		ActorType:               claims.ActorType,
+		ActorType:               actorType,
+		AuthMethod:              authMethod,
+		AuthProviderID:          authProviderID,
+		AuthProvider:            authProvider,
+		TokenIssuedAt:           issuedAt,
+		TokenExpiresAt:          expiresAt,
+		BrowserSessionID:        browserSessionID,
+		BrowserSessionRevokedAt: browserSessionRevokedAt,
 		User:                    user,
 		OrganizationMemberships: make(map[string]types.OrganizationMembership, len(orgMemberships)),
 		ProjectMemberships:      make(map[string]types.ProjectMembership, len(projectMemberships)),
@@ -83,7 +162,6 @@ func (s *Service) LoadIdentity(ctx context.Context, bearerToken, activeOrganizat
 		return Identity{}, err
 	}
 	identity.ActiveOrganizationID = resolvedOrganizationID
-
 	return identity, nil
 }
 
@@ -126,6 +204,8 @@ func (s *Service) loadMachineIdentity(ctx context.Context, rawToken, activeOrgan
 		Authenticated:           true,
 		ActorID:                 serviceAccount.ID,
 		ActorType:               types.ActorTypeServiceAccount,
+		AuthMethod:              "api_token",
+		TokenExpiresAt:          valueOrZeroTime(storedToken.ExpiresAt),
 		ServiceAccount:          serviceAccount,
 		OrganizationRoles:       map[string]string{serviceAccount.OrganizationID: serviceAccount.Role},
 		ProjectRoles:            map[string]string{},
@@ -139,6 +219,13 @@ func (s *Service) loadMachineIdentity(ctx context.Context, rawToken, activeOrgan
 	}
 	identity.ActiveOrganizationID = resolvedOrganizationID
 	return identity, nil
+}
+
+func valueOrZeroTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return value.UTC()
 }
 
 func resolveActiveOrganization(identity Identity, explicit string) (string, error) {

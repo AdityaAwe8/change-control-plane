@@ -23,6 +23,15 @@ The change intelligence engine is responsible for turning raw change metadata in
 - required guardrails
 - confidence and explanation trail
 
+## Current Implementation
+
+The current runtime uses a hybrid model:
+
+- Go owns the primary deterministic risk score and recommendation path.
+- Python provides supplemental explainable analytics through a subprocess boundary.
+- Python outputs are persisted in `risk_assessments.metadata` and `rollout_plans.metadata`.
+- If Python is unavailable, the deterministic Go baseline still succeeds and records that supplemental intelligence was unavailable.
+
 ## Phase 1 Design
 
 Phase 1 uses deterministic weighted rules with plain-language explanations. This gives teams:
@@ -31,6 +40,15 @@ Phase 1 uses deterministic weighted rules with plain-language explanations. This
 - fast iteration
 - policy compatibility
 - reliable baseline behavior
+
+The Python layer currently adds:
+
+- normalized risk-factor scoring
+- change clustering
+- historical-pattern summaries
+- confidence adjustments
+- rollout simulation notes
+- additional verification focus signals
 
 ## Future Extensions
 
