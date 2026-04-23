@@ -2,14 +2,23 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/load-local-env.sh"
+
 REPORT_DIR="${CCP_RELEASE_REPORT_DIR:-$ROOT_DIR/.tmp/release-readiness}"
 LOG_DIR="$REPORT_DIR/logs"
 REPORT_PATH="${CCP_RELEASE_REPORT_PATH:-$REPORT_DIR/release-readiness-report.md}"
 REFERENCE_PILOT_REPORT="${CCP_REFERENCE_PILOT_REPORT_PATH:-$ROOT_DIR/.tmp/reference-pilot/reference-pilot-report.json}"
 LIVE_PROOF_REPORT="${CCP_LIVE_PROOF_REPORT_PATH:-$ROOT_DIR/.tmp/live-proof/live-proof-report.json}"
+LIVE_PROOF_PREFLIGHT_REPORT="${CCP_LIVE_PROOF_PREFLIGHT_REPORT_PATH:-$ROOT_DIR/.tmp/live-proof/live-proof-preflight.json}"
+LIVE_PROOF_CHECKLIST="${CCP_LIVE_PROOF_CHECKLIST_PATH:-$ROOT_DIR/.tmp/live-proof/live-proof-operator-checklist.md}"
 ALLOW_PROOF_GAPS_RAW="${CCP_RELEASE_ALLOW_PROOF_GAPS:-false}"
+export GOCACHE="${GOCACHE:-$ROOT_DIR/.tmp/go-build}"
+export GOTMPDIR="${GOTMPDIR:-$ROOT_DIR/.tmp/go-tmp}"
 
 mkdir -p "$LOG_DIR"
+mkdir -p "$GOCACHE" "$GOTMPDIR"
 find "$LOG_DIR" -type f -name '*.log' -delete 2>/dev/null || true
 cd "$ROOT_DIR"
 
@@ -69,7 +78,9 @@ render_report() {
 		printf -- '- Overall status: `%s`\n' "$overall_status"
 		printf -- '- Proof-gap override: `%s`\n' "$ALLOW_PROOF_GAPS"
 		printf -- '- Reference pilot artifact: `%s`\n' "${REFERENCE_PILOT_REPORT#$ROOT_DIR/}"
-		printf -- '- Live proof artifact: `%s`\n\n' "${LIVE_PROOF_REPORT#$ROOT_DIR/}"
+		printf -- '- Live proof artifact: `%s`\n' "${LIVE_PROOF_REPORT#$ROOT_DIR/}"
+		printf -- '- Live proof preflight: `%s`\n' "${LIVE_PROOF_PREFLIGHT_REPORT#$ROOT_DIR/}"
+		printf -- '- Live proof checklist: `%s`\n\n' "${LIVE_PROOF_CHECKLIST#$ROOT_DIR/}"
 		printf '## Checks\n\n'
 		printf '| Status | Category | Check | Detail |\n'
 		printf '| --- | --- | --- | --- |\n'
@@ -101,6 +112,7 @@ render_report() {
 		printf '\n## Notes\n\n'
 		printf -- '- This gate does not itself execute real hosted/customer environments; it validates preserved proof artifacts and local/harness evidence.\n'
 		printf -- '- The gate now also scans the generated release report, its supporting logs, and any preserved proof artifacts for configured secret-backed environment values without printing those secret values back out.\n'
+		printf -- '- The gate also generates a secret-safe live-proof preflight report plus operator checklist so missing hosted/customer evidence leaves behind exact next-step inputs instead of only a missing-artifact warning.\n'
 		printf -- '- Set `CCP_RELEASE_ALLOW_PROOF_GAPS=true` to dry-run the gate before reference-pilot or external proof bundles have been captured.\n'
 		printf -- '- Dedicated browser interaction proof still lives in the existing Playwright/CI path; this gate reruns web typecheck/build and the highest-value backend/contract/harness checks.\n'
 	} >"$REPORT_PATH"
@@ -132,7 +144,11 @@ validate_saved_report() {
 	local log_path="$LOG_DIR/${slug}.log"
 
 	if [[ ! -f "$report_path" ]]; then
-		record_gap "$category" "$label" "missing saved proof artifact at ${report_path#$ROOT_DIR/}"
+		if [[ "$category" == "artifact" && "$label" == "External live proof artifact" ]]; then
+			record_gap "$category" "$label" "missing saved proof artifact at ${report_path#$ROOT_DIR/}; generated checklist at ${LIVE_PROOF_CHECKLIST#$ROOT_DIR/} shows the exact remaining operator inputs"
+		else
+			record_gap "$category" "$label" "missing saved proof artifact at ${report_path#$ROOT_DIR/}"
+		fi
 		return
 	fi
 
@@ -142,6 +158,25 @@ validate_saved_report() {
 	else
 		local exit_code=$?
 		record_blocker "$category" "$label" "artifact validation failed with exit ${exit_code}; see $(basename "$log_path")"
+	fi
+}
+
+run_live_preflight() {
+	local log_path="$LOG_DIR/live-proof-preflight.log"
+	printf 'Generating live-proof preflight checklist\n' >&2
+	if make proof-live-preflight >"$log_path" 2>&1; then
+		if [[ ! -f "$LIVE_PROOF_PREFLIGHT_REPORT" || ! -f "$LIVE_PROOF_CHECKLIST" ]]; then
+			record_blocker "operator-proof" "Live proof preflight checklist" "preflight command succeeded but did not leave both ${LIVE_PROOF_PREFLIGHT_REPORT#$ROOT_DIR/} and ${LIVE_PROOF_CHECKLIST#$ROOT_DIR/}; see $(basename "$log_path")"
+			return
+		fi
+		if grep -Eq '"ready"[[:space:]]*:[[:space:]]*true' "$LIVE_PROOF_PREFLIGHT_REPORT"; then
+			record_success "operator-proof" "Live proof preflight checklist" "live-proof preflight reports ready=true and wrote ${LIVE_PROOF_CHECKLIST#$ROOT_DIR/}; see $(basename "$log_path")"
+		else
+			record_warning "operator-proof" "Live proof preflight checklist" "live-proof preflight reports ready=false; see ${LIVE_PROOF_CHECKLIST#$ROOT_DIR/} and $(basename "$log_path") for exact missing operator inputs"
+		fi
+	else
+		local exit_code=$?
+		record_blocker "operator-proof" "Live proof preflight checklist" "preflight command failed with exit ${exit_code}; see $(basename "$log_path")"
 	fi
 }
 
@@ -155,6 +190,7 @@ run_check "local" "Web build" make web-build
 
 run_check "harness" "OpenAPI contract proof" make proof-contract
 run_check "harness" "Provider harness proof" make proof-harness
+run_live_preflight
 
 validate_saved_report "artifact" "Reference pilot proof artifact" "$REFERENCE_PILOT_REPORT" "reference-pilot-validate" ./scripts/reference-pilot-validate.sh
 live_proof_present=false
@@ -189,6 +225,12 @@ if [[ -f "$REFERENCE_PILOT_REPORT" ]]; then
 fi
 if [[ -f "$LIVE_PROOF_REPORT" ]]; then
 	artifact_safety_args+=(--path "$LIVE_PROOF_REPORT")
+fi
+if [[ -f "$LIVE_PROOF_PREFLIGHT_REPORT" ]]; then
+	artifact_safety_args+=(--path "$LIVE_PROOF_PREFLIGHT_REPORT")
+fi
+if [[ -f "$LIVE_PROOF_CHECKLIST" ]]; then
+	artifact_safety_args+=(--path "$LIVE_PROOF_CHECKLIST")
 fi
 printf 'Scanning release artifacts for secret leakage\n' >&2
 if go run "${artifact_safety_args[@]}" >"$artifact_safety_log" 2>&1; then

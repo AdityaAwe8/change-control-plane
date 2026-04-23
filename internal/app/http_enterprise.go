@@ -100,6 +100,32 @@ func (s *HTTPServer) testIdentityProvider(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, types.ItemResponse[types.IdentityProviderTestResult]{Data: result})
 }
 
+func (s *HTTPServer) listBrowserSessions(w http.ResponseWriter, r *http.Request) {
+	result, err := s.app.ListBrowserSessions(r.Context(), storage.BrowserSessionQuery{
+		UserID: strings.TrimSpace(r.URL.Query().Get("user_id")),
+		Status: strings.TrimSpace(r.URL.Query().Get("status")),
+		Limit:  parseIntQuery(r, "limit", 50),
+		Offset: parseIntQuery(r, "offset", 0),
+	})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, types.ListResponse[types.BrowserSessionInfo]{Data: result})
+}
+
+func (s *HTTPServer) revokeBrowserSessionByID(w http.ResponseWriter, r *http.Request) {
+	result, err := s.app.RevokeBrowserSessionByID(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	if result.Current {
+		s.clearBrowserSessionCookie(w)
+	}
+	writeJSON(w, http.StatusOK, types.ItemResponse[types.BrowserSessionInfo]{Data: result})
+}
+
 func (s *HTTPServer) getWebhookRegistration(w http.ResponseWriter, r *http.Request) {
 	result, err := s.app.GetWebhookRegistration(r.Context(), r.PathValue("id"))
 	if err != nil {

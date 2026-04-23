@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync/atomic"
@@ -28,7 +27,7 @@ func TestGitHubIntegrationSyncAndWebhookIngestsMappedChangeSet(t *testing.T) {
 	t.Setenv("CCP_GITHUB_TOKEN_TEST", "ghs_test")
 	t.Setenv("CCP_GITHUB_WEBHOOK_SECRET_TEST", "hook-secret")
 
-	githubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	githubServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/orgs/acme":
 			_ = json.NewEncoder(w).Encode(map[string]any{"login": "acme"})
@@ -65,7 +64,7 @@ func TestGitHubIntegrationSyncAndWebhookIngestsMappedChangeSet(t *testing.T) {
 	defer githubServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -216,7 +215,7 @@ func TestGitLabIntegrationSyncAndWebhookIngestsMappedChangeSet(t *testing.T) {
 	t.Setenv("CCP_GITLAB_TOKEN_TEST", "glpat_test")
 	t.Setenv("CCP_GITLAB_WEBHOOK_SECRET_TEST", "gitlab-hook-secret")
 
-	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gitlabServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("PRIVATE-TOKEN") != "glpat_test" {
 			t.Fatalf("expected gitlab private token, got %q", r.Header.Get("PRIVATE-TOKEN"))
 		}
@@ -278,7 +277,7 @@ func TestGitLabIntegrationSyncAndWebhookIngestsMappedChangeSet(t *testing.T) {
 	defer gitlabServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -451,7 +450,7 @@ func TestGitHubAppOnboardingSupportsMultiInstanceSync(t *testing.T) {
 	t.Setenv("CCP_GITHUB_APP_PRIVATE_KEY_TEST", marshalRSAPrivateKeyPEM(t))
 	t.Setenv("CCP_GITHUB_WEBHOOK_SECRET_TEST", "hook-secret")
 
-	githubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	githubServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/app/installations/987654/access_tokens":
 			if r.Method != http.MethodPost {
@@ -497,7 +496,7 @@ func TestGitHubAppOnboardingSupportsMultiInstanceSync(t *testing.T) {
 	cfg := common.LoadConfig()
 	cfg.APIBaseURL = "http://control-plane.local"
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -577,7 +576,7 @@ func TestKubernetesAndPrometheusIntegrationRunsExposePilotEvidence(t *testing.T)
 	t.Setenv("CCP_KUBE_TOKEN_TEST", "kube-token")
 	t.Setenv("CCP_PROM_TOKEN_TEST", "prom-token")
 
-	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/apis/apps/v1/namespaces/prod/deployments/checkout":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -611,7 +610,7 @@ func TestKubernetesAndPrometheusIntegrationRunsExposePilotEvidence(t *testing.T)
 	}))
 	defer kubeServer.Close()
 
-	promServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	promServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/query_range" {
 			t.Fatalf("unexpected prometheus path %s", r.URL.Path)
 		}
@@ -631,7 +630,7 @@ func TestKubernetesAndPrometheusIntegrationRunsExposePilotEvidence(t *testing.T)
 	defer promServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -712,7 +711,7 @@ func TestAdvisoryKubernetesIntegrationDoesNotExecuteControlActions(t *testing.T)
 
 	var getCalls atomic.Int32
 	var mutatingCalls atomic.Int32
-	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			getCalls.Add(1)
@@ -735,7 +734,7 @@ func TestAdvisoryKubernetesIntegrationDoesNotExecuteControlActions(t *testing.T)
 	defer kubeServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -878,7 +877,7 @@ func TestAdvisoryKubernetesIntegrationDoesNotExecuteControlActions(t *testing.T)
 func TestDiscoveredResourcesCanBeMappedAndSummarized(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 
-	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/apis/apps/v1/namespaces/prod/deployments/checkout":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -913,7 +912,7 @@ func TestDiscoveredResourcesCanBeMappedAndSummarized(t *testing.T) {
 	defer kubeServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1010,7 +1009,7 @@ func TestKubernetesSyncMarksMissingWorkloadsAfterInventoryDisappears(t *testing.
 	t.Setenv("CCP_AUTH_MODE", "dev")
 
 	var stage atomic.Int32
-	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/apis/apps/v1/namespaces/prod/deployments/gateway":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1047,7 +1046,7 @@ func TestKubernetesSyncMarksMissingWorkloadsAfterInventoryDisappears(t *testing.
 	defer kubeServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1143,7 +1142,7 @@ func TestKubernetesSyncMarksMissingWorkloadsAfterInventoryDisappears(t *testing.
 func TestPrometheusSyncSurfacesWarningWhenNoSamplesAreReturned(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 
-	promServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	promServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/query_range" {
 			t.Fatalf("unexpected prometheus path %s", r.URL.Path)
 		}
@@ -1158,7 +1157,7 @@ func TestPrometheusSyncSurfacesWarningWhenNoSamplesAreReturned(t *testing.T) {
 	defer promServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1232,7 +1231,7 @@ func TestGitLabWebhookRegistrationSyncRepairsExistingHostedWebhook(t *testing.T)
 
 	var hookID int
 	var callbackURL string
-	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gitlabServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("PRIVATE-TOKEN") != "glpat_test" {
 			t.Fatalf("expected gitlab private token header, got %q", r.Header.Get("PRIVATE-TOKEN"))
 		}
@@ -1291,7 +1290,7 @@ func TestGitLabWebhookRegistrationSyncRepairsExistingHostedWebhook(t *testing.T)
 	defer gitlabServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1358,7 +1357,7 @@ func TestGitHubAppWebhookRegistrationSyncRepairsExistingHostedWebhook(t *testing
 
 	var hookID int
 	var callbackURL string
-	githubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	githubServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/app/installations/987654/access_tokens":
 			if r.Method != http.MethodPost {
@@ -1432,7 +1431,7 @@ func TestGitHubAppWebhookRegistrationSyncRepairsExistingHostedWebhook(t *testing
 	cfg := common.LoadConfig()
 	cfg.APIBaseURL = "http://control-plane.local"
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1521,7 +1520,7 @@ func TestKubernetesAndPrometheusIntegrationRoutesHonorConfiguredAuthHeadersAndPa
 	t.Setenv("CCP_PROM_TOKEN_TEST", "prom-secret")
 
 	var kubeCalls atomic.Int32
-	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kubeCalls.Add(1)
 		if got := r.Header.Get("Authorization"); got != "Bearer kube-secret" {
 			t.Fatalf("expected kubernetes bearer token header, got %q", got)
@@ -1544,7 +1543,7 @@ func TestKubernetesAndPrometheusIntegrationRoutesHonorConfiguredAuthHeadersAndPa
 	defer kubeServer.Close()
 
 	var promCalls atomic.Int32
-	promServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	promServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		promCalls.Add(1)
 		if got := r.Header.Get("Authorization"); got != "Bearer prom-secret" {
 			t.Fatalf("expected prometheus bearer token header, got %q", got)
@@ -1568,7 +1567,7 @@ func TestKubernetesAndPrometheusIntegrationRoutesHonorConfiguredAuthHeadersAndPa
 	defer promServer.Close()
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1642,7 +1641,7 @@ func TestIntegrationMutationRoutesEnforceScopeAndRBAC(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

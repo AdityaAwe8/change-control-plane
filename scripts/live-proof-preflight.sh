@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${ROOT_DIR}/.tmp/live-proof"
-REPORT_PATH="${STATE_DIR}/live-proof-report.json"
 PREFLIGHT_REPORT_PATH="${STATE_DIR}/live-proof-preflight.json"
 CHECKLIST_PATH="${STATE_DIR}/live-proof-operator-checklist.md"
 
@@ -13,12 +12,11 @@ source "${ROOT_DIR}/scripts/load-local-env.sh"
 mkdir -p "${STATE_DIR}"
 
 go run ./cmd/live-proof-verify \
+  --preflight-only \
   --preflight-report "${PREFLIGHT_REPORT_PATH}" \
   --operator-checklist "${CHECKLIST_PATH}" \
-  --report "${REPORT_PATH}" \
   "$@"
 
 echo
-echo "Live proof report written to ${REPORT_PATH}"
 echo "Live proof preflight report written to ${PREFLIGHT_REPORT_PATH}"
 echo "Live proof operator checklist written to ${CHECKLIST_PATH}"

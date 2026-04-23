@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -86,6 +85,8 @@ func TestOpenAPISchemasStayAlignedWithHighValueGoTypes(t *testing.T) {
 		{schema: "SignalSnapshot", value: types.SignalSnapshot{}},
 		{schema: "RolloutExecutionRuntimeSummary", value: types.RolloutExecutionRuntimeSummary{}},
 		{schema: "RolloutExecutionDetail", value: types.RolloutExecutionDetail{}},
+		{schema: "RolloutEvidencePackSummary", value: types.RolloutEvidencePackSummary{}},
+		{schema: "RolloutEvidencePack", value: types.RolloutEvidencePack{}},
 		{schema: "IdentityProvider", value: types.IdentityProvider{}},
 		{schema: "OutboxEvent", value: types.OutboxEvent{}},
 	}
@@ -101,7 +102,7 @@ func TestOpenAPIHighValueRuntimeResponsesMatchDocumentedSchemas(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	t.Setenv("CCP_KUBE_TOKEN_TEST", "kube-secret")
 
-	kubeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer kube-secret" {
 			t.Fatalf("expected kubernetes bearer token header, got %q", got)
 		}
@@ -140,7 +141,7 @@ func TestOpenAPIHighValueRuntimeResponsesMatchDocumentedSchemas(t *testing.T) {
 
 	doc := loadOpenAPIDocument(t)
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -241,6 +242,9 @@ func TestOpenAPIHighValueRuntimeResponsesMatchDocumentedSchemas(t *testing.T) {
 
 	detailBody := doAuthenticatedJSON(t, http.MethodGet, server.URL+"/api/v1/rollout-executions/"+executionID, nil, admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
 	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/rollout-executions/{id}", http.MethodGet, http.StatusOK, detailBody)
+
+	evidenceBody := doAuthenticatedJSON(t, http.MethodGet, server.URL+"/api/v1/rollout-executions/"+executionID+"/evidence-pack", nil, admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
+	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/rollout-executions/{id}/evidence-pack", http.MethodGet, http.StatusOK, evidenceBody)
 
 	timelineBody := doAuthenticatedJSON(t, http.MethodGet, server.URL+"/api/v1/rollout-executions/"+executionID+"/timeline", nil, admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
 	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/rollout-executions/{id}/timeline", http.MethodGet, http.StatusOK, timelineBody)
@@ -373,7 +377,7 @@ func TestOpenAPICatalogAndGovernanceRuntimeResponsesMatchDocumentedSchemas(t *te
 
 	doc := loadOpenAPIDocument(t)
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

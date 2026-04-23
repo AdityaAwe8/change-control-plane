@@ -2,6 +2,7 @@ import { RouteDefinition, routes } from "../app/router";
 import {
   APIToken,
   AuditEvent,
+  BrowserSessionInfo,
   BasicMetrics,
   CatalogSummary,
   ChangeSet,
@@ -99,6 +100,7 @@ const EMPTY_SYNC_RUNS: Record<string, IntegrationSyncRun[]> = {};
 const EMPTY_WEBHOOK_REGISTRATIONS: Record<string, WebhookRegistration | null> = {};
 const EMPTY_IDENTITY_PROVIDERS: IdentityProvider[] = [];
 const EMPTY_OUTBOX_EVENTS: OutboxEvent[] = [];
+const EMPTY_BROWSER_SESSIONS: BrowserSessionInfo[] = [];
 const EMPTY_SERVICE_ACCOUNTS: ServiceAccount[] = [];
 const EMPTY_SERVICE_ACCOUNT_TOKENS: Record<string, APIToken[]> = {};
 
@@ -323,6 +325,7 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
   const serviceAccountTokens = serviceAccountTokensForState(state);
   const identityProviders = identityProvidersForState(state);
   const outboxEvents = outboxEventsForState(state);
+  const browserSessions = browserSessionsForState(state);
   const integrationSyncRuns = integrationSyncRunsForState(state);
   const webhookRegistrations = webhookRegistrationsForState(state);
   const metrics = metricsForState(state);
@@ -1520,6 +1523,7 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
             <div class="highlight-grid">
               ${infoCard("Current Session", enterpriseSessionSummary(state))}
               ${infoCard("Identity Providers", `${identityProviders.length} configured, ${state.publicIdentityProviders.length} public sign-in option${state.publicIdentityProviders.length === 1 ? "" : "s"}`)}
+              ${infoCard("Browser Sessions", `${activeBrowserSessionCount(state)} active, ${revokedBrowserSessionCount(state)} revoked or expired in the current diagnostic window`)}
               ${infoCard("Webhook Diagnostics", `${registeredWebhookCount(state)} registered, ${failingWebhookCount(state)} with delivery or registration issues`)}
               ${infoCard("Durable Events", `${pendingOutboxCount(state)} pending, ${processedOutboxCount(state)} processed in the current diagnostic window`)}
             </div>
@@ -1598,6 +1602,27 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
                 </div>
               `
               : emptyState("No identity providers configured", "Create an OIDC provider to enable enterprise sign-in alongside the existing password or development flows.")}
+          </article>
+          <article class="surface panel wide">
+            <div class="panel-header">
+              <h3>Browser Session Administration</h3>
+              <p>Organization administrators can inspect active browser sessions, confirm how each user authenticated, and revoke stale or risky sessions without touching machine tokens.</p>
+            </div>
+            ${browserSessions.length > 0
+              ? table(
+                  ["User", "Method", "Provider", "Status", "Last Seen", "Expires", "Current", "Action"],
+                  browserSessions.map((session) => [
+                    session.user_display_name || session.user_email,
+                    session.auth_method || "session",
+                    session.auth_provider || session.auth_provider_id || "direct",
+                    session.status,
+                    formatTimestamp(session.last_seen_at),
+                    formatTimestamp(session.expires_at),
+                    session.current ? "Yes" : "No",
+                    browserSessionActionCell(session, canAdmin)
+                  ])
+                )
+              : emptyState("No browser sessions yet", "Once users sign in through password, dev bootstrap, or enterprise OIDC, their persisted browser sessions will show up here for admin review.")}
           </article>
           <article class="surface panel wide">
             <div class="panel-header">
@@ -2353,6 +2378,10 @@ function outboxEventsForState(state: ControlPlaneState) {
   return state.enterprisePage.data?.outboxEvents || EMPTY_OUTBOX_EVENTS;
 }
 
+function browserSessionsForState(state: ControlPlaneState) {
+  return state.enterprisePage.data?.browserSessions || EMPTY_BROWSER_SESSIONS;
+}
+
 function serviceAccountsForState(state: ControlPlaneState) {
   return state.settingsPage.data?.serviceAccounts || EMPTY_SERVICE_ACCOUNTS;
 }
@@ -2589,6 +2618,14 @@ function enterpriseSessionSummary(state: ControlPlaneState): string {
   return `${state.session.email || state.session.actor} via ${provider}${expiry}`;
 }
 
+function activeBrowserSessionCount(state: ControlPlaneState): number {
+  return browserSessionsForState(state).filter((session) => session.status === "active").length;
+}
+
+function revokedBrowserSessionCount(state: ControlPlaneState): number {
+  return browserSessionsForState(state).filter((session) => session.status !== "active").length;
+}
+
 function registeredWebhookCount(state: ControlPlaneState): number {
   return Object.values(webhookRegistrationsForState(state)).filter((registration) => registration?.status === "registered").length;
 }
@@ -2603,6 +2640,19 @@ function pendingOutboxCount(state: ControlPlaneState): number {
 
 function processedOutboxCount(state: ControlPlaneState): number {
   return outboxEventsForState(state).filter((event) => event.status === "processed").length;
+}
+
+function browserSessionActionCell(session: BrowserSessionInfo, canAdmin: boolean): string {
+  if (!canAdmin) {
+    return "Read-only";
+  }
+  if (session.status !== "active") {
+    return "No action";
+  }
+  if (session.current) {
+    return "Current session";
+  }
+  return `<button class="action ghost revoke-browser-session-button" data-browser-session-id="${session.id}">Revoke</button>`;
 }
 
 function estimateServiceMonthlyCost(service: Service, productionEnvironmentCount: number): number {

@@ -54,6 +54,43 @@ type liveProofReport struct {
 	CoverageSummary            types.CoverageSummary              `json:"coverage_summary"`
 }
 
+type liveProofPreflightReport struct {
+	Profile          string                      `json:"profile"`
+	GeneratedAt      string                      `json:"generated_at"`
+	SelectedSCMKind  string                      `json:"selected_scm_kind"`
+	EnvironmentClass string                      `json:"environment_class"`
+	Ready            bool                        `json:"ready"`
+	Common           []liveProofRequirement      `json:"common,omitempty"`
+	GitLab           []liveProofRequirement      `json:"gitlab,omitempty"`
+	GitHub           []liveProofRequirement      `json:"github,omitempty"`
+	Kubernetes       []liveProofRequirement      `json:"kubernetes,omitempty"`
+	Prometheus       []liveProofRequirement      `json:"prometheus,omitempty"`
+	Routing          liveProofRoutingExpectation `json:"routing"`
+	MissingInputs    []string                    `json:"missing_inputs,omitempty"`
+	InvalidInputs    []string                    `json:"invalid_inputs,omitempty"`
+	Warnings         []string                    `json:"warnings,omitempty"`
+	OperatorSteps    []string                    `json:"operator_steps,omitempty"`
+}
+
+type liveProofRequirement struct {
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Required    bool   `json:"required"`
+	Configured  bool   `json:"configured"`
+	Summary     string `json:"summary,omitempty"`
+	Description string `json:"description"`
+}
+
+type liveProofRoutingExpectation struct {
+	ControlPlaneAPI           liveProofEndpointSummary `json:"control_plane_api"`
+	GitHubCallbackURL         string                   `json:"github_callback_url,omitempty"`
+	GitHubWebhookURLPattern   string                   `json:"github_webhook_url_pattern,omitempty"`
+	GitLabWebhookURLPattern   string                   `json:"gitlab_webhook_url_pattern,omitempty"`
+	SelectedSCMWebhookPattern string                   `json:"selected_scm_webhook_url_pattern,omitempty"`
+	SelectedSCMReachability   string                   `json:"selected_scm_reachability,omitempty"`
+	Notes                     []string                 `json:"notes,omitempty"`
+}
+
 type liveProofConfigSummary struct {
 	APIBaseURL liveProofEndpointSummary       `json:"api_base_url"`
 	SCM        liveProofProviderConfigSummary `json:"scm"`
@@ -132,6 +169,7 @@ type liveProofInput struct {
 
 const (
 	proofProfileLive           = "live"
+	proofProfileLivePreflight  = "live_preflight"
 	proofEnvironmentHostedLike = "hosted_like"
 	proofEnvironmentCustomer   = "customer_environment"
 	proofEnvironmentHostedSaaS = "hosted_saas"
@@ -168,6 +206,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	environmentClass := flags.String("environment-class", valueOrDefault("CCP_LIVE_PROOF_ENVIRONMENT_CLASS", proofEnvironmentHostedLike), "proof environment class: hosted_like, customer_environment, or hosted_saas")
 	reportPath := flags.String("report", valueOrDefault("CCP_LIVE_PROOF_REPORT", ""), "optional path to write the proof report JSON")
 	validateReportPath := flags.String("validate-report", valueOrDefault("CCP_LIVE_PROOF_VALIDATE_REPORT", ""), "validate an existing proof report JSON and print the normalized result")
+	preflightOnly := flags.Bool("preflight-only", false, "render a live-proof preflight summary without contacting external systems")
+	preflightReportPath := flags.String("preflight-report", valueOrDefault("CCP_LIVE_PROOF_PREFLIGHT_REPORT", ""), "optional path to write the live-proof preflight report JSON")
+	operatorChecklistPath := flags.String("operator-checklist", valueOrDefault("CCP_LIVE_PROOF_OPERATOR_CHECKLIST", ""), "optional path to write the operator-facing live-proof checklist markdown")
 
 	gitlabBaseURL := flags.String("gitlab-base-url", valueOrDefault("CCP_LIVE_PROOF_GITLAB_BASE_URL", "https://gitlab.com/api/v4"), "gitlab api base url")
 	gitlabGroup := flags.String("gitlab-group", valueOrDefault("CCP_LIVE_PROOF_GITLAB_GROUP", ""), "gitlab group scope")
@@ -253,6 +294,38 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		PrometheusSeverity:     *prometheusSeverity,
 		PrometheusWindowSecs:   *prometheusWindowSeconds,
 		PrometheusStepSecs:     *prometheusStepSeconds,
+	}
+	preflight := buildLiveProofPreflightReport(input)
+	if err := maybeWriteLiveProofPreflightArtifacts(preflight, *preflightReportPath, *operatorChecklistPath); err != nil {
+		fmt.Fprintf(stderr, "write preflight artifacts failed: %v\n", err)
+		return 1
+	}
+	if *preflightOnly {
+		body, err := json.MarshalIndent(preflight, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "marshal preflight failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stderr, "[proof:preflight] ready=%t selected_scm_kind=%s missing=%d invalid=%d warnings=%d\n", preflight.Ready, preflight.SelectedSCMKind, len(preflight.MissingInputs), len(preflight.InvalidInputs), len(preflight.Warnings))
+		if strings.TrimSpace(*operatorChecklistPath) != "" {
+			fmt.Fprintf(stderr, "[proof:preflight] operator checklist written to %s\n", *operatorChecklistPath)
+		}
+		_, _ = stdout.Write(append(body, '\n'))
+		return 0
+	}
+
+	if !preflight.Ready {
+		fmt.Fprintln(stderr, "proof preflight is not ready")
+		for _, item := range preflight.InvalidInputs {
+			fmt.Fprintf(stderr, "- invalid: %s\n", item)
+		}
+		for _, item := range preflight.MissingInputs {
+			fmt.Fprintf(stderr, "- missing: %s\n", item)
+		}
+		if strings.TrimSpace(*operatorChecklistPath) != "" {
+			fmt.Fprintf(stderr, "operator checklist written to %s\n", *operatorChecklistPath)
+		}
+		return 1
 	}
 	configSummary := buildLiveProofConfigSummary(input)
 	preflightChecks, preflightWarnings, err := validateLiveProofInput(input)
@@ -789,6 +862,480 @@ func validateLiveProofReport(report liveProofReport) error {
 		return fmt.Errorf("evidence_summary is required")
 	}
 	return nil
+}
+
+func buildLiveProofPreflightReport(input liveProofInput) liveProofPreflightReport {
+	selectedSCMKind := strings.ToLower(strings.TrimSpace(input.SCMKind))
+	normalizedEnvironmentClass := normalizeProofEnvironmentClass(input.EnvironmentClass)
+	report := liveProofPreflightReport{
+		Profile:          proofProfileLivePreflight,
+		GeneratedAt:      time.Now().UTC().Format(time.RFC3339),
+		SelectedSCMKind:  selectedSCMKind,
+		EnvironmentClass: strings.TrimSpace(input.EnvironmentClass),
+	}
+	if normalizedEnvironmentClass != "" {
+		report.EnvironmentClass = normalizedEnvironmentClass
+	} else {
+		addPreflightInvalid(&report, fmt.Sprintf("environment-class must be one of %s, %s, or %s", proofEnvironmentHostedLike, proofEnvironmentCustomer, proofEnvironmentHostedSaaS))
+	}
+	report.Routing = buildLiveProofRoutingExpectation(input, selectedSCMKind)
+
+	report.Common = append(report.Common,
+		requirementForEndpoint("CCP_LIVE_PROOF_API_BASE_URL", true, input.APIBaseURL, "Control-plane API base URL that the proof runner authenticates against."),
+		requirementForValue("CCP_LIVE_PROOF_ADMIN_EMAIL", true, strings.TrimSpace(valueOrDefault("CCP_LIVE_PROOF_ADMIN_EMAIL", "admin@changecontrolplane.local")) != "", "configured", "Admin email for the operator account used during proof."),
+		requirementForValue("CCP_LIVE_PROOF_ADMIN_PASSWORD", true, strings.TrimSpace(valueOrDefault("CCP_LIVE_PROOF_ADMIN_PASSWORD", "ChangeMe123!")) != "", "configured without echoing the secret", "Admin password for the operator account used during proof."),
+	)
+	validateRequiredEndpoint(&report, "CCP_LIVE_PROOF_API_BASE_URL", input.APIBaseURL)
+
+	report.GitLab = append(report.GitLab,
+		requirementForEndpoint("CCP_LIVE_PROOF_GITLAB_BASE_URL", true, input.GitLabBaseURL, "GitLab API base URL for hosted or self-managed proof."),
+		requirementForValue("CCP_LIVE_PROOF_GITLAB_GROUP", true, strings.TrimSpace(input.GitLabGroup) != "", summarizeValuePresence(input.GitLabGroup), "GitLab group scope used for repository discovery and webhook registration."),
+		requirementForSecretEnvPointer("CCP_LIVE_PROOF_GITLAB_TOKEN_ENV", true, input.GitLabTokenEnv, "GitLab access token env name with group discovery and webhook permissions."),
+		requirementForSecretEnvPointer("CCP_LIVE_PROOF_GITLAB_WEBHOOK_SECRET_ENV", true, input.GitLabWebhookSecretEnv, "GitLab webhook secret env name used for signed webhook verification."),
+	)
+
+	report.GitHub = append(report.GitHub,
+		requirementForEndpoint("CCP_LIVE_PROOF_GITHUB_API_BASE_URL", true, input.GitHubBaseURL, "GitHub API base URL for the selected owner or organization."),
+		requirementForEndpoint("CCP_LIVE_PROOF_GITHUB_WEB_BASE_URL", true, input.GitHubWebBaseURL, "GitHub web base URL used to generate the operator-facing authorize URL."),
+		requirementForValue("CCP_LIVE_PROOF_GITHUB_OWNER", true, strings.TrimSpace(input.GitHubOwner) != "", summarizeValuePresence(input.GitHubOwner), "GitHub owner or organization that hosts the repositories under proof."),
+		requirementForValue("CCP_LIVE_PROOF_GITHUB_APP_ID", true, strings.TrimSpace(input.GitHubAppID) != "", summarizeValuePresence(input.GitHubAppID), "GitHub App id used for installation-token exchange."),
+		requirementForValue("CCP_LIVE_PROOF_GITHUB_APP_SLUG", true, strings.TrimSpace(input.GitHubAppSlug) != "", summarizeValuePresence(input.GitHubAppSlug), "GitHub App slug used for onboarding and reconciliation."),
+		requirementForSecretEnvPointer("CCP_LIVE_PROOF_GITHUB_PRIVATE_KEY_ENV", true, input.GitHubPrivateKeyEnv, "GitHub App private-key env name used to mint installation tokens."),
+		requirementForSecretEnvPointer("CCP_LIVE_PROOF_GITHUB_WEBHOOK_SECRET_ENV", true, input.GitHubWebhookSecretEnv, "GitHub webhook secret env name used for signed webhook verification."),
+		requirementForValue("CCP_LIVE_PROOF_GITHUB_INSTALLATION_ID", true, strings.TrimSpace(input.GitHubInstallationID) != "", summarizeValuePresence(input.GitHubInstallationID), "GitHub App installation id required to complete hosted proof non-interactively."),
+	)
+
+	report.Kubernetes = append(report.Kubernetes,
+		requirementForEndpoint("CCP_LIVE_PROOF_KUBE_API_BASE_URL", true, input.KubernetesBaseURL, "Kubernetes API or proxy base URL used for workload observation."),
+		requirementForValue("CCP_LIVE_PROOF_KUBE_NAMESPACE", true, strings.TrimSpace(input.KubernetesNamespace) != "", summarizeValuePresence(input.KubernetesNamespace), "Namespace that contains the workload under proof."),
+		requirementForValue("CCP_LIVE_PROOF_KUBE_DEPLOYMENT", true, strings.TrimSpace(input.KubernetesDeployment) != "", summarizeValuePresence(input.KubernetesDeployment), "Deployment or workload name that should be discovered and mapped."),
+		requirementForValue("CCP_LIVE_PROOF_KUBE_STATUS_PATH", false, strings.TrimSpace(input.KubernetesStatusPath) != "", summarizeValuePresence(input.KubernetesStatusPath), "Optional provider-specific status path when the cluster is exposed through a custom proxy."),
+		requirementForSecretEnvPointer("CCP_LIVE_PROOF_KUBE_TOKEN_ENV", false, input.KubernetesTokenEnv, "Optional bearer-token env name for protected Kubernetes APIs."),
+	)
+	validateRequiredEndpoint(&report, "CCP_LIVE_PROOF_KUBE_API_BASE_URL", input.KubernetesBaseURL)
+	validateRequiredValue(&report, "CCP_LIVE_PROOF_KUBE_NAMESPACE", input.KubernetesNamespace)
+	validateRequiredValue(&report, "CCP_LIVE_PROOF_KUBE_DEPLOYMENT", input.KubernetesDeployment)
+	validateOptionalPath(&report, "CCP_LIVE_PROOF_KUBE_STATUS_PATH", input.KubernetesStatusPath)
+	validateOptionalSecretPointer(&report, "CCP_LIVE_PROOF_KUBE_TOKEN_ENV", input.KubernetesTokenEnv)
+
+	report.Prometheus = append(report.Prometheus,
+		requirementForEndpoint("CCP_LIVE_PROOF_PROMETHEUS_BASE_URL", true, input.PrometheusBaseURL, "Prometheus API base URL used for query-range signal collection."),
+		requirementForValue("CCP_LIVE_PROOF_PROMETHEUS_QUERY", true, strings.TrimSpace(input.PrometheusQuery) != "", summarizeValuePresence(input.PrometheusQuery), "Prometheus query expression that proves signal collection in the target environment."),
+		requirementForSecretEnvPointer("CCP_LIVE_PROOF_PROMETHEUS_TOKEN_ENV", false, input.PrometheusTokenEnv, "Optional bearer-token env name for protected Prometheus APIs."),
+		requirementForValue("CCP_LIVE_PROOF_PROMETHEUS_QUERY_NAME", false, strings.TrimSpace(input.PrometheusQueryName) != "", summarizeValuePresence(input.PrometheusQueryName), "Optional friendly label shown in the saved artifact."),
+	)
+	validateRequiredEndpoint(&report, "CCP_LIVE_PROOF_PROMETHEUS_BASE_URL", input.PrometheusBaseURL)
+	validateRequiredValue(&report, "CCP_LIVE_PROOF_PROMETHEUS_QUERY", input.PrometheusQuery)
+	validateOptionalSecretPointer(&report, "CCP_LIVE_PROOF_PROMETHEUS_TOKEN_ENV", input.PrometheusTokenEnv)
+	if err := validatePrometheusWindow(input.PrometheusWindowSecs, input.PrometheusStepSecs); err != nil {
+		addPreflightInvalid(&report, err.Error())
+	}
+	if !isAllowedComparator(input.PrometheusComparator) {
+		addPreflightInvalid(&report, "CCP_LIVE_PROOF_PROMETHEUS_COMPARATOR must be one of >, >=, <, or <=")
+	}
+
+	switch selectedSCMKind {
+	case "gitlab":
+		validateOptionalEndpoint(&report, "CCP_LIVE_PROOF_GITLAB_BASE_URL", input.GitLabBaseURL)
+		validateRequiredValue(&report, "CCP_LIVE_PROOF_GITLAB_GROUP", input.GitLabGroup)
+		validateRequiredSecretPointer(&report, "CCP_LIVE_PROOF_GITLAB_TOKEN_ENV", input.GitLabTokenEnv)
+		validateRequiredSecretPointer(&report, "CCP_LIVE_PROOF_GITLAB_WEBHOOK_SECRET_ENV", input.GitLabWebhookSecretEnv)
+		if normalizedEnvironmentClass == proofEnvironmentHostedSaaS && summarizeEndpoint(input.GitLabBaseURL).EndpointClass != "public" {
+			addPreflightInvalid(&report, fmt.Sprintf("CCP_LIVE_PROOF_GITLAB_BASE_URL must be publicly hosted when environment-class is %s", proofEnvironmentHostedSaaS))
+		}
+	case "github":
+		validateOptionalEndpoint(&report, "CCP_LIVE_PROOF_GITHUB_API_BASE_URL", input.GitHubBaseURL)
+		validateOptionalEndpoint(&report, "CCP_LIVE_PROOF_GITHUB_WEB_BASE_URL", input.GitHubWebBaseURL)
+		validateRequiredValue(&report, "CCP_LIVE_PROOF_GITHUB_OWNER", input.GitHubOwner)
+		validateRequiredValue(&report, "CCP_LIVE_PROOF_GITHUB_APP_ID", input.GitHubAppID)
+		validateRequiredValue(&report, "CCP_LIVE_PROOF_GITHUB_APP_SLUG", input.GitHubAppSlug)
+		validateRequiredSecretPointer(&report, "CCP_LIVE_PROOF_GITHUB_PRIVATE_KEY_ENV", input.GitHubPrivateKeyEnv)
+		validateRequiredSecretPointer(&report, "CCP_LIVE_PROOF_GITHUB_WEBHOOK_SECRET_ENV", input.GitHubWebhookSecretEnv)
+		validateRequiredValue(&report, "CCP_LIVE_PROOF_GITHUB_INSTALLATION_ID", input.GitHubInstallationID)
+		if strings.Contains(strings.TrimSpace(input.GitHubOwner), "/") {
+			addPreflightInvalid(&report, "CCP_LIVE_PROOF_GITHUB_OWNER must be an owner or organization name, not a repository path")
+		}
+		if normalizedEnvironmentClass == proofEnvironmentHostedSaaS && summarizeEndpoint(input.GitHubBaseURL).EndpointClass != "public" {
+			addPreflightInvalid(&report, fmt.Sprintf("CCP_LIVE_PROOF_GITHUB_API_BASE_URL must be publicly hosted when environment-class is %s", proofEnvironmentHostedSaaS))
+		}
+	default:
+		addPreflightInvalid(&report, "CCP_LIVE_PROOF_SCM_KIND must be gitlab or github")
+	}
+
+	addLiveProofRoutingWarnings(&report, input, selectedSCMKind)
+	if summarizeEndpoint(input.KubernetesBaseURL).EndpointClass == "local" {
+		report.Warnings = append(report.Warnings, "Kubernetes proof currently points at a local endpoint; customer-environment proof usually needs a real cluster or production-like proxy path")
+	}
+	if summarizeEndpoint(input.PrometheusBaseURL).EndpointClass == "local" {
+		report.Warnings = append(report.Warnings, "Prometheus proof currently points at a local endpoint; hosted/customer telemetry proof usually needs a real Prometheus or production-like proxy path")
+	}
+
+	report.OperatorSteps = buildLiveProofOperatorSteps(input, report.SelectedSCMKind, report.EnvironmentClass, report.Routing)
+	report.Ready = len(report.MissingInputs) == 0 && len(report.InvalidInputs) == 0
+	return report
+}
+
+func maybeWriteLiveProofPreflightArtifacts(report liveProofPreflightReport, preflightReportPath, operatorChecklistPath string) error {
+	if strings.TrimSpace(preflightReportPath) != "" {
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(preflightReportPath, append(body, '\n'), 0o644); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(operatorChecklistPath) != "" {
+		if err := os.WriteFile(operatorChecklistPath, []byte(renderLiveProofOperatorChecklist(report)), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renderLiveProofOperatorChecklist(report liveProofPreflightReport) string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "# Live Proof Operator Checklist\n\n")
+	fmt.Fprintf(&builder, "- Generated at `%s`\n", report.GeneratedAt)
+	fmt.Fprintf(&builder, "- Selected SCM path: `%s`\n", report.SelectedSCMKind)
+	fmt.Fprintf(&builder, "- Environment class: `%s`\n", report.EnvironmentClass)
+	fmt.Fprintf(&builder, "- Preflight ready: `%t`\n\n", report.Ready)
+
+	renderChecklistIssues(&builder, "Missing Required Inputs", report.MissingInputs)
+	renderChecklistIssues(&builder, "Invalid Configured Inputs", report.InvalidInputs)
+	renderChecklistIssues(&builder, "Warnings", report.Warnings)
+
+	renderRequirementSection(&builder, "Common Inputs", report.Common)
+	renderRequirementSection(&builder, "GitLab Proof Path", report.GitLab)
+	renderRequirementSection(&builder, "GitHub Proof Path", report.GitHub)
+	renderRequirementSection(&builder, "Kubernetes Proof Path", report.Kubernetes)
+	renderRequirementSection(&builder, "Prometheus Proof Path", report.Prometheus)
+	renderRoutingSection(&builder, report.Routing)
+
+	builder.WriteString("## Operator Steps\n\n")
+	for _, step := range report.OperatorSteps {
+		fmt.Fprintf(&builder, "- %s\n", step)
+	}
+	builder.WriteString("\n## Preservation Guidance\n\n")
+	builder.WriteString("- Run `make proof-live-verify` after the missing inputs above are satisfied.\n")
+	builder.WriteString("- Revalidate the saved artifact with `make proof-live-validate`.\n")
+	builder.WriteString("- Preserve `.tmp/live-proof/live-proof-report.json` alongside any provider-side screenshots or exported webhook/app-install settings.\n")
+	builder.WriteString("- Rerun `make release-readiness` after the artifact exists so the ship gate can classify it honestly.\n")
+	return builder.String()
+}
+
+func renderChecklistIssues(builder *strings.Builder, title string, items []string) {
+	builder.WriteString("## " + title + "\n\n")
+	if len(items) == 0 {
+		builder.WriteString("- none\n\n")
+		return
+	}
+	for _, item := range items {
+		fmt.Fprintf(builder, "- %s\n", item)
+	}
+	builder.WriteString("\n")
+}
+
+func renderRequirementSection(builder *strings.Builder, title string, items []liveProofRequirement) {
+	builder.WriteString("## " + title + "\n\n")
+	builder.WriteString("| Input | Required | Configured | Notes |\n")
+	builder.WriteString("| --- | --- | --- | --- |\n")
+	for _, item := range items {
+		summary := strings.TrimSpace(item.Description)
+		if strings.TrimSpace(item.Summary) != "" {
+			summary = item.Summary + "; " + summary
+		}
+		fmt.Fprintf(builder, "| `%s` | %t | %t | %s |\n", item.Name, item.Required, item.Configured, summary)
+	}
+	builder.WriteString("\n")
+}
+
+func renderRoutingSection(builder *strings.Builder, routing liveProofRoutingExpectation) {
+	builder.WriteString("## Routing Expectations\n\n")
+	if strings.TrimSpace(routing.ControlPlaneAPI.URL) == "" {
+		builder.WriteString("- Control-plane API base URL is not configured yet, so callback and webhook routes cannot be rendered.\n\n")
+		return
+	}
+	fmt.Fprintf(builder, "- Control-plane API base URL: `%s` (`%s`)\n", routing.ControlPlaneAPI.URL, fallbackString(routing.ControlPlaneAPI.EndpointClass, "unknown"))
+	if strings.TrimSpace(routing.GitHubCallbackURL) != "" {
+		fmt.Fprintf(builder, "- GitHub callback URL: `%s`\n", routing.GitHubCallbackURL)
+	}
+	if strings.TrimSpace(routing.GitHubWebhookURLPattern) != "" {
+		fmt.Fprintf(builder, "- GitHub webhook URL pattern: `%s`\n", routing.GitHubWebhookURLPattern)
+	}
+	if strings.TrimSpace(routing.GitLabWebhookURLPattern) != "" {
+		fmt.Fprintf(builder, "- GitLab webhook URL pattern: `%s`\n", routing.GitLabWebhookURLPattern)
+	}
+	if strings.TrimSpace(routing.SelectedSCMReachability) != "" {
+		fmt.Fprintf(builder, "- Selected SCM reachability: %s\n", routing.SelectedSCMReachability)
+	}
+	for _, note := range routing.Notes {
+		fmt.Fprintf(builder, "- %s\n", note)
+	}
+	builder.WriteString("\n")
+}
+
+func buildLiveProofOperatorSteps(input liveProofInput, scmKind, environmentClass string, routing liveProofRoutingExpectation) []string {
+	apiSummary := "Confirm the control-plane API is reachable from the operator machine and that the admin account configured by CCP_LIVE_PROOF_ADMIN_EMAIL can sign in successfully."
+	if strings.TrimSpace(routing.ControlPlaneAPI.URL) != "" {
+		apiSummary = fmt.Sprintf("Confirm the control-plane API `%s` is reachable from the operator machine and that the admin account configured by CCP_LIVE_PROOF_ADMIN_EMAIL can sign in successfully.", routing.ControlPlaneAPI.URL)
+	}
+	steps := []string{
+		apiSummary,
+		"Keep the secret env values out of shell history and logs. Set only the env-var names such as CCP_LIVE_PROOF_GITLAB_TOKEN_ENV or CCP_LIVE_PROOF_GITHUB_PRIVATE_KEY_ENV in the proof config, and load the actual secret values into those referenced env vars in the current shell or CI job.",
+	}
+	switch scmKind {
+	case "github":
+		steps = append(steps,
+			fmt.Sprintf("Before attempting GitHub-hosted proof, make the callback URL `%s` and webhook URL pattern `%s` provider-reachable. %s", fallbackString(routing.GitHubCallbackURL, "/api/v1/integrations/github/callback"), fallbackString(routing.GitHubWebhookURLPattern, "/api/v1/integrations/{integration_id}/webhooks/github"), fallbackString(routing.SelectedSCMReachability, "GitHub must be able to reach the control plane through production-like DNS, ingress, or a trusted tunnel.")),
+			"Provide organization-owner or app-admin access for the GitHub owner named by CCP_LIVE_PROOF_GITHUB_OWNER, plus a real GitHub App install matching CCP_LIVE_PROOF_GITHUB_APP_ID and CCP_LIVE_PROOF_GITHUB_APP_SLUG.",
+			"Capture the real GitHub App installation id and export it through CCP_LIVE_PROOF_GITHUB_INSTALLATION_ID so the runner can complete onboarding non-interactively and preserve hosted proof honestly.",
+		)
+	default:
+		steps = append(steps,
+			fmt.Sprintf("Before attempting GitLab proof, make the webhook URL pattern `%s` reachable from the selected GitLab instance network. %s", fallbackString(routing.GitLabWebhookURLPattern, "/api/v1/integrations/{integration_id}/webhooks/gitlab"), fallbackString(routing.SelectedSCMReachability, "The selected GitLab environment must be able to reach the control plane webhook endpoint.")),
+			"Provide maintainer or owner access for the GitLab group named by CCP_LIVE_PROOF_GITLAB_GROUP, plus a token with repository-discovery and group-webhook-management permissions.",
+		)
+	}
+	steps = append(steps,
+		fmt.Sprintf("Point Kubernetes proof at a real cluster or production-like proxy by setting CCP_LIVE_PROOF_KUBE_API_BASE_URL, CCP_LIVE_PROOF_KUBE_NAMESPACE, and CCP_LIVE_PROOF_KUBE_DEPLOYMENT for the `%s` environment class.", fallbackString(environmentClass, proofEnvironmentHostedLike)),
+		"Point Prometheus proof at a real telemetry endpoint by setting CCP_LIVE_PROOF_PROMETHEUS_BASE_URL and CCP_LIVE_PROOF_PROMETHEUS_QUERY, and provide CCP_LIVE_PROOF_PROMETHEUS_TOKEN_ENV when the endpoint requires bearer auth.",
+	)
+	return steps
+}
+
+func buildLiveProofRoutingExpectation(input liveProofInput, scmKind string) liveProofRoutingExpectation {
+	routing := liveProofRoutingExpectation{
+		ControlPlaneAPI: summarizeEndpoint(input.APIBaseURL),
+	}
+	apiBaseURL := strings.TrimRight(strings.TrimSpace(input.APIBaseURL), "/")
+	if apiBaseURL == "" {
+		return routing
+	}
+	routing.GitHubCallbackURL = apiBaseURL + "/api/v1/integrations/github/callback"
+	routing.GitHubWebhookURLPattern = apiBaseURL + "/api/v1/integrations/{integration_id}/webhooks/github"
+	routing.GitLabWebhookURLPattern = apiBaseURL + "/api/v1/integrations/{integration_id}/webhooks/gitlab"
+	routing.Notes = []string{
+		"Replace `{integration_id}` with the real integration id created by the control plane; the provider webhook must use the generated URL, not the literal placeholder.",
+	}
+	switch scmKind {
+	case "github":
+		routing.SelectedSCMWebhookPattern = routing.GitHubWebhookURLPattern
+		routing.SelectedSCMReachability = buildGitHubReachabilitySummary(routing.ControlPlaneAPI, routing.GitHubCallbackURL, routing.GitHubWebhookURLPattern)
+	case "gitlab":
+		routing.SelectedSCMWebhookPattern = routing.GitLabWebhookURLPattern
+		routing.SelectedSCMReachability = buildGitLabReachabilitySummary(routing.ControlPlaneAPI, summarizeEndpoint(input.GitLabBaseURL), routing.GitLabWebhookURLPattern)
+	default:
+		routing.SelectedSCMReachability = "Select either gitlab or github to render the provider-specific reachability guidance."
+	}
+	return routing
+}
+
+func addLiveProofRoutingWarnings(report *liveProofPreflightReport, input liveProofInput, scmKind string) {
+	switch scmKind {
+	case "github":
+		if warning := githubRoutingWarning(report.Routing.ControlPlaneAPI, report.Routing.GitHubCallbackURL, report.Routing.GitHubWebhookURLPattern); warning != "" {
+			report.Warnings = append(report.Warnings, warning)
+		}
+	case "gitlab":
+		if warning := gitlabRoutingWarning(report.Routing.ControlPlaneAPI, summarizeEndpoint(input.GitLabBaseURL), report.Routing.GitLabWebhookURLPattern); warning != "" {
+			report.Warnings = append(report.Warnings, warning)
+		}
+	}
+}
+
+func buildGitHubReachabilitySummary(api liveProofEndpointSummary, callbackURL, webhookPattern string) string {
+	switch api.EndpointClass {
+	case "public":
+		return fmt.Sprintf("GitHub-hosted callbacks and webhooks can target `%s` and `%s` directly.", callbackURL, webhookPattern)
+	case "local", "private":
+		return fmt.Sprintf("GitHub-hosted callbacks and webhooks cannot reach a %s API base URL directly; publish `%s` and `%s` through public DNS, ingress, or a trusted tunnel before running hosted proof.", api.EndpointClass, callbackURL, webhookPattern)
+	case "invalid":
+		return "The configured control-plane API base URL is invalid, so callback and webhook reachability cannot be determined yet."
+	default:
+		return "Confirm GitHub can reach the rendered callback and webhook URLs from outside the operator machine before running hosted proof."
+	}
+}
+
+func buildGitLabReachabilitySummary(api, gitlab liveProofEndpointSummary, webhookPattern string) string {
+	switch {
+	case gitlab.EndpointClass == "public" && api.EndpointClass == "public":
+		return fmt.Sprintf("Hosted or public GitLab can target `%s` directly.", webhookPattern)
+	case gitlab.EndpointClass == "public" && (api.EndpointClass == "local" || api.EndpointClass == "private"):
+		return fmt.Sprintf("Hosted or public GitLab cannot reach a %s control-plane API directly; publish `%s` through public DNS, ingress, or a trusted tunnel before running hosted proof.", api.EndpointClass, webhookPattern)
+	case gitlab.EndpointClass == "private" || gitlab.EndpointClass == "local":
+		return fmt.Sprintf("The selected GitLab instance must be able to resolve and reach `%s` from its own network path; local or private API URLs require shared network access or a dedicated ingress.", webhookPattern)
+	case api.EndpointClass == "invalid":
+		return "The configured control-plane API base URL is invalid, so GitLab webhook reachability cannot be determined yet."
+	default:
+		return "Confirm the selected GitLab instance can reach the rendered webhook URL from its own network before running proof."
+	}
+}
+
+func githubRoutingWarning(api liveProofEndpointSummary, callbackURL, webhookPattern string) string {
+	if api.EndpointClass != "local" && api.EndpointClass != "private" {
+		return ""
+	}
+	return fmt.Sprintf("GitHub live proof still needs `%s` and `%s` reachable from GitHub; CCP_LIVE_PROOF_API_BASE_URL is currently classified as %s, so add public DNS, ingress, or a trusted tunnel before running hosted proof", callbackURL, webhookPattern, api.EndpointClass)
+}
+
+func gitlabRoutingWarning(api, gitlab liveProofEndpointSummary, webhookPattern string) string {
+	switch {
+	case gitlab.EndpointClass == "public" && (api.EndpointClass == "local" || api.EndpointClass == "private"):
+		return fmt.Sprintf("GitLab live proof still needs `%s` reachable from the selected public GitLab instance; CCP_LIVE_PROOF_API_BASE_URL is currently classified as %s, so add public DNS, ingress, or a trusted tunnel before running hosted proof", webhookPattern, api.EndpointClass)
+	case (gitlab.EndpointClass == "private" || gitlab.EndpointClass == "local") && (api.EndpointClass == "local" || api.EndpointClass == "private"):
+		return fmt.Sprintf("Confirm the selected GitLab instance can resolve `%s` from its own network path; both the provider base URL and CCP_LIVE_PROOF_API_BASE_URL are currently non-public", webhookPattern)
+	default:
+		return ""
+	}
+}
+
+func requirementForEndpoint(name string, required bool, raw, description string) liveProofRequirement {
+	trimmed := strings.TrimSpace(raw)
+	summary := "missing"
+	if trimmed != "" {
+		endpoint := summarizeEndpoint(trimmed)
+		summary = "endpoint_class=" + endpoint.EndpointClass
+	}
+	return liveProofRequirement{
+		Name:        name,
+		Kind:        "endpoint",
+		Required:    required,
+		Configured:  trimmed != "",
+		Summary:     summary,
+		Description: description,
+	}
+}
+
+func requirementForValue(name string, required, configured bool, summary, description string) liveProofRequirement {
+	return liveProofRequirement{
+		Name:        name,
+		Kind:        "value",
+		Required:    required,
+		Configured:  configured,
+		Summary:     summary,
+		Description: description,
+	}
+}
+
+func requirementForSecretEnvPointer(name string, required bool, envName, description string) liveProofRequirement {
+	trimmed := strings.TrimSpace(envName)
+	summary := "secret env name missing"
+	configured := false
+	if trimmed != "" {
+		configured = strings.TrimSpace(os.Getenv(trimmed)) != ""
+		if configured {
+			summary = "secret env " + trimmed + " is configured"
+		} else {
+			summary = "secret env " + trimmed + " is not set in the current environment"
+		}
+	}
+	return liveProofRequirement{
+		Name:        name,
+		Kind:        "secret_env_pointer",
+		Required:    required,
+		Configured:  configured,
+		Summary:     summary,
+		Description: description,
+	}
+}
+
+func summarizeValuePresence(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return "missing"
+	}
+	return "configured"
+}
+
+func validateRequiredEndpoint(report *liveProofPreflightReport, name, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		addPreflightMissing(report, name+" is required")
+		return
+	}
+	if _, err := parseAndValidateURL(raw, name); err != nil {
+		addPreflightInvalid(report, fmt.Sprintf("%s is invalid: %v", name, err))
+	}
+}
+
+func validateOptionalEndpoint(report *liveProofPreflightReport, name, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	if _, err := parseAndValidateURL(raw, name); err != nil {
+		addPreflightInvalid(report, fmt.Sprintf("%s is invalid: %v", name, err))
+	}
+}
+
+func validateRequiredValue(report *liveProofPreflightReport, name, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		addPreflightMissing(report, name+" is required")
+	}
+}
+
+func validateOptionalPath(report *liveProofPreflightReport, name, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	if !strings.HasPrefix(strings.TrimSpace(raw), "/") {
+		addPreflightInvalid(report, name+" must start with / when provided")
+	}
+}
+
+func validateRequiredSecretPointer(report *liveProofPreflightReport, name, envName string) {
+	trimmed := strings.TrimSpace(envName)
+	if trimmed == "" {
+		addPreflightMissing(report, name+" must be set to the env var name that holds the secret value")
+		return
+	}
+	if !envVarNamePattern.MatchString(trimmed) {
+		addPreflightInvalid(report, name+" must reference an uppercase environment variable name")
+		return
+	}
+	if strings.TrimSpace(os.Getenv(trimmed)) == "" {
+		addPreflightMissing(report, fmt.Sprintf("%s points at %s, but %s is not set in the current environment", name, trimmed, trimmed))
+	}
+}
+
+func validateOptionalSecretPointer(report *liveProofPreflightReport, name, envName string) {
+	trimmed := strings.TrimSpace(envName)
+	if trimmed == "" {
+		return
+	}
+	if !envVarNamePattern.MatchString(trimmed) {
+		addPreflightInvalid(report, name+" must reference an uppercase environment variable name")
+		return
+	}
+	if strings.TrimSpace(os.Getenv(trimmed)) == "" {
+		addPreflightInvalid(report, fmt.Sprintf("%s points at %s, but %s is not set in the current environment", name, trimmed, trimmed))
+	}
+}
+
+func addPreflightMissing(report *liveProofPreflightReport, message string) {
+	appendUniqueString(&report.MissingInputs, message)
+}
+
+func addPreflightInvalid(report *liveProofPreflightReport, message string) {
+	appendUniqueString(&report.InvalidInputs, message)
+}
+
+func appendUniqueString(items *[]string, value string) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return
+	}
+	for _, existing := range *items {
+		if existing == trimmed {
+			return
+		}
+	}
+	*items = append(*items, trimmed)
+}
+
+func fallbackString(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	return fallback
 }
 
 func completeGitHubOnboarding(ctx context.Context, apiBaseURL, authorizeURL, installationID string) (types.Integration, error) {

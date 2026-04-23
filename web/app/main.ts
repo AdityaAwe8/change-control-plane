@@ -47,6 +47,7 @@ import {
   recordVerificationResult,
   requeueOutboxEvent,
   resumeRolloutExecution,
+  revokeBrowserSession,
   retryOutboxEvent,
   rollbackRolloutExecution,
   revokeServiceAccountToken,
@@ -678,6 +679,15 @@ function applyRenderedState(route: ReturnType<typeof getCurrentRoute>, state: Co
       const providerID = button.dataset.providerId || "";
       await runAction(button, "Testing enterprise identity provider...", "Identity provider test completed.", async () => {
         await testIdentityProvider(providerID);
+      });
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".revoke-browser-session-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const browserSessionID = button.dataset.browserSessionId || "";
+      await runAction(button, "Revoking browser session...", "Browser session revoked.", async () => {
+        await revokeBrowserSession(browserSessionID);
       });
     });
   });

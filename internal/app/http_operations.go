@@ -484,6 +484,15 @@ func (s *HTTPServer) getRolloutExecution(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, types.ItemResponse[types.RolloutExecutionDetail]{Data: result})
 }
 
+func (s *HTTPServer) getRolloutExecutionEvidencePack(w http.ResponseWriter, r *http.Request) {
+	result, err := s.app.GetRolloutEvidencePack(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, types.ItemResponse[types.RolloutEvidencePack]{Data: result})
+}
+
 func (s *HTTPServer) advanceRolloutExecution(w http.ResponseWriter, r *http.Request) {
 	var req types.AdvanceRolloutExecutionRequest
 	if err := decodeJSON(r, &req); err != nil {

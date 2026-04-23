@@ -6,7 +6,7 @@ CCP_REDIS_ADDR ?= localhost:16379
 CCP_NATS_URL ?= nats://localhost:14222
 CCP_API_PORT ?= 8080
 
-.PHONY: fmt test test-go test-python verify proof-contract proof-harness proof-live-verify proof-live-validate release-readiness build run-api run-worker run-cli migrate compose-up compose-up-full compose-down web-install web-dev web-build web-typecheck web-e2e smoke reference-pilot-up reference-pilot-down reference-pilot-verify reference-pilot-validate
+.PHONY: fmt test test-go test-python verify proof-contract proof-harness proof-live-preflight proof-live-verify proof-live-validate release-readiness build run-api run-worker run-cli migrate compose-up compose-up-full compose-down web-install web-dev web-build web-typecheck web-e2e smoke reference-pilot-up reference-pilot-down reference-pilot-verify reference-pilot-validate
 
 fmt:
 	gofmt -w $(GO_FILES)
@@ -27,6 +27,9 @@ proof-contract:
 proof-harness:
 	go test ./internal/app ./internal/delivery ./internal/verification ./internal/integrations -run 'Test(GitHubAppWebhookRegistrationSyncRepairsExistingHostedWebhook|GitLabWebhookRegistrationSyncRepairsExistingHostedWebhook|KubernetesAndPrometheusIntegrationRoutesHonorConfiguredAuthHeadersAndPaths|CreateGitHubAppInstallationToken|GitLabClientConnectionDiscoveryAndMergeRequestChanges|ParseGitLabMergeRequestWebhookNormalizesChange|KubernetesProvider.*|PrometheusProvider.*)'
 
+proof-live-preflight:
+	./scripts/live-proof-preflight.sh
+
 proof-live-verify:
 	./scripts/live-proof-verify.sh
 
@@ -46,16 +49,16 @@ build:
 	go build ./cmd/migrate
 
 run-api:
-	CCP_DB_DSN='$(CCP_DB_DSN)' CCP_REDIS_ADDR='$(CCP_REDIS_ADDR)' CCP_NATS_URL='$(CCP_NATS_URL)' CCP_API_PORT='$(CCP_API_PORT)' go run ./cmd/api
+	CCP_DB_DSN='$(CCP_DB_DSN)' CCP_REDIS_ADDR='$(CCP_REDIS_ADDR)' CCP_NATS_URL='$(CCP_NATS_URL)' CCP_API_PORT='$(CCP_API_PORT)' ./scripts/run-with-local-env.sh go run ./cmd/api
 
 run-worker:
-	CCP_DB_DSN='$(CCP_DB_DSN)' CCP_REDIS_ADDR='$(CCP_REDIS_ADDR)' CCP_NATS_URL='$(CCP_NATS_URL)' go run ./cmd/worker
+	CCP_DB_DSN='$(CCP_DB_DSN)' CCP_REDIS_ADDR='$(CCP_REDIS_ADDR)' CCP_NATS_URL='$(CCP_NATS_URL)' ./scripts/run-with-local-env.sh go run ./cmd/worker
 
 run-cli:
-	go run ./cmd/cli
+	./scripts/run-with-local-env.sh go run ./cmd/cli
 
 migrate:
-	CCP_DB_DSN='$(CCP_DB_DSN)' go run ./cmd/migrate
+	CCP_DB_DSN='$(CCP_DB_DSN)' ./scripts/run-with-local-env.sh go run ./cmd/migrate
 
 compose-up:
 	docker compose -f deploy/docker/docker-compose.yml up -d --wait postgres redis nats

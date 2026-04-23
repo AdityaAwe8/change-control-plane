@@ -104,6 +104,19 @@ The runner now supports these proof classes:
 - `customer_environment`: operator-run proof against customer-owned infrastructure
 - `hosted_saas`: operator-run proof against real hosted SaaS endpoints such as GitHub Cloud or GitLab SaaS
 
+Before attempting the full live proof, generate the exact operator checklist:
+
+```bash
+make proof-live-preflight
+```
+
+This writes:
+
+- `.tmp/live-proof/live-proof-preflight.json`
+- `.tmp/live-proof/live-proof-operator-checklist.md`
+
+and tells you exactly which env vars, provider secrets, callback/webhook routes, cluster inputs, and Prometheus inputs are still missing.
+
 The saved report is written to `.tmp/live-proof/live-proof-report.json` and now includes:
 
 - a declared environment class
@@ -139,6 +152,7 @@ It currently reruns:
 - web typecheck and build
 - `make proof-contract`
 - `make proof-harness`
+- `make proof-live-preflight`
 - saved-report validation for the reference pilot and external live proof bundles
 
 By default it blocks when:

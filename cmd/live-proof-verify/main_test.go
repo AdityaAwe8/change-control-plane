@@ -23,6 +23,7 @@ import (
 )
 
 func TestRunLiveProofVerifyWithGitLab(t *testing.T) {
+	resetLiveProofEnv(t)
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	t.Setenv("CCP_LIVE_TEST_GITLAB_TOKEN", "glpat-test")
 	t.Setenv("CCP_LIVE_TEST_GITLAB_WEBHOOK_SECRET", "gitlab-webhook-secret")
@@ -148,6 +149,7 @@ func TestRunLiveProofVerifyWithGitLab(t *testing.T) {
 }
 
 func TestRunLiveProofVerifyWithGitHub(t *testing.T) {
+	resetLiveProofEnv(t)
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	t.Setenv("CCP_LIVE_TEST_GITHUB_PRIVATE_KEY", marshalRSAPrivateKeyPEM(t))
 	t.Setenv("CCP_LIVE_TEST_GITHUB_WEBHOOK_SECRET", "github-webhook-secret")
@@ -278,6 +280,7 @@ func TestRunLiveProofVerifyWithGitHub(t *testing.T) {
 }
 
 func TestRunLiveProofVerifyRejectsIncompleteReport(t *testing.T) {
+	resetLiveProofEnv(t)
 	t.Setenv("CCP_AUTH_MODE", "dev")
 
 	reportPath := filepath.Join(t.TempDir(), "invalid-live-proof.json")
@@ -314,6 +317,7 @@ func TestRunLiveProofVerifyRejectsIncompleteReport(t *testing.T) {
 }
 
 func TestRunLiveProofVerifyRejectsInvalidEnvironmentClass(t *testing.T) {
+	resetLiveProofEnv(t)
 	t.Setenv("CCP_LIVE_TEST_GITLAB_TOKEN", "glpat-test")
 	t.Setenv("CCP_LIVE_TEST_GITLAB_WEBHOOK_SECRET", "gitlab-webhook-secret")
 	t.Setenv("CCP_LIVE_TEST_KUBE_TOKEN", "kube-secret")
@@ -345,6 +349,7 @@ func TestRunLiveProofVerifyRejectsInvalidEnvironmentClass(t *testing.T) {
 }
 
 func TestRunLiveProofVerifyRejectsMissingSecretEnv(t *testing.T) {
+	resetLiveProofEnv(t)
 	var stdout, stderr bytes.Buffer
 	exitCode := run(context.Background(), []string{
 		"--api-base-url", "http://127.0.0.1:18080",
@@ -368,6 +373,7 @@ func TestRunLiveProofVerifyRejectsMissingSecretEnv(t *testing.T) {
 }
 
 func TestRunLiveProofVerifyRejectsHostedSaaSAgainstLocalSCMEndpoint(t *testing.T) {
+	resetLiveProofEnv(t)
 	t.Setenv("CCP_LIVE_TEST_GITHUB_PRIVATE_KEY", marshalRSAPrivateKeyPEM(t))
 	t.Setenv("CCP_LIVE_TEST_GITHUB_WEBHOOK_SECRET", "github-webhook-secret")
 	t.Setenv("CCP_LIVE_TEST_KUBE_TOKEN", "kube-secret")
@@ -397,9 +403,128 @@ func TestRunLiveProofVerifyRejectsHostedSaaSAgainstLocalSCMEndpoint(t *testing.T
 	if exitCode == 0 {
 		t.Fatalf("expected hosted_saas/local github mismatch failure")
 	}
-	if !strings.Contains(stderr.String(), "github-base-url must be publicly hosted") {
+	if !strings.Contains(stderr.String(), "CCP_LIVE_PROOF_GITHUB_API_BASE_URL must be publicly hosted") {
 		t.Fatalf("expected hosted_saas endpoint validation error, got %s", stderr.String())
 	}
+}
+
+func TestRunLiveProofPreflightOnlyWritesChecklistAndMissingInputs(t *testing.T) {
+	resetLiveProofEnv(t)
+	preflightPath := filepath.Join(t.TempDir(), "live-proof-preflight.json")
+	checklistPath := filepath.Join(t.TempDir(), "live-proof-operator-checklist.md")
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{
+		"--preflight-only",
+		"--preflight-report", preflightPath,
+		"--operator-checklist", checklistPath,
+		"--scm-kind", "github",
+	}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("expected preflight-only success, got exit=%d stderr=%s", exitCode, stderr.String())
+	}
+
+	var report liveProofPreflightReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode preflight report: %v", err)
+	}
+	if report.Profile != proofProfileLivePreflight || report.Ready {
+		t.Fatalf("expected non-ready preflight report, got %+v", report)
+	}
+	if report.Routing.GitHubCallbackURL != "http://127.0.0.1:8080/api/v1/integrations/github/callback" {
+		t.Fatalf("expected rendered github callback URL, got %+v", report.Routing)
+	}
+	if report.Routing.GitHubWebhookURLPattern != "http://127.0.0.1:8080/api/v1/integrations/{integration_id}/webhooks/github" {
+		t.Fatalf("expected rendered github webhook URL pattern, got %+v", report.Routing)
+	}
+	if !containsString(report.MissingInputs, "CCP_LIVE_PROOF_GITHUB_OWNER is required") {
+		t.Fatalf("expected missing github owner in preflight report, got %+v", report.MissingInputs)
+	}
+	if !containsString(report.MissingInputs, "CCP_LIVE_PROOF_KUBE_API_BASE_URL is required") {
+		t.Fatalf("expected missing kube base URL in preflight report, got %+v", report.MissingInputs)
+	}
+	if !containsSubstring(report.Warnings, "GitHub live proof still needs `http://127.0.0.1:8080/api/v1/integrations/github/callback`") {
+		t.Fatalf("expected github routing warning in preflight report, got %+v", report.Warnings)
+	}
+	checklistBody, err := os.ReadFile(checklistPath)
+	if err != nil {
+		t.Fatalf("expected checklist file: %v", err)
+	}
+	if !strings.Contains(string(checklistBody), "CCP_LIVE_PROOF_GITHUB_INSTALLATION_ID") {
+		t.Fatalf("expected github installation id guidance in checklist, got %s", string(checklistBody))
+	}
+	if !strings.Contains(string(checklistBody), "Before attempting GitHub-hosted proof, make the callback URL `http://127.0.0.1:8080/api/v1/integrations/github/callback`") {
+		t.Fatalf("expected callback guidance in checklist, got %s", string(checklistBody))
+	}
+	if !strings.Contains(string(checklistBody), "GitHub callback URL: `http://127.0.0.1:8080/api/v1/integrations/github/callback`") {
+		t.Fatalf("expected rendered github callback URL in checklist, got %s", string(checklistBody))
+	}
+	if !strings.Contains(string(checklistBody), "GitHub webhook URL pattern: `http://127.0.0.1:8080/api/v1/integrations/{integration_id}/webhooks/github`") {
+		t.Fatalf("expected rendered github webhook URL pattern in checklist, got %s", string(checklistBody))
+	}
+	if _, err := os.ReadFile(preflightPath); err != nil {
+		t.Fatalf("expected preflight report file: %v", err)
+	}
+}
+
+func TestRunLiveProofPreflightOnlyReportsReadyWhenInputsAreConfigured(t *testing.T) {
+	resetLiveProofEnv(t)
+	t.Setenv("CCP_LIVE_TEST_GITLAB_TOKEN", "glpat-test")
+	t.Setenv("CCP_LIVE_TEST_GITLAB_WEBHOOK_SECRET", "gitlab-webhook-secret")
+	t.Setenv("CCP_LIVE_TEST_KUBE_TOKEN", "kube-secret")
+	t.Setenv("CCP_LIVE_TEST_PROM_TOKEN", "prom-secret")
+
+	preflightPath := filepath.Join(t.TempDir(), "live-proof-preflight.json")
+	checklistPath := filepath.Join(t.TempDir(), "live-proof-operator-checklist.md")
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{
+		"--preflight-only",
+		"--preflight-report", preflightPath,
+		"--operator-checklist", checklistPath,
+		"--environment-class", proofEnvironmentHostedLike,
+		"--scm-kind", "gitlab",
+		"--gitlab-base-url", "https://gitlab.example.com/api/v4",
+		"--gitlab-group", "acme",
+		"--gitlab-token-env", "CCP_LIVE_TEST_GITLAB_TOKEN",
+		"--gitlab-webhook-secret-env", "CCP_LIVE_TEST_GITLAB_WEBHOOK_SECRET",
+		"--kubernetes-base-url", "https://kubernetes.example.com",
+		"--kubernetes-token-env", "CCP_LIVE_TEST_KUBE_TOKEN",
+		"--kubernetes-namespace", "prod",
+		"--kubernetes-deployment", "checkout",
+		"--prometheus-base-url", "https://prometheus.example.com",
+		"--prometheus-token-env", "CCP_LIVE_TEST_PROM_TOKEN",
+		"--prometheus-query", `request_latency_ms{service="checkout",environment="production"}`,
+	}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("expected ready preflight success, got exit=%d stderr=%s", exitCode, stderr.String())
+	}
+
+	var report liveProofPreflightReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode preflight report: %v", err)
+	}
+	if !report.Ready {
+		t.Fatalf("expected ready preflight report, got %+v", report)
+	}
+	if len(report.MissingInputs) != 0 || len(report.InvalidInputs) != 0 {
+		t.Fatalf("expected no missing or invalid inputs, got missing=%v invalid=%v", report.MissingInputs, report.InvalidInputs)
+	}
+	if !containsSubstring(report.Warnings, "GitLab live proof still needs `http://127.0.0.1:8080/api/v1/integrations/{integration_id}/webhooks/gitlab` reachable from the selected public GitLab instance") {
+		t.Fatalf("expected gitlab routing warning in ready preflight report, got %+v", report.Warnings)
+	}
+	checklistBody, err := os.ReadFile(checklistPath)
+	if err != nil {
+		t.Fatalf("expected checklist file: %v", err)
+	}
+	if !strings.Contains(string(checklistBody), "- Preflight ready: `true`") {
+		t.Fatalf("expected ready checklist marker, got %s", string(checklistBody))
+	}
+	if !strings.Contains(string(checklistBody), "GitLab webhook URL pattern: `http://127.0.0.1:8080/api/v1/integrations/{integration_id}/webhooks/gitlab`") {
+		t.Fatalf("expected rendered gitlab webhook URL pattern in checklist, got %s", string(checklistBody))
+	}
+	assertNoSecretLeak(t, stdout.String(), "glpat-test", "gitlab-webhook-secret", "kube-secret", "prom-secret")
+	assertNoSecretLeak(t, string(checklistBody), "glpat-test", "gitlab-webhook-secret", "kube-secret", "prom-secret")
 }
 
 func startAPIServer(t *testing.T) string {
@@ -410,6 +535,84 @@ func startAPIServer(t *testing.T) string {
 	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	t.Cleanup(server.Close)
 	return server.URL
+}
+
+func resetLiveProofEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"CCP_LIVE_PROOF_API_BASE_URL",
+		"CCP_LIVE_PROOF_ADMIN_EMAIL",
+		"CCP_LIVE_PROOF_ADMIN_PASSWORD",
+		"CCP_LIVE_PROOF_ORG_NAME",
+		"CCP_LIVE_PROOF_ORG_SLUG",
+		"CCP_LIVE_PROOF_PROJECT_NAME",
+		"CCP_LIVE_PROOF_PROJECT_SLUG",
+		"CCP_LIVE_PROOF_TEAM_NAME",
+		"CCP_LIVE_PROOF_TEAM_SLUG",
+		"CCP_LIVE_PROOF_SERVICE_NAME",
+		"CCP_LIVE_PROOF_SERVICE_SLUG",
+		"CCP_LIVE_PROOF_ENV_NAME",
+		"CCP_LIVE_PROOF_ENV_SLUG",
+		"CCP_LIVE_PROOF_SCM_KIND",
+		"CCP_LIVE_PROOF_ENVIRONMENT_CLASS",
+		"CCP_LIVE_PROOF_REPORT",
+		"CCP_LIVE_PROOF_VALIDATE_REPORT",
+		"CCP_LIVE_PROOF_PREFLIGHT_REPORT",
+		"CCP_LIVE_PROOF_OPERATOR_CHECKLIST",
+		"CCP_LIVE_PROOF_GITLAB_BASE_URL",
+		"CCP_LIVE_PROOF_GITLAB_GROUP",
+		"CCP_LIVE_PROOF_GITLAB_TOKEN_ENV",
+		"CCP_LIVE_PROOF_GITLAB_WEBHOOK_SECRET_ENV",
+		"CCP_LIVE_PROOF_GITHUB_API_BASE_URL",
+		"CCP_LIVE_PROOF_GITHUB_WEB_BASE_URL",
+		"CCP_LIVE_PROOF_GITHUB_OWNER",
+		"CCP_LIVE_PROOF_GITHUB_APP_ID",
+		"CCP_LIVE_PROOF_GITHUB_APP_SLUG",
+		"CCP_LIVE_PROOF_GITHUB_PRIVATE_KEY_ENV",
+		"CCP_LIVE_PROOF_GITHUB_WEBHOOK_SECRET_ENV",
+		"CCP_LIVE_PROOF_GITHUB_INSTALLATION_ID",
+		"CCP_LIVE_PROOF_KUBE_API_BASE_URL",
+		"CCP_LIVE_PROOF_KUBE_TOKEN_ENV",
+		"CCP_LIVE_PROOF_KUBE_NAMESPACE",
+		"CCP_LIVE_PROOF_KUBE_DEPLOYMENT",
+		"CCP_LIVE_PROOF_KUBE_STATUS_PATH",
+		"CCP_LIVE_PROOF_PROMETHEUS_BASE_URL",
+		"CCP_LIVE_PROOF_PROMETHEUS_TOKEN_ENV",
+		"CCP_LIVE_PROOF_PROMETHEUS_QUERY_NAME",
+		"CCP_LIVE_PROOF_PROMETHEUS_QUERY",
+		"CCP_LIVE_PROOF_PROMETHEUS_THRESHOLD",
+		"CCP_LIVE_PROOF_PROMETHEUS_COMPARATOR",
+		"CCP_LIVE_PROOF_PROMETHEUS_UNIT",
+		"CCP_LIVE_PROOF_PROMETHEUS_SEVERITY",
+		"CCP_LIVE_PROOF_PROMETHEUS_WINDOW_SECONDS",
+		"CCP_LIVE_PROOF_PROMETHEUS_STEP_SECONDS",
+		"CCP_REAL_GITHUB_APP_PRIVATE_KEY",
+		"CCP_REAL_GITHUB_WEBHOOK_SECRET",
+		"CCP_REAL_GITLAB_TOKEN",
+		"CCP_REAL_GITLAB_WEBHOOK_SECRET",
+		"CCP_REAL_KUBE_TOKEN",
+		"CCP_REAL_PROM_TOKEN",
+	} {
+		t.Setenv(key, "")
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSubstring(items []string, want string) bool {
+	for _, item := range items {
+		if strings.Contains(item, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func signUpUser(t *testing.T, serverURL, email, password string) {
@@ -500,12 +703,14 @@ func newPromProofServer(t *testing.T) *httptest.Server {
 
 func newLocalIPv4Server(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
-	server := httptest.NewUnstartedServer(handler)
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.Listener = listener
+	server := &httptest.Server{
+		Listener: listener,
+		Config:   &http.Server{Handler: handler},
+	}
 	server.Start()
 	return server
 }

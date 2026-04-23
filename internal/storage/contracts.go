@@ -136,6 +136,14 @@ type APITokenQuery struct {
 	Offset           int
 }
 
+type BrowserSessionQuery struct {
+	OrganizationID string
+	UserID         string
+	Status         string
+	Limit          int
+	Offset         int
+}
+
 type RepositoryQuery struct {
 	OrganizationID      string
 	ProjectID           string
@@ -374,7 +382,9 @@ type Store interface {
 	UpdateAPIToken(context.Context, types.APIToken) error
 
 	CreateBrowserSession(context.Context, types.BrowserSession) error
+	GetBrowserSession(context.Context, string) (types.BrowserSession, error)
 	GetBrowserSessionByHash(context.Context, string) (types.BrowserSession, error)
+	ListBrowserSessions(context.Context, BrowserSessionQuery) ([]types.BrowserSession, error)
 	UpdateBrowserSession(context.Context, types.BrowserSession) error
 
 	CreateRolloutExecution(context.Context, types.RolloutExecution) error

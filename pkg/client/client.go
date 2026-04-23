@@ -191,6 +191,10 @@ func (c *Client) GetRolloutExecution(ctx context.Context, id string) (types.Roll
 	return doItem[types.RolloutExecutionDetail](ctx, c, http.MethodGet, "/api/v1/rollout-executions/"+id, nil)
 }
 
+func (c *Client) GetRolloutEvidencePack(ctx context.Context, id string) (types.RolloutEvidencePack, error) {
+	return doItem[types.RolloutEvidencePack](ctx, c, http.MethodGet, "/api/v1/rollout-executions/"+id+"/evidence-pack", nil)
+}
+
 func (c *Client) AdvanceRolloutExecution(ctx context.Context, id string, req types.AdvanceRolloutExecutionRequest) (types.RolloutExecution, error) {
 	return doItem[types.RolloutExecution](ctx, c, http.MethodPost, "/api/v1/rollout-executions/"+id+"/advance", req)
 }
@@ -281,6 +285,18 @@ func (c *Client) UpdateIdentityProvider(ctx context.Context, id string, req type
 
 func (c *Client) TestIdentityProvider(ctx context.Context, id string) (types.IdentityProviderTestResult, error) {
 	return doItem[types.IdentityProviderTestResult](ctx, c, http.MethodPost, "/api/v1/identity-providers/"+id+"/test", struct{}{})
+}
+
+func (c *Client) ListBrowserSessions(ctx context.Context, rawQuery string) ([]types.BrowserSessionInfo, error) {
+	path := "/api/v1/browser-sessions"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.BrowserSessionInfo](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) RevokeBrowserSession(ctx context.Context, id string) (types.BrowserSessionInfo, error) {
+	return doItem[types.BrowserSessionInfo](ctx, c, http.MethodPost, "/api/v1/browser-sessions/"+id+"/revoke", struct{}{})
 }
 
 func (c *Client) ListOutboxEvents(ctx context.Context, rawQuery string) ([]types.OutboxEvent, error) {
@@ -393,6 +409,34 @@ func (c *Client) SearchStatusEvents(ctx context.Context, rawQuery string) (types
 		path += "?" + strings.TrimPrefix(rawQuery, "?")
 	}
 	return doItem[types.StatusEventQueryResult](ctx, c, http.MethodGet, path, nil)
+}
+
+func (c *Client) GetStatusEvent(ctx context.Context, id string) (types.StatusEvent, error) {
+	return doItem[types.StatusEvent](ctx, c, http.MethodGet, "/api/v1/status-events/"+id, nil)
+}
+
+func (c *Client) ListProjectStatusEvents(ctx context.Context, id, rawQuery string) ([]types.StatusEvent, error) {
+	path := "/api/v1/projects/" + id + "/status-events"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.StatusEvent](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) ListServiceStatusEvents(ctx context.Context, id, rawQuery string) ([]types.StatusEvent, error) {
+	path := "/api/v1/services/" + id + "/status-events"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.StatusEvent](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) ListEnvironmentStatusEvents(ctx context.Context, id, rawQuery string) ([]types.StatusEvent, error) {
+	path := "/api/v1/environments/" + id + "/status-events"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.StatusEvent](ctx, c, http.MethodGet, path)
 }
 
 func (c *Client) ListRolloutExecutionTimeline(ctx context.Context, id string) ([]types.StatusEvent, error) {

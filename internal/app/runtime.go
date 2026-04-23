@@ -351,9 +351,12 @@ func (a *Application) ReconcileRolloutExecution(ctx context.Context, id string) 
 		if advisoryOnlyRuntime(runtimeContext) {
 			evaluation.Request = advisoryVerificationRequest(evaluation.Request)
 		}
-		result, err := a.RecordVerificationResult(ctx, runtimeContext.Execution.ID, evaluation.Request)
+		result, created, err := a.recordVerificationResultInternal(ctx, runtimeContext.Execution.ID, evaluation.Request)
 		if err != nil {
 			return types.RolloutExecutionDetail{}, err
+		}
+		if !created {
+			return a.GetRolloutExecutionDetail(ctx, id)
 		}
 		if err := a.record(ctx, identity, "rollout.execution.verified_automatically", "rollout_execution", runtimeContext.Execution.ID, runtimeContext.Execution.OrganizationID, runtimeContext.Execution.ProjectID, compactDetailList(evaluation.Explanation),
 			withStatusCategory("verification"),

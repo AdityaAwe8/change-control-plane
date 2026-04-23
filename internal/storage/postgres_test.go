@@ -980,6 +980,26 @@ func TestPostgresStoreBrowserSessionRoundTrip(t *testing.T) {
 	if err := store.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
 	}
+	otherOrg := types.Organization{
+		BaseRecord: types.BaseRecord{ID: "org_browser_pg_other", CreatedAt: now, UpdatedAt: now},
+		Name:       "Other Browser Sessions",
+		Slug:       "other-browser-sessions",
+		Tier:       "growth",
+		Mode:       "startup",
+	}
+	if err := store.CreateOrganization(ctx, otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	otherUser := types.User{
+		BaseRecord:     types.BaseRecord{ID: "user_browser_pg_other", CreatedAt: now, UpdatedAt: now},
+		OrganizationID: otherOrg.ID,
+		Email:          "owner@other-browser.local",
+		DisplayName:    "Other Browser Owner",
+		Status:         "active",
+	}
+	if err := store.CreateUser(ctx, otherUser); err != nil {
+		t.Fatal(err)
+	}
 
 	expiresAt := now.Add(2 * time.Hour)
 	session := types.BrowserSession{
@@ -1002,6 +1022,22 @@ func TestPostgresStoreBrowserSessionRoundTrip(t *testing.T) {
 	if err := store.CreateBrowserSession(ctx, session); err != nil {
 		t.Fatal(err)
 	}
+	otherSession := types.BrowserSession{
+		BaseRecord: types.BaseRecord{
+			ID:        "sess_browser_pg_other",
+			CreatedAt: now.Add(time.Minute),
+			UpdatedAt: now.Add(time.Minute),
+		},
+		UserID:       otherUser.ID,
+		SessionHash:  "hash_browser_pg_other",
+		AuthMethod:   "oidc",
+		AuthProvider: "Other OIDC",
+		LastSeenAt:   ptrTime(now.Add(time.Minute)),
+		ExpiresAt:    expiresAt.Add(time.Hour),
+	}
+	if err := store.CreateBrowserSession(ctx, otherSession); err != nil {
+		t.Fatal(err)
+	}
 
 	stored, err := store.GetBrowserSessionByHash(ctx, session.SessionHash)
 	if err != nil {
@@ -1009,6 +1045,36 @@ func TestPostgresStoreBrowserSessionRoundTrip(t *testing.T) {
 	}
 	if stored.UserID != user.ID || stored.AuthMethod != "password" {
 		t.Fatalf("expected browser session round-trip, got %+v", stored)
+	}
+	byID, err := store.GetBrowserSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byID.ID != session.ID || byID.UserID != user.ID {
+		t.Fatalf("expected browser session get-by-id round-trip, got %+v", byID)
+	}
+	activeOrgSessions, err := store.ListBrowserSessions(ctx, BrowserSessionQuery{
+		OrganizationID: org.ID,
+		Status:         "active",
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activeOrgSessions) != 1 || activeOrgSessions[0].ID != session.ID {
+		t.Fatalf("expected org-scoped active session listing, got %+v", activeOrgSessions)
+	}
+	activeUserSessions, err := store.ListBrowserSessions(ctx, BrowserSessionQuery{
+		OrganizationID: org.ID,
+		UserID:         user.ID,
+		Status:         "active",
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(activeUserSessions) != 1 || activeUserSessions[0].ID != session.ID {
+		t.Fatalf("expected user-scoped active session listing, got %+v", activeUserSessions)
 	}
 
 	revokedAt := now.Add(30 * time.Minute)
@@ -1024,6 +1090,17 @@ func TestPostgresStoreBrowserSessionRoundTrip(t *testing.T) {
 	}
 	if updated.RevokedAt == nil || !updated.RevokedAt.Equal(revokedAt) {
 		t.Fatalf("expected browser session revocation to persist, got %+v", updated)
+	}
+	revokedOrgSessions, err := store.ListBrowserSessions(ctx, BrowserSessionQuery{
+		OrganizationID: org.ID,
+		Status:         "revoked",
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revokedOrgSessions) != 1 || revokedOrgSessions[0].ID != session.ID {
+		t.Fatalf("expected revoked session listing to return only the revoked org session, got %+v", revokedOrgSessions)
 	}
 }
 

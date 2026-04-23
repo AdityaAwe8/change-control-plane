@@ -24,6 +24,10 @@ func (a *Authorizer) CanManageOrganization(identity Identity, organizationID str
 	return hasAnyRole(identity.OrganizationRole(organizationID), "org_admin")
 }
 
+func (a *Authorizer) CanManageBrowserSessions(identity Identity, organizationID string) bool {
+	return identity.ActorType == types.ActorTypeUser && hasAnyRole(identity.OrganizationRole(organizationID), "org_admin")
+}
+
 func (a *Authorizer) CanCreateProject(identity Identity, organizationID string) bool {
 	return hasAnyRole(identity.OrganizationRole(organizationID), "org_admin")
 }

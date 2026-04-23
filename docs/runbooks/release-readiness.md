@@ -16,6 +16,15 @@ This writes:
 .tmp/release-readiness/release-readiness-report.md
 ```
 
+and now also refreshes:
+
+```text
+.tmp/live-proof/live-proof-preflight.json
+.tmp/live-proof/live-proof-operator-checklist.md
+```
+
+When `GOCACHE` or `GOTMPDIR` are unset, the gate now pins them to repo-local `.tmp/go-build` and `.tmp/go-tmp` paths so Go-based checks can still run in sandboxed or locked-down workstation environments without relying on `~/Library/Caches/go-build`.
+
 ## What The Gate Checks
 
 The ship gate reruns or validates:
@@ -29,6 +38,7 @@ The ship gate reruns or validates:
 - `make web-build`
 - `make proof-contract`
 - `make proof-harness`
+- `make proof-live-preflight`
 - `make reference-pilot-validate`
 - `make proof-live-validate`
 - a secret-safety scan across the generated release report, its supporting logs, and any preserved proof artifacts
@@ -42,6 +52,8 @@ The report distinguishes:
 - `artifact`: saved proof bundles revalidated without rerunning the source environment
 - `operator-proof`: whether a saved external proof bundle is strong enough to count as real hosted/customer evidence
 
+When the external proof artifact is missing, the gate now points at the generated live-proof checklist instead of leaving only a vague missing-file warning.
+
 ## Default Blocking Rules
 
 By default the ship gate fails when:
@@ -52,6 +64,8 @@ By default the ship gate fails when:
 - the saved live-proof artifact is only `hosted_like`
 
 That last case is intentional: hosted-like proof is valuable, but it is not the same as preserved operator-run hosted/customer evidence.
+
+The new preflight/checklist output is informative, not sufficient by itself. It narrows the remaining operator work; it does not replace the real external artifact.
 
 ## Dry-Run Override
 
@@ -74,9 +88,28 @@ The ship gate does not itself:
 - act as a universal runtime metadata scrubber across every status event or arbitrary external log source
 - replace operator judgment on intentionally limited subsystems such as narrow deterministic policy scope or incomplete enterprise IAM breadth
 
+## Operator Checklist
+
+If the live-proof artifact is missing, read:
+
+```text
+.tmp/live-proof/live-proof-operator-checklist.md
+```
+
+That checklist is regenerated on every `make release-readiness` run and is designed to answer:
+
+- which env vars are still missing
+- which provider secrets are referenced but not actually loaded
+- whether the current selected SCM path is GitHub or GitLab
+- what exact callback and webhook URL patterns still need to exist
+- whether the current API base still needs public DNS, ingress, or a trusted tunnel before hosted SCM proof can succeed
+- what Kubernetes cluster, namespace, and deployment access is still required
+- what Prometheus endpoint, auth, and query inputs are still required
+
 ## Recommended Operator Flow
 
 1. Capture or refresh the local reference-pilot proof.
-2. Capture or refresh a real external `live-proof-verify` report for `customer_environment` or `hosted_saas`.
-3. Run `make release-readiness`.
-4. Review `.tmp/release-readiness/release-readiness-report.md` and preserve it alongside the underlying proof artifacts.
+2. Generate or refresh `.tmp/live-proof/live-proof-operator-checklist.md` with `make proof-live-preflight` and close its missing-input list.
+3. Capture or refresh a real external `live-proof-verify` report for `customer_environment` or `hosted_saas`.
+4. Run `make release-readiness`.
+5. Review `.tmp/release-readiness/release-readiness-report.md` and preserve it alongside the underlying proof artifacts.

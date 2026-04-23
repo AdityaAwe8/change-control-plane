@@ -2,12 +2,13 @@ package app_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/change-control-plane/change-control-plane/internal/app"
 	"github.com/change-control-plane/change-control-plane/internal/common"
@@ -17,7 +18,7 @@ import (
 func TestServiceAccountTokenLifecycleAndAuth(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -77,7 +78,7 @@ func TestServiceAccountTokenLifecycleAndAuth(t *testing.T) {
 func TestServiceAccountDeactivateAndRotateRoutes(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -189,7 +190,7 @@ func TestServiceAccountDeactivateAndRotateRoutes(t *testing.T) {
 func TestTeamCRUDRoutes(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -258,7 +259,7 @@ func TestTeamCRUDRoutes(t *testing.T) {
 func TestOrganizationProjectServiceAndEnvironmentCRUDRoutes(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -439,7 +440,7 @@ func TestOrganizationProjectServiceAndEnvironmentCRUDRoutes(t *testing.T) {
 func TestIncidentDetailRoute(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -575,10 +576,269 @@ func TestIncidentDetailRoute(t *testing.T) {
 	}
 }
 
+func TestRolloutEvidencePackRoute(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+	store := app.NewInMemoryStore()
+	application := app.NewApplicationWithStore(common.LoadConfig(), store)
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	admin := loginDev(t, server.URL, types.DevLoginRequest{
+		Email:            "owner-evidence@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme Evidence",
+		OrganizationSlug: "acme-evidence",
+	})
+
+	project := postItemAuth[types.Project](t, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           "Platform",
+		Slug:           "platform",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	team := postItemAuth[types.Team](t, server.URL+"/api/v1/teams", types.CreateTeamRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Core",
+		Slug:           "core",
+		OwnerUserIDs:   []string{admin.Session.ActorID},
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	service := postItemAuth[types.Service](t, server.URL+"/api/v1/services", types.CreateServiceRequest{
+		OrganizationID:   admin.Session.ActiveOrganizationID,
+		ProjectID:        project.ID,
+		TeamID:           team.ID,
+		Name:             "Checkout",
+		Slug:             "checkout",
+		Criticality:      "high",
+		HasSLO:           true,
+		HasObservability: true,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	environment := postItemAuth[types.Environment](t, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Production",
+		Slug:           "prod",
+		Type:           "production",
+		Region:         "us-central1",
+		Production:     true,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+
+	_ = postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Name:           "Production Manual Review",
+		Code:           "production-manual-review",
+		AppliesTo:      "rollout_plan",
+		Mode:           "require_manual_review",
+		Priority:       100,
+		Description:    "Require review for production releases.",
+		Conditions: types.PolicyCondition{
+			ProductionOnly: true,
+		},
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+
+	change := postItemAuth[types.ChangeSet](t, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Summary:        "release checkout with mapped evidence",
+		ChangeTypes:    []string{"code", "config"},
+		FileCount:      5,
+		ResourceCount:  2,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	rollout := postItemAuth[types.RolloutPlanResult](t, server.URL+"/api/v1/rollout-plans", types.CreateRolloutPlanRequest{
+		ChangeSetID: change.ID,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+
+	now := time.Now().UTC()
+	backendIntegration := types.Integration{
+		BaseRecord: types.BaseRecord{
+			ID:        common.NewID("int"),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           "Production Kubernetes",
+		Kind:           "kubernetes",
+		InstanceKey:    "kube-prod",
+		ScopeType:      "cluster",
+		ScopeName:      "prod",
+		Mode:           "advisory",
+		Enabled:        true,
+		Status:         "connected",
+	}
+	if err := store.CreateIntegration(context.Background(), backendIntegration); err != nil {
+		t.Fatal(err)
+	}
+	signalIntegration := types.Integration{
+		BaseRecord: types.BaseRecord{
+			ID:        common.NewID("int"),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           "Production Prometheus",
+		Kind:           "prometheus",
+		InstanceKey:    "prom-prod",
+		ScopeType:      "environment",
+		ScopeName:      "prod",
+		Mode:           "advisory",
+		Enabled:        true,
+		Status:         "connected",
+	}
+	if err := store.CreateIntegration(context.Background(), signalIntegration); err != nil {
+		t.Fatal(err)
+	}
+
+	execution := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions", types.CreateRolloutExecutionRequest{
+		RolloutPlanID:        rollout.Plan.ID,
+		BackendType:          "simulated",
+		BackendIntegrationID: backendIntegration.ID,
+		SignalProviderType:   "prometheus",
+		SignalIntegrationID:  signalIntegration.ID,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+
+	approved := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/advance", types.AdvanceRolloutExecutionRequest{
+		Action: "approve",
+		Reason: "approved for evidence pack route",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if approved.Status != "approved" {
+		t.Fatalf("expected approved execution, got %+v", approved)
+	}
+	started := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/advance", types.AdvanceRolloutExecutionRequest{
+		Action: "start",
+		Reason: "start for evidence pack route",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if started.Status != "in_progress" {
+		t.Fatalf("expected in-progress execution, got %+v", started)
+	}
+
+	_ = postItemAuth[types.SignalSnapshot](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/signal-snapshots", types.CreateSignalSnapshotRequest{
+		ProviderType: "prometheus",
+		Health:       "healthy",
+		Summary:      "latency steady",
+		Signals: []types.SignalValue{{
+			Name:       "latency_p95_ms",
+			Category:   "technical",
+			Value:      180,
+			Unit:       "ms",
+			Status:     "healthy",
+			Threshold:  250,
+			Comparator: "<=",
+		}},
+		WindowSeconds: 300,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	_ = postItemAuth[types.VerificationResult](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/verification", types.RecordVerificationResultRequest{
+		Outcome:        "passed",
+		Decision:       "continue",
+		Summary:        "verification remains healthy",
+		DecisionSource: "operator",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	paused := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/pause", struct {
+		Reason string `json:"reason"`
+	}{
+		Reason: "pause to preserve incident evidence",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if paused.Status != "paused" {
+		t.Fatalf("expected paused execution, got %+v", paused)
+	}
+
+	repository := types.Repository{
+		BaseRecord: types.BaseRecord{
+			ID:        common.NewID("repo"),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Name:           "checkout-service",
+		Provider:       "github",
+		URL:            "https://github.com/acme/checkout-service",
+		DefaultBranch:  "main",
+		Status:         "mapped",
+	}
+	if err := store.UpsertRepository(context.Background(), repository); err != nil {
+		t.Fatal(err)
+	}
+	resource := types.DiscoveredResource{
+		BaseRecord: types.BaseRecord{
+			ID:        common.NewID("discovery"),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		IntegrationID:  backendIntegration.ID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		RepositoryID:   repository.ID,
+		ResourceType:   "kubernetes_workload",
+		Provider:       "kubernetes",
+		ExternalID:     "checkout",
+		Namespace:      "prod",
+		Name:           "checkout",
+		Status:         "mapped",
+		Health:         "healthy",
+		Summary:        "checkout workload healthy",
+	}
+	if err := store.UpsertDiscoveredResource(context.Background(), resource); err != nil {
+		t.Fatal(err)
+	}
+	relationship := types.GraphRelationship{
+		BaseRecord: types.BaseRecord{
+			ID:        common.NewID("rel"),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		OrganizationID:   admin.Session.ActiveOrganizationID,
+		ProjectID:        project.ID,
+		RelationshipType: "service_repository",
+		FromResourceType: "service",
+		FromResourceID:   service.ID,
+		ToResourceType:   "repository",
+		ToResourceID:     repository.ID,
+		Status:           "active",
+		LastObservedAt:   now,
+	}
+	if err := store.UpsertGraphRelationship(context.Background(), relationship); err != nil {
+		t.Fatal(err)
+	}
+
+	pack := getItemAuth[types.RolloutEvidencePack](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/evidence-pack", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
+	if pack.ExecutionDetail.Execution.ID != execution.ID {
+		t.Fatalf("expected rollout execution %s in evidence pack, got %+v", execution.ID, pack.ExecutionDetail.Execution)
+	}
+	if pack.Organization.ID != admin.Session.ActiveOrganizationID || pack.Project.ID != project.ID {
+		t.Fatalf("expected organization/project context in evidence pack, got %+v / %+v", pack.Organization, pack.Project)
+	}
+	if pack.Summary.ManualReviewPolicyCount < 1 {
+		t.Fatalf("expected at least one manual-review policy decision, got %+v", pack.Summary)
+	}
+	if pack.Summary.LatestVerificationOutcome != "passed" || pack.Summary.ApprovalState != "satisfied" {
+		t.Fatalf("unexpected evidence pack summary %+v", pack.Summary)
+	}
+	if len(pack.PolicyDecisions) == 0 || len(pack.Repositories) != 1 || len(pack.DiscoveredResources) != 1 || len(pack.GraphRelationships) != 1 {
+		t.Fatalf("expected mapped policy/repository/resource/graph evidence, got %+v", pack)
+	}
+	if len(pack.AuditTrail) == 0 {
+		t.Fatal("expected audit trail in rollout evidence pack")
+	}
+	if len(pack.Incidents) == 0 || pack.Incidents[0].RelatedChange != change.ID {
+		t.Fatalf("expected related incident evidence, got %+v", pack.Incidents)
+	}
+	if pack.ExecutionDetail.RuntimeSummary.ControlMode != "advisory" {
+		t.Fatalf("expected advisory control mode in evidence pack runtime summary, got %+v", pack.ExecutionDetail.RuntimeSummary)
+	}
+}
+
 func TestIncidentListRouteSupportsFilters(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -766,7 +1026,7 @@ func TestIncidentListRouteSupportsFilters(t *testing.T) {
 func TestChangeRiskRolloutAuditAndRollbackPolicyRoutes(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1037,7 +1297,7 @@ func TestChangeRiskRolloutAuditAndRollbackPolicyRoutes(t *testing.T) {
 func TestGraphIngestionIsIdempotent(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1154,7 +1414,7 @@ func TestGraphIngestionIsIdempotent(t *testing.T) {
 func TestRolloutExecutionLifecycleAndVerification(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1266,7 +1526,7 @@ func TestRolloutExecutionLifecycleAndVerification(t *testing.T) {
 func TestRolloutPauseResumeRollbackRoutes(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1382,7 +1642,7 @@ func TestRolloutPauseResumeRollbackRoutes(t *testing.T) {
 func TestRecordVerificationResultRouteActiveAndAdvisory(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1565,7 +1825,7 @@ func TestRecordVerificationResultRouteActiveAndAdvisory(t *testing.T) {
 func TestRolloutExecutionReconcileAndSignalSnapshots(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1678,7 +1938,7 @@ func TestRolloutExecutionReconcileAndSignalSnapshots(t *testing.T) {
 func TestRollbackPoliciesAndStatusEventsAPI(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1786,6 +2046,22 @@ func TestRollbackPoliciesAndStatusEventsAPI(t *testing.T) {
 	if detail.EffectiveRollbackPolicy == nil || detail.EffectiveRollbackPolicy.Name != "Prod strict" {
 		t.Fatalf("expected effective rollback policy to be attached, got %+v", detail.EffectiveRollbackPolicy)
 	}
+	if len(detail.VerificationResults) == 0 {
+		t.Fatal("expected at least one verification result after rollback-triggering reconcile")
+	}
+	initialVerificationID := detail.VerificationResults[len(detail.VerificationResults)-1].ID
+	initialVerificationCount := len(detail.VerificationResults)
+
+	repeatDetail := postItemAuth[types.RolloutExecutionDetail](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/reconcile", struct{}{}, issued.Token, admin.Session.ActiveOrganizationID)
+	if repeatDetail.Execution.Status != "rolled_back" {
+		t.Fatalf("expected repeated reconcile to keep rolled back execution, got %s", repeatDetail.Execution.Status)
+	}
+	if len(repeatDetail.VerificationResults) != initialVerificationCount {
+		t.Fatalf("expected repeated reconcile to avoid duplicate automated verification records, got %+v", repeatDetail.VerificationResults)
+	}
+	if repeatDetail.VerificationResults[len(repeatDetail.VerificationResults)-1].ID != initialVerificationID {
+		t.Fatalf("expected repeated reconcile to preserve the latest rollback verification id, got %+v", repeatDetail.VerificationResults)
+	}
 
 	statusEvents := getListAuth[types.StatusEvent](t, server.URL+"/api/v1/status-events?rollout_execution_id="+execution.ID+"&rollback_only=true", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
 	if len(statusEvents) == 0 {
@@ -1808,6 +2084,10 @@ func TestRollbackPoliciesAndStatusEventsAPI(t *testing.T) {
 	}
 	if searchResult.Filters["service_id"] != service.ID {
 		t.Fatalf("expected service filter to round-trip, got %+v", searchResult.Filters)
+	}
+	automatedVerificationEvents := getListAuth[types.StatusEvent](t, server.URL+"/api/v1/status-events?rollout_execution_id="+execution.ID+"&event_type=rollout.execution.verified_automatically&limit=10", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
+	if len(automatedVerificationEvents) != 1 {
+		t.Fatalf("expected exactly one automatic rollback verification status event after repeated reconcile, got %+v", automatedVerificationEvents)
 	}
 
 	timeline := getListAuth[types.StatusEvent](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/timeline", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
@@ -1844,7 +2124,7 @@ func TestRollbackPoliciesAndStatusEventsAPI(t *testing.T) {
 func TestOrgMemberCannotManageRollbackPolicies(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1894,7 +2174,7 @@ func TestOrgMemberCannotManageRollbackPolicies(t *testing.T) {
 func TestOrgMemberCannotArchiveService(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -1951,7 +2231,7 @@ func TestOrgMemberCannotArchiveService(t *testing.T) {
 func TestServiceAccountRoutesEnforceScopeAndRBAC(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -2020,7 +2300,7 @@ func TestServiceAccountRoutesEnforceScopeAndRBAC(t *testing.T) {
 func TestRolloutOverrideRoutesEnforceScopeAndRBAC(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -2122,7 +2402,7 @@ func TestRolloutOverrideRoutesEnforceScopeAndRBAC(t *testing.T) {
 func TestSignalSnapshotIsTenantScoped(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

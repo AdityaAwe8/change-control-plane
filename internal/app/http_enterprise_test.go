@@ -25,7 +25,7 @@ func TestOIDCIdentityProviderStartAndCallbackIssueEnterpriseSession(t *testing.T
 	t.Setenv("CCP_OIDC_CLIENT_SECRET_TEST", "super-secret")
 
 	var oidcServer *httptest.Server
-	oidcServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	oidcServer = newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/oidc/.well-known/openid-configuration":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -71,7 +71,7 @@ func TestOIDCIdentityProviderStartAndCallbackIssueEnterpriseSession(t *testing.T
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 	application.Config.APIBaseURL = server.URL
 
@@ -185,7 +185,7 @@ func TestIdentityProviderRoutesEnforceScopeAndRBAC(t *testing.T) {
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -253,12 +253,113 @@ func TestIdentityProviderRoutesEnforceScopeAndRBAC(t *testing.T) {
 	}
 }
 
+func TestBrowserSessionAdminRoutesEnforceScopeRBACAndCurrentSessionRevocation(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+
+	cfg := common.LoadConfig()
+	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	adminLogin, adminCookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
+		Email:            "owner-sessions@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme",
+		OrganizationSlug: "acme-sessions",
+	})
+	memberLogin, memberCookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
+		Email:            "member-sessions@acme.local",
+		DisplayName:      "Member",
+		OrganizationSlug: "acme-sessions",
+		Roles:            []string{"org_member"},
+	})
+	otherOrg, otherCookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
+		Email:            "owner-sessions@other.local",
+		DisplayName:      "Other Owner",
+		OrganizationName: "Other Org",
+		OrganizationSlug: "other-sessions",
+	})
+
+	listBody := doJSONWithCookie(t, http.MethodGet, server.URL+"/api/v1/browser-sessions?status=active&limit=10", nil, adminCookie, adminLogin.Session.ActiveOrganizationID, http.StatusOK)
+	var listed types.ListResponse[types.BrowserSessionInfo]
+	if err := json.Unmarshal(listBody, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Data) < 2 {
+		t.Fatalf("expected same-org browser sessions in admin listing, got %+v", listed.Data)
+	}
+
+	var adminSessionID string
+	var memberSessionID string
+	for _, session := range listed.Data {
+		switch session.UserEmail {
+		case adminLogin.Session.Email:
+			if !session.Current {
+				t.Fatalf("expected admin browser session to be marked current, got %+v", session)
+			}
+			adminSessionID = session.ID
+		case memberLogin.Session.Email:
+			memberSessionID = session.ID
+		case otherOrg.Session.Email:
+			t.Fatalf("expected cross-org browser session to be excluded, got %+v", listed.Data)
+		}
+	}
+	if adminSessionID == "" || memberSessionID == "" {
+		t.Fatalf("expected admin and member browser sessions in listing, got %+v", listed.Data)
+	}
+
+	doJSONWithCookie(t, http.MethodGet, server.URL+"/api/v1/browser-sessions", nil, memberCookie, memberLogin.Session.ActiveOrganizationID, http.StatusForbidden)
+	doJSONWithCookieAndHeaders(t, http.MethodPost, server.URL+"/api/v1/browser-sessions/"+memberSessionID+"/revoke", nil, otherCookie, otherOrg.Session.ActiveOrganizationID, map[string]string{
+		"Origin": "http://127.0.0.1:5173",
+	}, http.StatusForbidden)
+
+	revokeMemberBody := doJSONWithCookieAndHeaders(t, http.MethodPost, server.URL+"/api/v1/browser-sessions/"+memberSessionID+"/revoke", nil, adminCookie, adminLogin.Session.ActiveOrganizationID, map[string]string{
+		"Origin": "http://127.0.0.1:5173",
+	}, http.StatusOK)
+	var revokedMember types.ItemResponse[types.BrowserSessionInfo]
+	if err := json.Unmarshal(revokeMemberBody, &revokedMember); err != nil {
+		t.Fatal(err)
+	}
+	if revokedMember.Data.Status != "revoked" || revokedMember.Data.Current {
+		t.Fatalf("expected member browser session revoke to succeed, got %+v", revokedMember.Data)
+	}
+	storedMemberSession, err := application.Store.GetBrowserSession(t.Context(), memberSessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedMemberSession.RevokedAt == nil {
+		t.Fatalf("expected member browser session to persist revocation, got %+v", storedMemberSession)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/browser-sessions/"+adminSessionID+"/revoke", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.AddCookie(adminCookie)
+	request.Header.Set("X-CCP-Organization-ID", adminLogin.Session.ActiveOrganizationID)
+	request.Header.Set("Origin", "http://127.0.0.1:5173")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected current browser session revoke to succeed, got %d", response.StatusCode)
+	}
+	clearedCookie := findBrowserSessionCookie(response.Cookies())
+	if clearedCookie == nil || clearedCookie.Value != "" || clearedCookie.MaxAge >= 0 {
+		t.Fatalf("expected current session revoke to clear browser session cookie, got %+v", response.Cookies())
+	}
+
+	doJSONWithCookie(t, http.MethodGet, server.URL+"/api/v1/auth/session", nil, adminCookie, adminLogin.Session.ActiveOrganizationID, http.StatusUnauthorized)
+}
+
 func TestWebhookRegistrationSyncAndDeliveryHealthForGitHub(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	t.Setenv("CCP_GITHUB_TOKEN_TEST", "ghs-test-token")
 	t.Setenv("CCP_GITHUB_WEBHOOK_SECRET_TEST", "hook-secret")
 
-	githubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	githubServer := newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/orgs/acme/hooks":
 			if r.Method == http.MethodGet {
@@ -280,7 +381,7 @@ func TestWebhookRegistrationSyncAndDeliveryHealthForGitHub(t *testing.T) {
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 	application.Config.APIBaseURL = server.URL
 
@@ -380,7 +481,7 @@ func TestOIDCCallbackDoesNotRedirectToUnsafeReturnToOrigin(t *testing.T) {
 	t.Setenv("CCP_OIDC_CLIENT_SECRET_TEST", "super-secret")
 
 	var oidcServer *httptest.Server
-	oidcServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	oidcServer = newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/oidc/.well-known/openid-configuration":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -408,7 +509,7 @@ func TestOIDCCallbackDoesNotRedirectToUnsafeReturnToOrigin(t *testing.T) {
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 	application.Config.APIBaseURL = server.URL
 
@@ -467,7 +568,7 @@ func TestOutboxRecoveryRoutesResetDispatchStatePreserveForensicsAndStayDispatcha
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -606,7 +707,7 @@ func TestOutboxRecoveryRoutesEnforceScopeRBACAndSupportedStatuses(t *testing.T) 
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -686,7 +787,7 @@ func TestOutboxRecoveryRoutesRejectRepeatedRecoveryAttemptsWithTruthfulCurrentSt
 
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -788,7 +889,7 @@ func TestOutboxRecoveryRoutesRejectRecoveryWhenWorkerClaimsDuringCommitAndStaleR
 	baseStore := app.NewInMemoryStore()
 	racingStore := &raceOnOutboxRecoveryStore{Store: baseStore}
 	application := app.NewApplicationWithStore(cfg, racingStore)
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

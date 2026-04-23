@@ -866,6 +866,31 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-executions/{id}/evidence-pack:
+    get:
+      summary: Export rollout evidence pack
+      description: >
+        Returns an exportable deployment evidence bundle that combines change,
+        risk, policy, rollout, incident, provenance, and runtime mapping
+        evidence for a single rollout execution.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rollout evidence pack
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutEvidencePackItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-executions/{id}/advance:
     post:
       summary: Advance rollout execution lifecycle
@@ -2226,6 +2251,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IdentityProviderTestResultItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/browser-sessions:
+    get:
+      summary: List persisted browser sessions for the active organization
+      parameters:
+        - in: query
+          name: user_id
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string, enum: [active, expired, revoked] }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Browser session diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserSessionInfoListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/browser-sessions/{id}/revoke:
+    post:
+      summary: Revoke a persisted browser session for the active organization
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Browser session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrowserSessionInfoItemResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -4219,6 +4294,57 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/IdentityProviderTestResult'
+    BrowserSessionInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+        user_email:
+          type: string
+        user_display_name:
+          type: string
+        auth_method:
+          type: string
+        auth_provider_id:
+          type: string
+        auth_provider:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+        current:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    BrowserSessionInfoListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrowserSessionInfo'
+    BrowserSessionInfoItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/BrowserSessionInfo'
     Integration:
       type: object
       properties:
@@ -4320,9 +4446,7 @@ components:
     WebhookRegistrationMap:
       type: object
       additionalProperties:
-        allOf:
-          - $ref: '#/components/schemas/WebhookRegistration'
-        nullable: true
+        $ref: '#/components/schemas/WebhookRegistration'
     IntegrationSyncRun:
       type: object
       properties:
@@ -4920,6 +5044,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutboxEvent'
+        browser_sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrowserSessionInfo'
     EnterprisePageStateItemResponse:
       type: object
       properties:
@@ -5341,6 +5469,104 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/RolloutExecutionDetail'
+    RolloutEvidencePackSummary:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        approval_state:
+          type: string
+        risk_level:
+          type: string
+        risk_score:
+          type: integer
+        blast_radius_scope:
+          type: string
+        blast_radius_summary:
+          type: string
+        rollout_strategy:
+          type: string
+        latest_decision:
+          type: string
+        latest_verification_outcome:
+          type: string
+        control_mode:
+          type: string
+        incident_count:
+          type: integer
+        repository_count:
+          type: integer
+        discovered_resource_count:
+          type: integer
+        blocking_policy_count:
+          type: integer
+        manual_review_policy_count:
+          type: integer
+        evidence_highlights:
+          type: array
+          items:
+            type: string
+    RolloutEvidencePack:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/RolloutEvidencePackSummary'
+        organization:
+          $ref: '#/components/schemas/Organization'
+        project:
+          $ref: '#/components/schemas/Project'
+        service:
+          $ref: '#/components/schemas/Service'
+        environment:
+          $ref: '#/components/schemas/Environment'
+        change_set:
+          $ref: '#/components/schemas/ChangeSet'
+        assessment:
+          $ref: '#/components/schemas/RiskAssessment'
+        plan:
+          $ref: '#/components/schemas/RolloutPlan'
+        execution_detail:
+          $ref: '#/components/schemas/RolloutExecutionDetail'
+        backend_integration:
+          $ref: '#/components/schemas/Integration'
+        signal_integration:
+          $ref: '#/components/schemas/Integration'
+        policy_decisions:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/PolicyDecision'
+        incidents:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Incident'
+        repositories:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Repository'
+        discovered_resources:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/DiscoveredResource'
+        graph_relationships:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/GraphRelationship'
+        audit_trail:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+    RolloutEvidencePackItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RolloutEvidencePack'
     SimulationPageState:
       type: object
       properties:

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ import (
 func TestProjectsRequireAuthentication(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	resp, err := http.Get(server.URL + "/api/v1/projects")
@@ -36,7 +35,7 @@ func TestCORSPreflightAllowedInDevelopment(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	t.Setenv("CCP_ENV", "development")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	req, err := http.NewRequest(http.MethodOptions, server.URL+"/api/v1/projects", nil)
@@ -72,7 +71,7 @@ func TestDisallowedCORSOriginRejectedWhenConfigured(t *testing.T) {
 	t.Setenv("CCP_ENV", "production")
 	t.Setenv("CCP_ALLOWED_ORIGINS", "https://console.acme.local")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	req, err := http.NewRequest(http.MethodOptions, server.URL+"/api/v1/projects", nil)
@@ -96,7 +95,7 @@ func TestDisallowedCORSOriginRejectedWhenConfigured(t *testing.T) {
 func TestSignUpCreatesPasswordAccountWithoutOrganizationScope(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	response := signUp(t, server.URL, types.SignUpRequest{
@@ -117,7 +116,7 @@ func TestSignUpCreatesPasswordAccountWithoutOrganizationScope(t *testing.T) {
 func TestSignInWithPasswordRestoresSession(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	signUp(t, server.URL, types.SignUpRequest{
@@ -140,7 +139,7 @@ func TestSignInWithPasswordRestoresSession(t *testing.T) {
 func TestPasswordSignInEstablishesHttpOnlyBrowserSessionAndLogoutRevokesIt(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	signUp(t, server.URL, types.SignUpRequest{
@@ -195,7 +194,7 @@ func TestPasswordSignInEstablishesHttpOnlyBrowserSessionAndLogoutRevokesIt(t *te
 func TestDevLoginEstablishesBrowserSessionCookieAndSessionEndpointUsesIt(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	response, cookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
@@ -219,7 +218,7 @@ func TestDevLoginEstablishesBrowserSessionCookieAndSessionEndpointUsesIt(t *test
 func TestExpiredAndRevokedBrowserSessionsAreRejected(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -242,7 +241,7 @@ func TestCookieAuthenticatedMutationRejectsDisallowedOrigin(t *testing.T) {
 	t.Setenv("CCP_ENV", "production")
 	t.Setenv("CCP_ALLOWED_ORIGINS", "https://console.acme.local")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	login, cookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
@@ -271,7 +270,7 @@ func TestCookieAuthenticatedMutationAllowsConfiguredOrigin(t *testing.T) {
 	t.Setenv("CCP_ENV", "production")
 	t.Setenv("CCP_ALLOWED_ORIGINS", "https://console.acme.local")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	login, cookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
@@ -295,7 +294,7 @@ func TestBearerAndAPITokenAuthStillWorkAfterBrowserSessionHardening(t *testing.T
 	t.Setenv("CCP_ENV", "production")
 	t.Setenv("CCP_ALLOWED_ORIGINS", "https://console.acme.local")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -333,7 +332,7 @@ func TestBearerAndAPITokenAuthStillWorkAfterBrowserSessionHardening(t *testing.T
 func TestSignInRejectsInvalidCredentialsWithHelpfulMessage(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	payload, err := json.Marshal(types.SignInRequest{
@@ -366,7 +365,7 @@ func TestSignInRejectsInvalidCredentialsWithHelpfulMessage(t *testing.T) {
 func TestDemoAdminCanSignInWithDefaultPassword(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	response := signIn(t, server.URL, types.SignInRequest{
@@ -385,7 +384,7 @@ func TestDemoAdminCanSignInWithDefaultPassword(t *testing.T) {
 func TestSignUpClaimsExistingMembershipWithoutOrgFields(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -423,7 +422,7 @@ func TestSignUpClaimsExistingMembershipWithoutOrgFields(t *testing.T) {
 func TestCreateProjectRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -473,7 +472,7 @@ func TestCreateProjectRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 func TestCrossTenantProjectScopeDenied(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	loginA := loginDev(t, server.URL, types.DevLoginRequest{
@@ -510,7 +509,7 @@ func TestCrossTenantProjectScopeDenied(t *testing.T) {
 func TestOrgMemberCannotCreateProject(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

@@ -148,6 +148,14 @@ The default API address is `http://localhost:8080`.
 
 `make compose-up` now waits for the dependency containers to become ready before returning. The `make run-api`, `make migrate`, and `make run-worker` targets automatically use those dependency ports unless you override the `CCP_*` environment variables yourself.
 
+Local `make` targets and live-proof scripts now also auto-load gitignored local env files when present:
+
+- `.env`
+- `.env.live-proof.local`
+- `.env.live-proof.secrets`
+
+That means `make run-api`, `make migrate`, `make run-worker`, `make run-cli`, `make proof-live-preflight`, `make proof-live-verify`, `make proof-live-validate`, and `make release-readiness` can read saved local values without a manual `source` step, while explicit shell or inline `CCP_*` overrides still win.
+
 If the web console runs on a different origin, set `CCP_ALLOWED_ORIGINS` accordingly. The sample environment file includes the default local Vite origins used by browser verification.
 
 To run the worker as an authenticated machine actor, first issue a service-account token:
@@ -240,6 +248,8 @@ The `ccp` CLI now covers the main operator/admin surface for the product. Today 
 - `ccp service-account create`
 - `ccp service-account list`
 - `ccp service-account deactivate`
+- `ccp browser-session list`
+- `ccp browser-session revoke`
 - `ccp token issue`
 - `ccp token list`
 - `ccp token revoke`
@@ -278,9 +288,14 @@ The `ccp` CLI now covers the main operator/admin surface for the product. Today 
 - `ccp signal ingest`
 - `ccp verification record`
 - `ccp status list`
+- `ccp status show`
+- `ccp status project`
+- `ccp status service`
+- `ccp status env`
 - `ccp rollback-policy list`
 - `ccp rollback-policy create`
 - `ccp rollback-policy update`
+- `ccp policy-decision list`
 - `ccp audit list`
 - `ccp incident list`
 - `ccp incident show`
@@ -317,6 +332,7 @@ make release-readiness
 This command:
 
 - reruns the highest-value local Go, web build, contract, and provider-harness checks
+- generates a secret-safe live-proof preflight report and operator checklist under `.tmp/live-proof/`
 - revalidates `.tmp/reference-pilot/reference-pilot-report.json` and `.tmp/live-proof/live-proof-report.json` when present
 - scans the generated release report, supporting logs, and preserved proof artifacts for configured secret-backed env leakage
 - writes `.tmp/release-readiness/release-readiness-report.md`
@@ -329,6 +345,19 @@ CCP_RELEASE_ALLOW_PROOF_GAPS=true make release-readiness
 ```
 
 This override is only for local rehearsal. It does not turn hosted-like or missing external proof into real customer-environment evidence.
+
+Before attempting real hosted/customer proof, you can also generate the exact operator checklist directly:
+
+```bash
+make proof-live-preflight
+```
+
+That writes:
+
+- `.tmp/live-proof/live-proof-preflight.json`
+- `.tmp/live-proof/live-proof-operator-checklist.md`
+
+and leaves behind the exact env vars, provider access, callback/webhook URL patterns, public-ingress or tunnel expectations, cluster access, and telemetry inputs still needed for a truthful external proof run.
 - [docs/testing/residual-risk-register.md](/Users/aditya/Documents/ChangeControlPlane/docs/testing/residual-risk-register.md)
 
 ## Documentation Map

@@ -2,8 +2,8 @@ package app_test
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/change-control-plane/change-control-plane/internal/app"
 	"github.com/change-control-plane/change-control-plane/internal/common"
@@ -13,7 +13,7 @@ import (
 func TestIntegrationsPageStateRouteBundlesOperationalReads(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -67,7 +67,7 @@ func TestIntegrationsPageStateRouteBundlesOperationalReads(t *testing.T) {
 func TestRolloutPageStateRouteBundlesExecutionReads(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -103,7 +103,7 @@ func TestRolloutPageStateRouteBundlesExecutionReads(t *testing.T) {
 func TestDeploymentsPageStateRouteBundlesOperationalDashboardReads(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -156,7 +156,7 @@ func TestEnterprisePageStateRouteBundlesAdminReads(t *testing.T) {
 	t.Setenv("CCP_OIDC_CLIENT_SECRET_TEST", "secret-value")
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -176,6 +176,7 @@ func TestEnterprisePageStateRouteBundlesAdminReads(t *testing.T) {
 		DefaultRole:     "org_member",
 		Enabled:         true,
 	}, admin.Token, admin.Session.ActiveOrganizationID)
+	_ = mustCreateBrowserSessionCookie(t, application, admin.Session.ActorID, "oidc", provider.ID, provider.Name, time.Now().UTC().Add(2*time.Hour), nil)
 
 	data := getItemAuth[types.EnterprisePageState](t, server.URL+"/api/v1/page-state/enterprise", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
 	if len(data.IdentityProviders) != 1 || data.IdentityProviders[0].ID != provider.ID {
@@ -187,12 +188,15 @@ func TestEnterprisePageStateRouteBundlesAdminReads(t *testing.T) {
 	if len(data.WebhookRegistrations) == 0 {
 		t.Fatal("expected enterprise page state to include webhook diagnostics for scm integrations")
 	}
+	if len(data.BrowserSessions) == 0 || data.BrowserSessions[0].UserEmail != admin.Session.Email {
+		t.Fatalf("expected enterprise page state to include browser session diagnostics, got %+v", data.BrowserSessions)
+	}
 }
 
 func TestGraphPageStateRouteBundlesTopologyReads(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -249,7 +253,7 @@ func TestGraphPageStateRouteBundlesTopologyReads(t *testing.T) {
 func TestSimulationPageStateRouteBundlesScenarioPlanningReads(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

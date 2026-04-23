@@ -83,6 +83,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return handleIntegrations(ctx, c, args[1:], stdout, stderr)
 	case "identity-provider":
 		return handleIdentityProviders(ctx, c, args[1:], stdout, stderr)
+	case "browser-session":
+		return handleBrowserSessions(ctx, c, session, args[1:], stdout, stderr)
 	case "repository":
 		return handleRepository(ctx, c, args[1:], stdout, stderr)
 	case "discovery":
@@ -97,6 +99,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return handleGraph(ctx, c, args[1:], stdout, stderr)
 	case "policy":
 		return handlePolicy(ctx, c, session, args[1:], stdout, stderr)
+	case "policy-decision":
+		return handlePolicyDecision(ctx, c, session, args[1:], stdout, stderr)
 	case "bootstrap":
 		fmt.Fprintln(stdout, "bootstrap commands are scaffolded for the next phase")
 		return 0
@@ -632,6 +636,16 @@ func handleRollout(ctx context.Context, c *client.Client, session cliSession, ar
 		}
 		printJSON(stdout, result)
 		return 0
+	case "evidence":
+		fs := flag.NewFlagSet("rollout evidence", flag.ExitOnError)
+		id := fs.String("id", "", "rollout execution id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetRolloutEvidencePack(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
 	case "advance":
 		fs := flag.NewFlagSet("rollout advance", flag.ExitOnError)
 		id := fs.String("id", "", "rollout execution id")
@@ -785,63 +799,118 @@ func handleSignal(ctx context.Context, c *client.Client, session cliSession, arg
 }
 
 func handleStatus(ctx context.Context, c *client.Client, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "list" {
+	if len(args) == 0 {
 		usage(stdout)
 		return 1
 	}
-	fs := flag.NewFlagSet("status list", flag.ExitOnError)
-	projectID := fs.String("project", "", "project id filter")
-	serviceID := fs.String("service", "", "service id filter")
-	environmentID := fs.String("env", "", "environment id filter")
-	rolloutID := fs.String("rollout", "", "rollout execution id filter")
-	source := fs.String("source", "", "event source filter")
-	eventType := fs.String("event-type", "", "event type filter")
-	automated := fs.String("automated", "", "automated filter (true|false)")
-	search := fs.String("search", "", "search text")
-	rollbackOnly := fs.Bool("rollback-only", false, "show only rollback-related events")
-	limit := fs.Int("limit", 100, "maximum number of events")
-	offset := fs.Int("offset", 0, "pagination offset")
-	_ = fs.Parse(args[1:])
-	query := make([]string, 0, 10)
-	if *projectID != "" {
-		query = append(query, "project_id="+url.QueryEscape(*projectID))
-	}
-	if *serviceID != "" {
-		query = append(query, "service_id="+url.QueryEscape(*serviceID))
-	}
-	if *environmentID != "" {
-		query = append(query, "environment_id="+url.QueryEscape(*environmentID))
-	}
-	if *rolloutID != "" {
-		query = append(query, "rollout_execution_id="+url.QueryEscape(*rolloutID))
-	}
-	if *source != "" {
-		query = append(query, "source="+url.QueryEscape(*source))
-	}
-	if *eventType != "" {
-		query = append(query, "event_type="+url.QueryEscape(*eventType))
-	}
-	if *automated != "" {
-		query = append(query, "automated="+url.QueryEscape(*automated))
-	}
-	if *search != "" {
-		query = append(query, "search="+url.QueryEscape(*search))
-	}
-	if *rollbackOnly {
-		query = append(query, "rollback_only=true")
-	}
-	if *limit > 0 {
-		query = append(query, fmt.Sprintf("limit=%d", *limit))
-	}
-	if *offset > 0 {
-		query = append(query, fmt.Sprintf("offset=%d", *offset))
-	}
-	result, err := c.SearchStatusEvents(ctx, strings.Join(query, "&"))
-	if !exitOnErr(stderr, err) {
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("status list", flag.ExitOnError)
+		projectID := fs.String("project", "", "project id filter")
+		serviceID := fs.String("service", "", "service id filter")
+		environmentID := fs.String("env", "", "environment id filter")
+		rolloutID := fs.String("rollout", "", "rollout execution id filter")
+		source := fs.String("source", "", "event source filter")
+		eventType := fs.String("event-type", "", "event type filter")
+		automated := fs.String("automated", "", "automated filter (true|false)")
+		search := fs.String("search", "", "search text")
+		rollbackOnly := fs.Bool("rollback-only", false, "show only rollback-related events")
+		limit := fs.Int("limit", 100, "maximum number of events")
+		offset := fs.Int("offset", 0, "pagination offset")
+		_ = fs.Parse(args[1:])
+		query := make([]string, 0, 10)
+		if *projectID != "" {
+			query = append(query, "project_id="+url.QueryEscape(*projectID))
+		}
+		if *serviceID != "" {
+			query = append(query, "service_id="+url.QueryEscape(*serviceID))
+		}
+		if *environmentID != "" {
+			query = append(query, "environment_id="+url.QueryEscape(*environmentID))
+		}
+		if *rolloutID != "" {
+			query = append(query, "rollout_execution_id="+url.QueryEscape(*rolloutID))
+		}
+		if *source != "" {
+			query = append(query, "source="+url.QueryEscape(*source))
+		}
+		if *eventType != "" {
+			query = append(query, "event_type="+url.QueryEscape(*eventType))
+		}
+		if *automated != "" {
+			query = append(query, "automated="+url.QueryEscape(*automated))
+		}
+		if *search != "" {
+			query = append(query, "search="+url.QueryEscape(*search))
+		}
+		if *rollbackOnly {
+			query = append(query, "rollback_only=true")
+		}
+		if *limit > 0 {
+			query = append(query, fmt.Sprintf("limit=%d", *limit))
+		}
+		if *offset > 0 {
+			query = append(query, fmt.Sprintf("offset=%d", *offset))
+		}
+		result, err := c.SearchStatusEvents(ctx, strings.Join(query, "&"))
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("status show", flag.ExitOnError)
+		id := fs.String("id", "", "status event id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetStatusEvent(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "project":
+		fs := flag.NewFlagSet("status project", flag.ExitOnError)
+		id := fs.String("id", "", "project id")
+		rollbackOnly := fs.Bool("rollback-only", false, "show only rollback-related events")
+		limit := fs.Int("limit", 100, "maximum number of events")
+		offset := fs.Int("offset", 0, "pagination offset")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListProjectStatusEvents(ctx, *id, scopedStatusQuery(*rollbackOnly, *limit, *offset))
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "service":
+		fs := flag.NewFlagSet("status service", flag.ExitOnError)
+		id := fs.String("id", "", "service id")
+		rollbackOnly := fs.Bool("rollback-only", false, "show only rollback-related events")
+		limit := fs.Int("limit", 100, "maximum number of events")
+		offset := fs.Int("offset", 0, "pagination offset")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListServiceStatusEvents(ctx, *id, scopedStatusQuery(*rollbackOnly, *limit, *offset))
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "env":
+		fs := flag.NewFlagSet("status env", flag.ExitOnError)
+		id := fs.String("id", "", "environment id")
+		rollbackOnly := fs.Bool("rollback-only", false, "show only rollback-related events")
+		limit := fs.Int("limit", 100, "maximum number of events")
+		offset := fs.Int("offset", 0, "pagination offset")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListEnvironmentStatusEvents(ctx, *id, scopedStatusQuery(*rollbackOnly, *limit, *offset))
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
 		return 1
 	}
-	printJSON(stdout, result)
-	return 0
 }
 
 func handleRollbackPolicy(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
@@ -1127,6 +1196,73 @@ func handlePolicy(ctx context.Context, c *client.Client, session cliSession, arg
 		usage(stdout)
 		return 1
 	}
+}
+
+func handlePolicyDecision(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || args[0] != "list" {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	fs := flag.NewFlagSet("policy-decision list", flag.ExitOnError)
+	projectID := fs.String("project", "", "project id filter")
+	policyID := fs.String("policy", "", "policy id filter")
+	changeID := fs.String("change", "", "change set id filter")
+	riskID := fs.String("risk", "", "risk assessment id filter")
+	planID := fs.String("plan", "", "rollout plan id filter")
+	rolloutID := fs.String("rollout", "", "rollout execution id filter")
+	appliesTo := fs.String("applies-to", "", "workflow surface filter")
+	limit := fs.Int("limit", 50, "maximum number of policy decisions")
+	offset := fs.Int("offset", 0, "pagination offset")
+	_ = fs.Parse(args[1:])
+	query := make([]string, 0, 8)
+	if *projectID != "" {
+		query = append(query, "project_id="+url.QueryEscape(*projectID))
+	}
+	if *policyID != "" {
+		query = append(query, "policy_id="+url.QueryEscape(*policyID))
+	}
+	if *changeID != "" {
+		query = append(query, "change_set_id="+url.QueryEscape(*changeID))
+	}
+	if *riskID != "" {
+		query = append(query, "risk_assessment_id="+url.QueryEscape(*riskID))
+	}
+	if *planID != "" {
+		query = append(query, "rollout_plan_id="+url.QueryEscape(*planID))
+	}
+	if *rolloutID != "" {
+		query = append(query, "rollout_execution_id="+url.QueryEscape(*rolloutID))
+	}
+	if *appliesTo != "" {
+		query = append(query, "applies_to="+url.QueryEscape(*appliesTo))
+	}
+	if *limit > 0 {
+		query = append(query, fmt.Sprintf("limit=%d", *limit))
+	}
+	if *offset > 0 {
+		query = append(query, fmt.Sprintf("offset=%d", *offset))
+	}
+	result, err := c.ListPolicyDecisions(ctx, strings.Join(query, "&"))
+	if !exitOnErr(stderr, err) {
+		return 1
+	}
+	printJSON(stdout, result)
+	return 0
+}
+
+func scopedStatusQuery(rollbackOnly bool, limit, offset int) string {
+	query := make([]string, 0, 3)
+	if rollbackOnly {
+		query = append(query, "rollback_only=true")
+	}
+	if limit > 0 {
+		query = append(query, fmt.Sprintf("limit=%d", limit))
+	}
+	if offset > 0 {
+		query = append(query, fmt.Sprintf("offset=%d", offset))
+	}
+	return strings.Join(query, "&")
 }
 
 func handleServiceAccount(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
@@ -1591,6 +1727,56 @@ func handleIdentityProviders(ctx context.Context, c *client.Client, args []strin
 	}
 }
 
+func handleBrowserSessions(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("browser-session list", flag.ExitOnError)
+		userID := fs.String("user", "", "user id filter")
+		status := fs.String("status", "", "session status filter")
+		limit := fs.Int("limit", 50, "maximum number of sessions")
+		offset := fs.Int("offset", 0, "result offset")
+		_ = fs.Parse(args[1:])
+
+		params := url.Values{}
+		if strings.TrimSpace(*userID) != "" {
+			params.Set("user_id", strings.TrimSpace(*userID))
+		}
+		if strings.TrimSpace(*status) != "" {
+			params.Set("status", strings.TrimSpace(*status))
+		}
+		if *limit > 0 {
+			params.Set("limit", strconv.Itoa(*limit))
+		}
+		if *offset > 0 {
+			params.Set("offset", strconv.Itoa(*offset))
+		}
+		result, err := c.ListBrowserSessions(ctx, params.Encode())
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "revoke":
+		fs := flag.NewFlagSet("browser-session revoke", flag.ExitOnError)
+		id := fs.String("id", "", "browser session id")
+		_ = fs.Parse(args[1:])
+		result, err := c.RevokeBrowserSession(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
 func handleDiscovery(ctx context.Context, c *client.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		usage(stdout)
@@ -2012,6 +2198,7 @@ func usage(w io.Writer) {
   ccp rollout list
   ccp rollout show --id <rollout_execution_id>
   ccp rollout status --id <rollout_execution_id>
+  ccp rollout evidence --id <rollout_execution_id>
   ccp rollout advance --id <rollout_execution_id> --action approve --reason "approved"
   ccp rollout pause --id <rollout_execution_id> --reason "operator pause"
   ccp rollout resume --id <rollout_execution_id> --reason "resume after mitigation"
@@ -2020,6 +2207,10 @@ func usage(w io.Writer) {
   ccp rollout reconcile --id <rollout_execution_id>
   ccp rollout watch --id <rollout_execution_id> --iterations 10 --interval 2s
   ccp status list --rollout <rollout_execution_id> --rollback-only --source kubernetes --event-type rollout.execution.action_suppressed
+  ccp status show --id <status_event_id>
+  ccp status project --id <project_id> --rollback-only
+  ccp status service --id <service_id> --rollback-only
+  ccp status env --id <environment_id> --rollback-only
   ccp rollback-policy list
   ccp rollback-policy create --org <org_id> --service <service_id> --env <env_id> --name "Prod strict" --max-error-rate 1
   ccp policy list
@@ -2028,6 +2219,7 @@ func usage(w io.Writer) {
   ccp policy update --id <policy_id> --description "..." --priority 100 --enabled false
   ccp policy enable --id <policy_id>
   ccp policy disable --id <policy_id>
+  ccp policy-decision list --risk <risk_assessment_id> --policy <policy_id>
   ccp signal ingest --rollout <rollout_execution_id> --health healthy --summary "latency stable" --latency 145 --error-rate 0.2
   ccp verification record --rollout <rollout_execution_id> --outcome pass --decision continue --summary "healthy"
   ccp integrations list
@@ -2043,6 +2235,8 @@ func usage(w io.Writer) {
   ccp identity-provider create --org <org_id> --name "Acme Okta" --issuer-url https://issuer.example.com --client-id abc --client-secret-env CCP_OKTA_SECRET
   ccp identity-provider update --id <provider_id> --allowed-domains acme.com,contractors.acme.com --enabled true
   ccp identity-provider test --id <provider_id>
+  ccp browser-session list --status active --limit 25
+  ccp browser-session revoke --id <browser_session_id>
   ccp graph list --type team_repository_owner --limit 50
   ccp repository list
   ccp repository map --id <repository_id> --service <service_id> --env <environment_id>

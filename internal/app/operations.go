@@ -897,8 +897,8 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 			relationship := newGraphRelationship(now, integration.ID, integration.OrganizationID, service.ProjectID, "service_dependency", "service", service.ID, "service", dependsOnService.ID)
 			relationship.Metadata = types.Metadata{
 				"critical_dependency": dependency.CriticalDependency,
-				"provenance_source":  mappingSourceIntegrationIngest,
-				"evidence":           compactDetailList([]string{"service_dependency", service.ID, dependsOnService.ID}),
+				"provenance_source":   mappingSourceIntegrationIngest,
+				"evidence":            compactDetailList([]string{"service_dependency", service.ID, dependsOnService.ID}),
 			}
 			if err := a.Store.UpsertGraphRelationship(txCtx, relationship); err != nil {
 				return err
@@ -1043,84 +1043,7 @@ func (a *Application) GetRolloutExecutionDetail(ctx context.Context, id string) 
 	if err != nil {
 		return types.RolloutExecutionDetail{}, err
 	}
-	timeline, err := a.Store.ListAuditEvents(ctx, storage.AuditEventQuery{
-		OrganizationID: runtimeContext.Execution.OrganizationID,
-		ProjectID:      runtimeContext.Execution.ProjectID,
-		ResourceType:   "rollout_execution",
-		ResourceID:     runtimeContext.Execution.ID,
-		Limit:          100,
-	})
-	if err != nil {
-		return types.RolloutExecutionDetail{}, err
-	}
-	statusTimeline, err := a.Store.ListStatusEvents(ctx, storage.StatusEventQuery{
-		OrganizationID:     runtimeContext.Execution.OrganizationID,
-		ProjectID:          runtimeContext.Execution.ProjectID,
-		RolloutExecutionID: runtimeContext.Execution.ID,
-		Limit:              200,
-	})
-	if err != nil {
-		return types.RolloutExecutionDetail{}, err
-	}
-
-	summary := types.RolloutExecutionRuntimeSummary{
-		BackendType:     runtimeContext.Execution.BackendType,
-		BackendStatus:   runtimeContext.Execution.BackendStatus,
-		ProgressPercent: runtimeContext.Execution.ProgressPercent,
-	}
-	if runtimeContext.BackendIntegration != nil {
-		summary.ControlMode = normalizeIntegrationMode(runtimeContext.BackendIntegration.Mode)
-		summary.ControlEnabled = integrationAllowsActiveControl(runtimeContext.BackendIntegration)
-		summary.AdvisoryOnly = advisoryOnlyRuntime(runtimeContext)
-		if summary.AdvisoryOnly {
-			summary.ControlRationale = "Advisory mode is active for the live backend integration, so external submit, pause, resume, and rollback actions are suppressed."
-		} else if summary.ControlMode == "active_control" {
-			summary.ControlRationale = "Active control is enabled for the backend integration, so provider actions can be executed."
-		}
-	}
-	if runtimeContext.Execution.Metadata != nil {
-		summary.RecommendedAction = metadataString(runtimeContext.Execution.Metadata, "recommended_action")
-		summary.LastProviderAction = metadataString(runtimeContext.Execution.Metadata, "last_provider_action")
-		summary.LastActionDisposition = metadataString(runtimeContext.Execution.Metadata, "last_action_disposition")
-		summary.LastProviderActionSummary = metadataString(runtimeContext.Execution.Metadata, "backend_summary")
-		if summary.ControlMode == "" {
-			summary.ControlMode = metadataString(runtimeContext.Execution.Metadata, "control_mode")
-		}
-		if summary.ControlRationale == "" {
-			summary.ControlRationale = metadataString(runtimeContext.Execution.Metadata, "control_rationale")
-		}
-		if summary.RecommendedAction != "" {
-			summary.AdvisoryOnly = true
-		}
-	}
-	if len(runtimeContext.SignalSnapshots) > 0 {
-		latest := runtimeContext.SignalSnapshots[len(runtimeContext.SignalSnapshots)-1]
-		summary.LatestSignalHealth = latest.Health
-		summary.LatestSignalSummary = latest.Summary
-	}
-	if len(runtimeContext.VerificationResults) > 0 {
-		latest := runtimeContext.VerificationResults[len(runtimeContext.VerificationResults)-1]
-		summary.LatestDecision = latest.Decision
-		if latest.Automated {
-			summary.LatestDecisionMode = "automated"
-		} else {
-			summary.LatestDecisionMode = valueOrDefault(latest.DecisionSource, "manual")
-		}
-	}
-	verificationResults := make([]types.VerificationResult, 0, len(runtimeContext.VerificationResults))
-	for _, item := range runtimeContext.VerificationResults {
-		verificationResults = append(verificationResults, decorateVerificationResult(item, summary))
-	}
-
-	return types.RolloutExecutionDetail{
-		Execution:               runtimeContext.Execution,
-		VerificationResults:     verificationResults,
-		SignalSnapshots:         runtimeContext.SignalSnapshots,
-		Timeline:                timeline,
-		StatusTimeline:          statusTimeline,
-		EffectiveRollbackPolicy: runtimeContext.EffectiveRollbackPolicy,
-		RuntimeSummary:          summary,
-	}, nil
+	return a.buildRolloutExecutionDetail(ctx, runtimeContext)
 }
 
 func (a *Application) AdvanceRolloutExecution(ctx context.Context, id string, req types.AdvanceRolloutExecutionRequest) (types.RolloutExecution, error) {
@@ -1172,70 +1095,102 @@ func (a *Application) AdvanceRolloutExecution(ctx context.Context, id string, re
 }
 
 func (a *Application) RecordVerificationResult(ctx context.Context, executionID string, req types.RecordVerificationResultRequest) (types.VerificationResult, error) {
+	result, _, err := a.recordVerificationResultInternal(ctx, executionID, req)
+	return result, err
+}
+
+func (a *Application) recordVerificationResultInternal(ctx context.Context, executionID string, req types.RecordVerificationResultRequest) (types.VerificationResult, bool, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
-		return types.VerificationResult{}, err
+		return types.VerificationResult{}, false, err
 	}
 	execution, err := a.Store.GetRolloutExecution(ctx, executionID)
 	if err != nil {
-		return types.VerificationResult{}, err
+		return types.VerificationResult{}, false, err
 	}
 	if !a.Authorizer.CanRecordVerification(identity, execution.OrganizationID, execution.ProjectID) {
-		return types.VerificationResult{}, a.forbidden(ctx, identity, "verification.record.denied", "verification_result", "", execution.OrganizationID, execution.ProjectID, []string{"actor lacks verification permission"})
+		return types.VerificationResult{}, false, a.forbidden(ctx, identity, "verification.record.denied", "verification_result", "", execution.OrganizationID, execution.ProjectID, []string{"actor lacks verification permission"})
 	}
 	if !req.Automated && contains([]string{"rollback", "pause", "failed"}, strings.TrimSpace(req.Decision)) && !a.Authorizer.CanOverrideRollout(identity, execution.OrganizationID, execution.ProjectID) {
-		return types.VerificationResult{}, a.forbidden(ctx, identity, "verification.override.denied", "verification_result", "", execution.OrganizationID, execution.ProjectID, []string{"actor lacks verification override permission"})
-	}
-	if advisoryOnly, advisoryMessage, err := a.executionAdvisoryModeState(ctx, execution); err != nil {
-		return types.VerificationResult{}, err
-	} else if advisoryOnly && !strings.HasPrefix(strings.TrimSpace(req.Decision), "advisory_") {
-		req = advisoryVerificationRequest(req)
-		req.Explanation = compactDetailList(append(req.Explanation, advisoryMessage))
+		return types.VerificationResult{}, false, a.forbidden(ctx, identity, "verification.override.denied", "verification_result", "", execution.OrganizationID, execution.ProjectID, []string{"actor lacks verification override permission"})
 	}
 	now := time.Now().UTC()
-	result := types.VerificationResult{
-		BaseRecord: types.BaseRecord{
-			ID:        common.NewID("verify"),
-			CreatedAt: now,
-			UpdatedAt: now,
-			Metadata:  req.Metadata,
-		},
-		OrganizationID:         execution.OrganizationID,
-		ProjectID:              execution.ProjectID,
-		RolloutExecutionID:     execution.ID,
-		RolloutPlanID:          execution.RolloutPlanID,
-		ChangeSetID:            execution.ChangeSetID,
-		ServiceID:              execution.ServiceID,
-		EnvironmentID:          execution.EnvironmentID,
-		Status:                 "recorded",
-		Outcome:                strings.TrimSpace(req.Outcome),
-		Decision:               strings.TrimSpace(req.Decision),
-		Signals:                req.Signals,
-		TechnicalSignalSummary: req.TechnicalSignalSummary,
-		BusinessSignalSummary:  req.BusinessSignalSummary,
-		Automated:              req.Automated,
-		DecisionSource:         valueOrDefault(req.DecisionSource, "manual"),
-		SignalSnapshotIDs:      req.SignalSnapshotIDs,
-		Summary:                req.Summary,
-		Explanation:            req.Explanation,
-	}
-	if result.Outcome == "" || result.Decision == "" {
-		return types.VerificationResult{}, fmt.Errorf("%w: outcome and decision are required", ErrValidation)
-	}
-
+	var result types.VerificationResult
+	created := false
 	err = a.Store.WithinTransaction(ctx, func(txCtx context.Context) error {
+		currentExecution, err := a.Store.GetRolloutExecution(txCtx, executionID)
+		if err != nil {
+			return err
+		}
+		if advisoryOnly, advisoryMessage, err := a.executionAdvisoryModeState(txCtx, currentExecution); err != nil {
+			return err
+		} else if advisoryOnly && !strings.HasPrefix(strings.TrimSpace(req.Decision), "advisory_") {
+			req = advisoryVerificationRequest(req)
+			req.Explanation = compactDetailList(append(req.Explanation, advisoryMessage))
+		}
+
+		existingResults, err := a.Store.ListVerificationResults(txCtx, storage.VerificationResultQuery{
+			OrganizationID:     currentExecution.OrganizationID,
+			ProjectID:          currentExecution.ProjectID,
+			RolloutExecutionID: currentExecution.ID,
+		})
+		if err != nil {
+			return err
+		}
+		if latest, ok := latestVerificationResult(existingResults); shouldSkipAutomatedVerificationRecord(currentExecution, latest, ok, req) {
+			result = latest
+			return nil
+		}
+
+		result = types.VerificationResult{
+			BaseRecord: types.BaseRecord{
+				ID:        common.NewID("verify"),
+				CreatedAt: now,
+				UpdatedAt: now,
+				Metadata:  req.Metadata,
+			},
+			OrganizationID:         currentExecution.OrganizationID,
+			ProjectID:              currentExecution.ProjectID,
+			RolloutExecutionID:     currentExecution.ID,
+			RolloutPlanID:          currentExecution.RolloutPlanID,
+			ChangeSetID:            currentExecution.ChangeSetID,
+			ServiceID:              currentExecution.ServiceID,
+			EnvironmentID:          currentExecution.EnvironmentID,
+			Status:                 "recorded",
+			Outcome:                strings.TrimSpace(req.Outcome),
+			Decision:               strings.TrimSpace(req.Decision),
+			Signals:                req.Signals,
+			TechnicalSignalSummary: req.TechnicalSignalSummary,
+			BusinessSignalSummary:  req.BusinessSignalSummary,
+			Automated:              req.Automated,
+			DecisionSource:         valueOrDefault(req.DecisionSource, "manual"),
+			SignalSnapshotIDs:      req.SignalSnapshotIDs,
+			Summary:                req.Summary,
+			Explanation:            req.Explanation,
+		}
+		if result.Outcome == "" || result.Decision == "" {
+			return fmt.Errorf("%w: outcome and decision are required", ErrValidation)
+		}
+
 		if err := a.Store.CreateVerificationResult(txCtx, result); err != nil {
 			return err
 		}
-		updatedExecution, err := rollouts.ApplyVerificationDecision(execution, result, now)
+		updatedExecution, err := rollouts.ApplyVerificationDecision(currentExecution, result, now)
 		if err != nil {
 			return fmt.Errorf("%w: %s", ErrValidation, err.Error())
 		}
 		updatedExecution.UpdatedAt = now
-		return a.Store.UpdateRolloutExecution(txCtx, updatedExecution)
+		if err := a.Store.UpdateRolloutExecution(txCtx, updatedExecution); err != nil {
+			return err
+		}
+		created = true
+		return nil
 	})
 	if err != nil {
-		return types.VerificationResult{}, err
+		return types.VerificationResult{}, false, err
+	}
+	if !created {
+		return result, false, nil
 	}
 	if err := a.record(ctx, identity, "verification.recorded", "rollout_execution", execution.ID, result.OrganizationID, result.ProjectID, []string{result.ID, result.Outcome, result.Decision, result.DecisionSource},
 		withStatusCategory("verification"),
@@ -1251,9 +1206,44 @@ func (a *Application) RecordVerificationResult(ctx context.Context, executionID 
 			changeSetID:        result.ChangeSetID,
 		}),
 	); err != nil {
-		return types.VerificationResult{}, err
+		return types.VerificationResult{}, false, err
 	}
-	return result, nil
+	return result, true, nil
+}
+
+func latestVerificationResult(items []types.VerificationResult) (types.VerificationResult, bool) {
+	if len(items) == 0 {
+		return types.VerificationResult{}, false
+	}
+	return items[len(items)-1], true
+}
+
+func shouldSkipAutomatedVerificationRecord(execution types.RolloutExecution, latest types.VerificationResult, ok bool, proposed types.RecordVerificationResultRequest) bool {
+	if !proposed.Automated || !ok || !latest.Automated {
+		return false
+	}
+	if !executionReflectsVerificationDecision(execution.Status, strings.TrimSpace(proposed.Decision)) {
+		return false
+	}
+	return latest.DecisionSource == valueOrDefault(proposed.DecisionSource, "manual") &&
+		latest.Decision == strings.TrimSpace(proposed.Decision) &&
+		latest.Outcome == strings.TrimSpace(proposed.Outcome) &&
+		latest.Summary == proposed.Summary
+}
+
+func executionReflectsVerificationDecision(status, decision string) bool {
+	switch strings.TrimSpace(decision) {
+	case "continue", "verified":
+		return status == "verified"
+	case "pause", "manual_review_required":
+		return status == "paused"
+	case "rollback":
+		return status == "rolled_back"
+	case "failed":
+		return status == "failed"
+	default:
+		return false
+	}
 }
 
 func (a *Application) manualControlBlockedByAdvisoryMode(ctx context.Context, execution types.RolloutExecution, action string) (bool, error) {

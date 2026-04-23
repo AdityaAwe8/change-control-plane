@@ -480,6 +480,217 @@ test("rollout automation and operational status history are visible from the bro
   await expect(page.locator("#status-event-table")).toContainText("rollback");
 });
 
+test("deployments dashboard filters, pagination, and reset stay truthful with server-backed route-local queries", async ({ page, request }) => {
+  const seed = uniqueSeed();
+  await signUpThroughUI(page, `owner-${seed}@acme.local`, `Deployments ${seed}`, "ChangeMe123!");
+  await bootstrapOrganizationForSignedInUser(page, request, `Deployments ${seed}`, `deployments-${seed}`);
+
+  const serviceID = "svc_status_filter";
+  const environmentID = "env_status_filter";
+  const seenQueries: string[] = [];
+  const events = [
+    {
+      id: "status_rollback_browser",
+      organization_id: "org_status_filter",
+      service_id: serviceID,
+      environment_id: environmentID,
+      resource_type: "rollout_execution",
+      resource_id: "rollout_status_filter",
+      event_type: "rollout.execution.rollback_triggered",
+      category: "runtime",
+      severity: "critical",
+      outcome: "rolled_back",
+      source: "prometheus",
+      automated: true,
+      summary: "rollback triggered",
+      created_at: "2026-04-19T12:00:00Z"
+    },
+    {
+      id: "status_sync_browser",
+      organization_id: "org_status_filter",
+      service_id: serviceID,
+      environment_id: environmentID,
+      resource_type: "integration",
+      resource_id: "integration_status_filter",
+      event_type: "integration.sync.completed",
+      category: "integration",
+      severity: "info",
+      outcome: "succeeded",
+      source: "gitlab",
+      automated: true,
+      summary: "sync completed",
+      created_at: "2026-04-19T11:00:00Z"
+    },
+    {
+      id: "status_manual_browser",
+      organization_id: "org_status_filter",
+      service_id: "svc_other",
+      environment_id: "env_other",
+      resource_type: "rollout_execution",
+      resource_id: "rollout_manual",
+      event_type: "rollout.execution.paused",
+      category: "rollout",
+      severity: "warning",
+      outcome: "paused",
+      source: "control_plane",
+      automated: false,
+      summary: "manual pause recorded",
+      created_at: "2026-04-19T10:00:00Z"
+    },
+    ...Array.from({ length: 22 }, (_, index) => ({
+      id: `status_filler_${index}`,
+      organization_id: "org_status_filter",
+      service_id: serviceID,
+      environment_id: environmentID,
+      resource_type: "integration",
+      resource_id: `integration_filler_${index}`,
+      event_type: "integration.sync.observed",
+      category: "integration",
+      severity: "info",
+      outcome: "observed",
+      source: "github",
+      automated: true,
+      summary: `filler event ${index}`,
+      created_at: `2026-04-19T0${(index % 9) + 1}:00:00Z`
+    })),
+    {
+      id: "status_page_two_browser",
+      organization_id: "org_status_filter",
+      service_id: serviceID,
+      environment_id: environmentID,
+      resource_type: "integration",
+      resource_id: "integration_page_two",
+      event_type: "integration.sync.completed",
+      category: "integration",
+      severity: "info",
+      outcome: "succeeded",
+      source: "github",
+      automated: true,
+      summary: "page two event",
+      created_at: "2026-04-19T00:30:00Z"
+    }
+  ];
+
+  await page.route(new RegExp(`${apiBaseURL}/api/v1/page-state/deployments(?:\\?.*)?$`), async (route) => {
+    const requestURL = new URL(route.request().url());
+    const params = requestURL.searchParams;
+    seenQueries.push(params.toString());
+
+    let filtered = [...events];
+    const search = (params.get("search") || "").toLowerCase();
+    if (search) {
+      filtered = filtered.filter((event) =>
+        `${event.event_type} ${event.summary} ${event.resource_type} ${event.resource_id} ${event.source}`.toLowerCase().includes(search)
+      );
+    }
+    if (params.get("rollback_only") === "true") {
+      filtered = filtered.filter((event) =>
+        event.event_type.includes("rollback") || event.summary.toLowerCase().includes("rollback") || event.outcome === "rolled_back"
+      );
+    }
+    if (params.get("service_id")) {
+      filtered = filtered.filter((event) => event.service_id === params.get("service_id"));
+    }
+    if (params.get("environment_id")) {
+      filtered = filtered.filter((event) => event.environment_id === params.get("environment_id"));
+    }
+    if (params.get("source")) {
+      filtered = filtered.filter((event) => event.source === params.get("source"));
+    }
+    if (params.get("automated")) {
+      const automated = params.get("automated") === "true";
+      filtered = filtered.filter((event) => event.automated === automated);
+    }
+
+    const total = filtered.length;
+    const limit = Number(params.get("limit") || "25");
+    const offset = Number(params.get("offset") || "0");
+    const paged = filtered.slice(offset, offset + limit);
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          catalog: {
+            services: [
+              { id: serviceID, organization_id: "org_status_filter", project_id: "proj_status_filter", team_id: "team_status_filter", name: "Checkout", slug: "checkout", status: "active", criticality: "business_critical" },
+              { id: "svc_other", organization_id: "org_status_filter", project_id: "proj_status_filter", team_id: "team_status_filter", name: "Billing", slug: "billing", status: "active", criticality: "low" }
+            ],
+            environments: [
+              { id: environmentID, organization_id: "org_status_filter", project_id: "proj_status_filter", name: "Production", slug: "prod", type: "production", status: "active", production: true },
+              { id: "env_other", organization_id: "org_status_filter", project_id: "proj_status_filter", name: "Staging", slug: "staging", type: "staging", status: "active", production: false }
+            ]
+          },
+          rollback_policies: [],
+          status_dashboard: {
+            events: paged,
+            summary: {
+              total,
+              returned: paged.length,
+              limit,
+              offset,
+              rollback_events: filtered.filter((event) => event.event_type.includes("rollback") || event.outcome === "rolled_back" || event.summary.toLowerCase().includes("rollback")).length,
+              automated_events: filtered.filter((event) => event.automated).length,
+              latest_event_at: filtered[0]?.created_at,
+              oldest_event_at: filtered[filtered.length - 1]?.created_at
+            },
+            filters: Object.fromEntries(params.entries())
+          },
+          coverage_summary: {
+            enabled_integrations: 1,
+            stale_integrations: 0,
+            healthy_integrations: 1,
+            repositories: 2,
+            unmapped_repositories: 0,
+            discovered_resources: 1,
+            unmapped_discovered_resources: 0,
+            workload_coverage_environments: 1,
+            signal_coverage_services: 1
+          }
+        }
+      })
+    });
+  });
+
+  await page.goto("/#/deployments");
+  await expect(page.locator(".topbar h2")).toHaveText("Deployment History");
+  await expect(page.locator("#status-event-table")).toContainText("rollback triggered");
+  await expect(page.locator("#status-event-table")).toContainText("sync completed");
+
+  await page.getByRole("button", { name: "Next Page" }).click();
+  await expect(page.locator('[data-status-event-row]:visible')).toHaveCount(1);
+  await expect(page.locator("#status-event-table")).toContainText("page two event");
+
+  await page.locator('#status-search-form select[name="service_id"]').selectOption(serviceID);
+  await page.locator('#status-search-form select[name="environment_id"]').selectOption(environmentID);
+  await page.locator('#status-search-form select[name="source"]').selectOption("prometheus");
+  await page.locator('#status-search-form select[name="automated"]').selectOption("true");
+  await page.locator("#status-rollback-only").check();
+  await page.locator("#status-search-input").fill("rollback");
+  await page.getByRole("button", { name: "Search History" }).click();
+
+  await expect(page.locator('[data-status-event-row]:visible')).toHaveCount(1);
+  await expect(page.locator("#status-event-table")).toContainText("rollback triggered");
+  await expect(page.locator("body")).not.toContainText("sync completed");
+
+  await page.getByRole("button", { name: "Reset Filters" }).click();
+  await expect(page.locator("#status-search-input")).toHaveValue("");
+  await expect(page.locator("#status-rollback-only")).not.toBeChecked();
+  await expect(page.locator('#status-search-form select[name="service_id"]')).toHaveValue("");
+  await expect(page.locator('#status-search-form select[name="source"]')).toHaveValue("");
+  await expect(page.locator('[data-status-event-row]:visible')).toHaveCount(25);
+  await expect(page.locator("#status-event-table")).toContainText("manual pause recorded");
+
+  expect(seenQueries.some((query) => query.includes("limit=25") && query.includes("offset=0"))).toBeTruthy();
+  expect(seenQueries.some((query) => query.includes("limit=25") && query.includes("offset=25"))).toBeTruthy();
+  expect(seenQueries.some((query) => query.includes("rollback_only=true"))).toBeTruthy();
+  expect(seenQueries.some((query) => query.includes(`service_id=${serviceID}`))).toBeTruthy();
+  expect(seenQueries.some((query) => query.includes(`environment_id=${environmentID}`))).toBeTruthy();
+  expect(seenQueries.some((query) => query.includes("source=prometheus"))).toBeTruthy();
+  expect(seenQueries.some((query) => query.includes("automated=true"))).toBeTruthy();
+});
+
 test("rollout control form uses dedicated pause, resume, and rollback routes", async ({ page, request }) => {
   const seed = uniqueSeed();
   await signUpThroughUI(page, `owner-${seed}@acme.local`, `Runtime Controls ${seed}`, "ChangeMe123!");
@@ -1335,6 +1546,19 @@ test("org members see read-only controls for admin-only UI surfaces", async ({ p
           identity_providers: [],
           integrations: [],
           webhook_registrations: {},
+          browser_sessions: [
+            {
+              id: "sess_readonly_active",
+              user_id: "user_readonly",
+              user_email: memberEmail,
+              user_display_name: `Member ${seed}`,
+              auth_method: "oidc",
+              auth_provider: "Acme Okta",
+              expires_at: "2026-04-21T12:00:00Z",
+              status: "active",
+              current: false
+            }
+          ],
           outbox_events: [
             {
               id: "evt_retry_readonly",
@@ -1366,6 +1590,7 @@ test("org members see read-only controls for admin-only UI surfaces", async ({ p
 
   await page.getByRole("link", { name: "Enterprise Mode" }).click();
   await expect(page.getByText("Read-only workspace")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Revoke" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retry Now" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Requeue" })).toHaveCount(0);
 });
@@ -1504,7 +1729,7 @@ test("enterprise admin surfaces show identity-provider setup and public SSO entr
   await expect(page.getByText(`Acme Okta ${seed}`)).toBeVisible();
   await expect(page.getByRole("button", { name: "Test Provider" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Durable Event Diagnostics" })).toBeVisible();
-  await expect(page.getByText("Current Session")).toBeVisible();
+  await expect(page.locator(".highlight-grid").getByText("Current Session", { exact: true })).toBeVisible();
   await page.locator('#create-identity-provider-form input[name="name"]').fill(`Browser Okta ${seed}`);
   await page.locator('#create-identity-provider-form input[name="issuer_url"]').fill("https://browser.example.com/oauth2/default");
   await page.locator('#create-identity-provider-form input[name="client_id"]').fill(`browser-client-${seed}`);
@@ -1641,6 +1866,84 @@ test("enterprise outbox diagnostics allow retry and requeue with route-local ref
   await expect(page.locator("#app-feedback")).toContainText("Outbox event requeued for another dispatch attempt");
   await expect(requeueRow).toContainText("pending");
   await expect(requeueRow.getByRole("button", { name: "Requeue" })).toHaveCount(0);
+});
+
+test("enterprise browser-session diagnostics allow admin revocation with route-local refresh", async ({ page, request }) => {
+  const seed = uniqueSeed();
+  await signUpThroughUI(page, `owner-${seed}@acme.local`, `Sessions ${seed}`, "ChangeMe123!");
+  await bootstrapOrganizationForSignedInUser(page, request, `Sessions ${seed}`, `sessions-${seed}`);
+
+  let browserSessions: any[] = [
+    {
+      id: "sess_current_browser",
+      user_id: "user_current",
+      user_email: `owner-${seed}@acme.local`,
+      user_display_name: `Sessions ${seed}`,
+      auth_method: "password",
+      expires_at: "2026-04-21T12:00:00Z",
+      status: "active",
+      current: true
+    },
+    {
+      id: "sess_revoke_browser",
+      user_id: "user_other",
+      user_email: "operator@acme.local",
+      user_display_name: "Operator",
+      auth_method: "oidc",
+      auth_provider: "Acme Okta",
+      last_seen_at: "2026-04-20T11:45:00Z",
+      expires_at: "2026-04-21T12:00:00Z",
+      status: "active",
+      current: false
+    }
+  ];
+
+  await page.route(`${apiBaseURL}/api/v1/page-state/enterprise`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          identity_providers: [],
+          integrations: [],
+          webhook_registrations: {},
+          outbox_events: [],
+          browser_sessions: browserSessions
+        }
+      })
+    });
+  });
+
+  await page.route(new RegExp(`${apiBaseURL}/api/v1/browser-sessions/[^/]+/revoke$`), async (route) => {
+    const match = route.request().url().match(/\/api\/v1\/browser-sessions\/([^/]+)\/revoke$/);
+    const browserSessionID = decodeURIComponent(match?.[1] || "");
+    browserSessions = browserSessions.map((session) => session.id === browserSessionID
+      ? {
+          ...session,
+          status: "revoked",
+          revoked_at: "2026-04-20T11:50:00Z"
+        }
+      : session);
+    const updated = browserSessions.find((session) => session.id === browserSessionID);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: updated })
+    });
+  });
+
+  await page.goto("/#/enterprise");
+  await expect(page.getByRole("heading", { name: "Browser Session Administration" })).toBeVisible();
+  await expect(page.locator("body")).toContainText("Operator");
+  await expect(page.locator("body")).toContainText("Current session");
+
+  const revokeRow = page.locator("table tbody tr").filter({ hasText: "Operator" });
+  await expect(revokeRow.getByRole("button", { name: "Revoke" })).toBeVisible();
+
+  await revokeRow.getByRole("button", { name: "Revoke" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("Browser session revoked.");
+  await expect(revokeRow).toContainText("revoked");
+  await expect(revokeRow.getByRole("button", { name: "Revoke" })).toHaveCount(0);
 });
 
 test("enterprise outbox recovery shows failure feedback when a recovery action fails", async ({ page, request }) => {

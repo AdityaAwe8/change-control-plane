@@ -148,11 +148,17 @@ func (s *HTTPServer) getEnterprisePageState(w http.ResponseWriter, r *http.Reque
 		writeAppError(w, err)
 		return
 	}
+	browserSessions, err := s.app.ListBrowserSessions(r.Context(), storage.BrowserSessionQuery{Limit: 25})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, types.ItemResponse[types.EnterprisePageState]{Data: types.EnterprisePageState{
 		IdentityProviders:    identityProviders,
 		Integrations:         integrations,
 		WebhookRegistrations: webhookRegistrations,
 		OutboxEvents:         outboxEvents,
+		BrowserSessions:      browserSessions,
 	}})
 }
 

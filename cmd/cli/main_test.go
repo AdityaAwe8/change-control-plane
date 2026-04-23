@@ -1262,6 +1262,65 @@ func TestRunServiceAccountDeactivateAndTokenRotate(t *testing.T) {
 	}
 }
 
+func TestRunBrowserSessionListAndRevoke(t *testing.T) {
+	var seenQuery string
+	var seenOrgHeaders []string
+	var revokeCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenOrgHeaders = append(seenOrgHeaders, r.Header.Get("X-CCP-Organization-ID"))
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/browser-sessions":
+			seenQuery = r.URL.RawQuery
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"sess_123","user_id":"user_123","user_email":"owner@acme.local","user_display_name":"Owner","auth_method":"oidc","auth_provider_id":"idp_123","auth_provider":"Acme Okta","expires_at":"2026-04-20T12:00:00Z","status":"active","current":false}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/browser-sessions/sess_123/revoke":
+			revokeCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"id":"sess_123","user_id":"user_123","user_email":"owner@acme.local","user_display_name":"Owner","auth_method":"oidc","auth_provider_id":"idp_123","auth_provider":"Acme Okta","expires_at":"2026-04-20T12:00:00Z","revoked_at":"2026-04-20T11:30:00Z","status":"revoked","current":false}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("CCP_API_BASE_URL", server.URL)
+	t.Setenv("CCP_API_TOKEN", "token-123")
+	t.Setenv("CCP_ORGANIZATION_ID", "org_123")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"browser-session", "list", "--user", "user_123", "--status", "active", "--limit", "25", "--offset", "5"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 from browser-session list, got %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(seenQuery, "user_id=user_123") || !strings.Contains(seenQuery, "status=active") || !strings.Contains(seenQuery, "limit=25") || !strings.Contains(seenQuery, "offset=5") {
+		t.Fatalf("expected browser-session list to encode filters, got %q", seenQuery)
+	}
+	if !strings.Contains(stdout.String(), `"auth_provider": "Acme Okta"`) || !strings.Contains(stdout.String(), `"status": "active"`) {
+		t.Fatalf("expected browser-session list output, got %s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"browser-session", "revoke", "--id", "sess_123"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 from browser-session revoke, got %d, stderr=%s", code, stderr.String())
+	}
+	if !revokeCalled {
+		t.Fatal("expected browser-session revoke route to be called")
+	}
+	if !strings.Contains(stdout.String(), `"status": "revoked"`) {
+		t.Fatalf("expected browser-session revoke output, got %s", stdout.String())
+	}
+
+	for _, header := range seenOrgHeaders {
+		if header != "org_123" {
+			t.Fatalf("expected browser-session commands to carry org scope, got headers %+v", seenOrgHeaders)
+		}
+	}
+}
+
 func TestRunIntegrationsWebhookSyncAndOutboxList(t *testing.T) {
 	var webhookSyncCalled bool
 	var outboxQuery string
@@ -1459,6 +1518,8 @@ func TestRunRolloutRuntimeAndVerificationCommands(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/rollout-executions/rollout_123":
 			rolloutDetailCalls++
 			_, _ = w.Write([]byte(`{"data":{"execution":{"id":"rollout_123","organization_id":"org_123","rollout_plan_id":"plan_123","change_set_id":"change_123","service_id":"svc_123","environment_id":"env_123","status":"in_progress","current_step":"verify"},"verification_results":[],"signal_snapshots":[],"timeline":[],"status_timeline":[],"runtime_summary":{"latest_signal_health":"healthy","latest_signal_summary":"steady","latest_verification_outcome":"passed","recommended_action":"continue","action_disposition":"applied","summary":"steady"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/rollout-executions/rollout_123/evidence-pack":
+			_, _ = w.Write([]byte(`{"data":{"summary":{"approval_state":"satisfied","risk_level":"high","risk_score":82,"blast_radius_scope":"service","blast_radius_summary":"checkout impact remains bounded to one service","rollout_strategy":"canary","latest_decision":"continue","latest_verification_outcome":"passed","repository_count":1,"discovered_resource_count":2,"blocking_policy_count":0,"manual_review_policy_count":1,"evidence_highlights":["Risk review scored this rollout high at 82."]},"organization":{"id":"org_123","name":"Acme","slug":"acme"},"project":{"id":"proj_123","organization_id":"org_123","name":"Platform","slug":"platform"},"service":{"id":"svc_123","organization_id":"org_123","project_id":"proj_123","team_id":"team_123","name":"Checkout","slug":"checkout"},"environment":{"id":"env_123","organization_id":"org_123","project_id":"proj_123","name":"Production","slug":"prod","type":"production","region":"us-central1","production":true},"change_set":{"id":"change_123","organization_id":"org_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","summary":"release bundle","change_types":["code"],"status":"open"},"assessment":{"id":"risk_123","organization_id":"org_123","project_id":"proj_123","change_set_id":"change_123","service_id":"svc_123","environment_id":"env_123","score":82,"level":"high","blast_radius":{"scope":"service","summary":"checkout impact remains bounded to one service"}},"plan":{"id":"plan_123","organization_id":"org_123","project_id":"proj_123","change_set_id":"change_123","risk_assessment_id":"risk_123","strategy":"canary","approval_required":true,"approval_level":"policy-review"},"execution_detail":{"execution":{"id":"rollout_123","organization_id":"org_123","project_id":"proj_123","rollout_plan_id":"plan_123","change_set_id":"change_123","service_id":"svc_123","environment_id":"env_123","status":"in_progress","current_step":"verify"},"verification_results":[],"signal_snapshots":[],"timeline":[],"status_timeline":[],"runtime_summary":{"latest_signal_health":"healthy","latest_signal_summary":"steady","latest_decision":"continue"}},"policy_decisions":[{"id":"decision_123","organization_id":"org_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","policy_id":"pol_123","policy_name":"Manual Review","policy_code":"manual-review","policy_scope":"environment","applies_to":"rollout_plan","mode":"require_manual_review","change_set_id":"change_123","risk_assessment_id":"risk_123","rollout_plan_id":"plan_123","outcome":"require_manual_review","summary":"manual review required"}],"repositories":[{"id":"repo_123","organization_id":"org_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","name":"checkout","provider":"github","url":"https://github.com/acme/checkout","default_branch":"main","status":"mapped"}],"discovered_resources":[{"id":"discovery_123","organization_id":"org_123","integration_id":"int_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","repository_id":"repo_123","resource_type":"kubernetes_workload","provider":"kubernetes","external_id":"checkout","name":"checkout","status":"mapped"}],"graph_relationships":[{"id":"rel_123","organization_id":"org_123","project_id":"proj_123","relationship_type":"service_repository","from_resource_type":"service","from_resource_id":"svc_123","to_resource_type":"repository","to_resource_id":"repo_123","status":"active","last_observed_at":"2026-04-19T12:00:00Z"}],"audit_trail":[{"id":"audit_123","organization_id":"org_123","project_id":"proj_123","actor_id":"user_123","actor_type":"user","actor":"owner@acme.local","action":"rollout.execution.created","resource_type":"rollout_execution","resource_id":"rollout_123","outcome":"success"}]}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/rollout-executions/rollout_123/advance":
 			if err := json.NewDecoder(r.Body).Decode(&advanceBody); err != nil {
 				t.Fatal(err)
@@ -1531,6 +1592,13 @@ func TestRunRolloutRuntimeAndVerificationCommands(t *testing.T) {
 	}
 	if rolloutDetailCalls != 2 {
 		t.Fatalf("expected rollout detail route to be used by show and status, got %d calls", rolloutDetailCalls)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"rollout", "evidence", "--id", "rollout_123"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"manual_review_policy_count": 1`) || !strings.Contains(stdout.String(), `"graph_relationships"`) {
+		t.Fatalf("expected rollout evidence output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 
 	stdout.Reset()
@@ -1728,6 +1796,101 @@ func TestRunRollbackPolicyAuditAndIntegrationOperationalCommands(t *testing.T) {
 	code = run(context.Background(), []string{"integrations", "webhook-show", "--id", "int_123"}, &stdout, &stderr)
 	if code != 0 || !strings.Contains(stdout.String(), `"status": "registered"`) || !strings.Contains(stdout.String(), `"delivery_health": "healthy"`) {
 		t.Fatalf("expected integrations webhook-show output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunPolicyDecisionAndScopedStatusHistoryCommands(t *testing.T) {
+	var seenHeaders []string
+	var policyDecisionQuery string
+	var projectStatusQuery string
+	var serviceStatusQuery string
+	var environmentStatusQuery string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenHeaders = append(seenHeaders, r.Header.Get("X-CCP-Organization-ID"))
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/policy-decisions":
+			policyDecisionQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"data":[{"id":"poldec_123","organization_id":"org_123","project_id":"proj_123","policy_id":"pol_123","policy_name":"Prod Review","policy_code":"prod-review","policy_scope":"project","applies_to":"rollout_plan","mode":"require_manual_review","change_set_id":"change_123","risk_assessment_id":"risk_123","rollout_plan_id":"plan_123","rollout_execution_id":"rollout_123","outcome":"require_manual_review","summary":"manual review required","reasons":["production rollout needs approval"]}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/status-events/status_123":
+			_, _ = w.Write([]byte(`{"data":{"id":"status_123","organization_id":"org_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","rollout_execution_id":"rollout_123","resource_type":"rollout_execution","resource_id":"rollout_123","event_type":"rollout.execution.paused","category":"rollout","severity":"warning","outcome":"paused","source":"control_plane","automated":false,"summary":"paused for review"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/proj_123/status-events":
+			projectStatusQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"data":[{"id":"status_project_123","organization_id":"org_123","project_id":"proj_123","resource_type":"project","resource_id":"proj_123","event_type":"policy.review.requested","category":"governance","severity":"warning","source":"control_plane","automated":false,"summary":"project-level review requested"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/services/svc_123/status-events":
+			serviceStatusQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"data":[{"id":"status_service_123","organization_id":"org_123","service_id":"svc_123","resource_type":"service","resource_id":"svc_123","event_type":"rollout.execution.rollback_triggered","category":"runtime","severity":"critical","source":"prometheus","automated":true,"summary":"rollback triggered"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/environments/env_123/status-events":
+			environmentStatusQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"data":[{"id":"status_env_123","organization_id":"org_123","environment_id":"env_123","resource_type":"environment","resource_id":"env_123","event_type":"integration.sync.completed","category":"integration","severity":"info","source":"gitlab","automated":true,"summary":"sync completed"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("CCP_API_BASE_URL", server.URL)
+	t.Setenv("CCP_API_TOKEN", "token-123")
+	t.Setenv("CCP_ORGANIZATION_ID", "org_123")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"policy-decision", "list", "--project", "proj_123", "--policy", "pol_123", "--risk", "risk_123", "--plan", "plan_123", "--rollout", "rollout_123", "--applies-to", "rollout_plan", "--limit", "25", "--offset", "5"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 from policy-decision list, got %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"outcome": "require_manual_review"`) || !strings.Contains(stdout.String(), `"summary": "manual review required"`) {
+		t.Fatalf("expected policy-decision output, got %s", stdout.String())
+	}
+	for _, expected := range []string{"project_id=proj_123", "policy_id=pol_123", "risk_assessment_id=risk_123", "rollout_plan_id=plan_123", "rollout_execution_id=rollout_123", "applies_to=rollout_plan", "limit=25", "offset=5"} {
+		if !strings.Contains(policyDecisionQuery, expected) {
+			t.Fatalf("expected policy-decision query to include %q, got %q", expected, policyDecisionQuery)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"status", "show", "--id", "status_123"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"event_type": "rollout.execution.paused"`) || !strings.Contains(stdout.String(), `"summary": "paused for review"`) {
+		t.Fatalf("expected status show output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"status", "project", "--id", "proj_123", "--rollback-only", "--limit", "20", "--offset", "40"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"resource_type": "project"`) {
+		t.Fatalf("expected project status output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(projectStatusQuery, "rollback_only=true") || !strings.Contains(projectStatusQuery, "limit=20") || !strings.Contains(projectStatusQuery, "offset=40") {
+		t.Fatalf("unexpected project status query: %q", projectStatusQuery)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"status", "service", "--id", "svc_123", "--rollback-only", "--limit", "10"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"resource_type": "service"`) || !strings.Contains(stdout.String(), `"source": "prometheus"`) {
+		t.Fatalf("expected service status output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(serviceStatusQuery, "rollback_only=true") || !strings.Contains(serviceStatusQuery, "limit=10") {
+		t.Fatalf("unexpected service status query: %q", serviceStatusQuery)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"status", "env", "--id", "env_123", "--limit", "15"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"resource_type": "environment"`) || !strings.Contains(stdout.String(), `"source": "gitlab"`) {
+		t.Fatalf("expected environment status output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(environmentStatusQuery, "limit=15") {
+		t.Fatalf("unexpected environment status query: %q", environmentStatusQuery)
+	}
+
+	for _, header := range seenHeaders {
+		if header != "org_123" {
+			t.Fatalf("expected organization scope header on policy-decision/status calls, got %+v", seenHeaders)
+		}
 	}
 }
 

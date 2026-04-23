@@ -1,7 +1,6 @@
 package app_test
 
 import (
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +21,7 @@ func TestRiskAndRolloutIncludePythonIntelligenceMetadata(t *testing.T) {
 	t.Setenv("CCP_PYTHON_WORKSPACE", repoPythonWorkspace(t))
 
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{

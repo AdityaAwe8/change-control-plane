@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 type ItemResponse[T any] struct {
 	Data T `json:"data"`
 }
@@ -38,6 +40,21 @@ type SessionInfo struct {
 	ActiveOrganizationID string                `json:"active_organization_id,omitempty"`
 	Organizations        []SessionOrganization `json:"organizations,omitempty"`
 	ProjectMemberships   []SessionProjectScope `json:"project_memberships,omitempty"`
+}
+
+type BrowserSessionInfo struct {
+	BaseRecord
+	UserID          string     `json:"user_id"`
+	UserEmail       string     `json:"user_email,omitempty"`
+	UserDisplayName string     `json:"user_display_name,omitempty"`
+	AuthMethod      string     `json:"auth_method,omitempty"`
+	AuthProviderID  string     `json:"auth_provider_id,omitempty"`
+	AuthProvider    string     `json:"auth_provider,omitempty"`
+	LastSeenAt      *time.Time `json:"last_seen_at,omitempty"`
+	ExpiresAt       time.Time  `json:"expires_at"`
+	RevokedAt       *time.Time `json:"revoked_at,omitempty"`
+	Status          string     `json:"status"`
+	Current         bool       `json:"current,omitempty"`
 }
 
 type SessionOrganization struct {
@@ -534,17 +551,18 @@ type EnterprisePageState struct {
 	Integrations         []Integration                   `json:"integrations"`
 	WebhookRegistrations map[string]*WebhookRegistration `json:"webhook_registrations"`
 	OutboxEvents         []OutboxEvent                   `json:"outbox_events"`
+	BrowserSessions      []BrowserSessionInfo            `json:"browser_sessions"`
 }
 
 type GraphPageState struct {
-	GraphRelationships []GraphRelationship  `json:"graph_relationships"`
-	Catalog            CatalogSummary       `json:"catalog"`
-	Integrations       []Integration        `json:"integrations"`
-	Projects           []Project            `json:"projects"`
-	Teams              []Team               `json:"teams"`
-	Repositories       []Repository         `json:"repositories"`
+	GraphRelationships  []GraphRelationship  `json:"graph_relationships"`
+	Catalog             CatalogSummary       `json:"catalog"`
+	Integrations        []Integration        `json:"integrations"`
+	Projects            []Project            `json:"projects"`
+	Teams               []Team               `json:"teams"`
+	Repositories        []Repository         `json:"repositories"`
 	DiscoveredResources []DiscoveredResource `json:"discovered_resources"`
-	Changes            []ChangeSet          `json:"changes"`
+	Changes             []ChangeSet          `json:"changes"`
 }
 
 type SimulationPageState struct {
@@ -586,4 +604,43 @@ type RolloutExecutionDetail struct {
 	StatusTimeline          []StatusEvent                  `json:"status_timeline"`
 	EffectiveRollbackPolicy *RollbackPolicy                `json:"effective_rollback_policy,omitempty"`
 	RuntimeSummary          RolloutExecutionRuntimeSummary `json:"runtime_summary"`
+}
+
+type RolloutEvidencePackSummary struct {
+	GeneratedAt               time.Time `json:"generated_at"`
+	ApprovalState             string    `json:"approval_state"`
+	RiskLevel                 RiskLevel `json:"risk_level"`
+	RiskScore                 int       `json:"risk_score"`
+	BlastRadiusScope          string    `json:"blast_radius_scope"`
+	BlastRadiusSummary        string    `json:"blast_radius_summary"`
+	RolloutStrategy           string    `json:"rollout_strategy"`
+	LatestDecision            string    `json:"latest_decision,omitempty"`
+	LatestVerificationOutcome string    `json:"latest_verification_outcome,omitempty"`
+	ControlMode               string    `json:"control_mode,omitempty"`
+	IncidentCount             int       `json:"incident_count"`
+	RepositoryCount           int       `json:"repository_count"`
+	DiscoveredResourceCount   int       `json:"discovered_resource_count"`
+	BlockingPolicyCount       int       `json:"blocking_policy_count"`
+	ManualReviewPolicyCount   int       `json:"manual_review_policy_count"`
+	EvidenceHighlights        []string  `json:"evidence_highlights,omitempty"`
+}
+
+type RolloutEvidencePack struct {
+	Summary             RolloutEvidencePackSummary `json:"summary"`
+	Organization        Organization               `json:"organization"`
+	Project             Project                    `json:"project"`
+	Service             Service                    `json:"service"`
+	Environment         Environment                `json:"environment"`
+	ChangeSet           ChangeSet                  `json:"change_set"`
+	Assessment          RiskAssessment             `json:"assessment"`
+	Plan                RolloutPlan                `json:"plan"`
+	ExecutionDetail     RolloutExecutionDetail     `json:"execution_detail"`
+	BackendIntegration  *Integration               `json:"backend_integration,omitempty"`
+	SignalIntegration   *Integration               `json:"signal_integration,omitempty"`
+	PolicyDecisions     []PolicyDecision           `json:"policy_decisions,omitempty"`
+	Incidents           []Incident                 `json:"incidents,omitempty"`
+	Repositories        []Repository               `json:"repositories,omitempty"`
+	DiscoveredResources []DiscoveredResource       `json:"discovered_resources,omitempty"`
+	GraphRelationships  []GraphRelationship        `json:"graph_relationships,omitempty"`
+	AuditTrail          []AuditEvent               `json:"audit_trail,omitempty"`
 }

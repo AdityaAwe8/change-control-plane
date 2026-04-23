@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/change-control-plane/change-control-plane/internal/app"
 	"github.com/change-control-plane/change-control-plane/internal/common"
@@ -28,7 +29,7 @@ func TestOpenAPIAuthSummaryAndIdentityProviderRuntimeResponsesMatchDocumentedSch
 	doc := loadOpenAPIDocument(t)
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 	application.Config.APIBaseURL = server.URL
 
@@ -198,6 +199,18 @@ func TestOpenAPIAuthSummaryAndIdentityProviderRuntimeResponsesMatchDocumentedSch
 	providerTestBody := doAuthenticatedJSON(t, http.MethodPost, server.URL+"/api/v1/identity-providers/"+provider.ID+"/test", struct{}{}, adminAuth.Token, orgID, http.StatusOK)
 	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/identity-providers/{id}/test", http.MethodPost, http.StatusOK, providerTestBody)
 
+	_ = mustCreateBrowserSessionCookie(t, application, adminAuth.Session.ActorID, "oidc", provider.ID, provider.Name, time.Now().UTC().Add(2*time.Hour), nil)
+
+	browserSessionsBody := doAuthenticatedJSON(t, http.MethodGet, server.URL+"/api/v1/browser-sessions?status=active&limit=10", nil, adminAuth.Token, orgID, http.StatusOK)
+	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/browser-sessions", http.MethodGet, http.StatusOK, browserSessionsBody)
+	browserSessions := decodeListResponse[types.BrowserSessionInfo](t, browserSessionsBody)
+	if len(browserSessions) == 0 {
+		t.Fatal("expected browser sessions for enterprise runtime contract validation")
+	}
+
+	browserSessionRevokeBody := doAuthenticatedJSON(t, http.MethodPost, server.URL+"/api/v1/browser-sessions/"+browserSessions[0].ID+"/revoke", struct{}{}, adminAuth.Token, orgID, http.StatusOK)
+	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/browser-sessions/{id}/revoke", http.MethodPost, http.StatusOK, browserSessionRevokeBody)
+
 	publicProvidersBody := doAuthenticatedJSON(t, http.MethodGet, server.URL+"/api/v1/auth/providers", nil, "", "", http.StatusOK)
 	assertRouteResponseMatchesOpenAPI(t, doc, "/api/v1/auth/providers", http.MethodGet, http.StatusOK, publicProvidersBody)
 
@@ -241,7 +254,7 @@ func TestOpenAPIStatusIncidentAndRemainingRolloutRuntimeResponsesMatchDocumented
 
 	doc := loadOpenAPIDocument(t)
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -435,7 +448,7 @@ func TestOpenAPIIntegrationDiscoveryAndMachineAuthRuntimeResponsesMatchDocumente
 	doc := loadOpenAPIDocument(t)
 	cfg := common.LoadConfig()
 	application := app.NewApplicationWithStore(cfg, app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 	application.Config.APIBaseURL = server.URL
 
@@ -724,7 +737,7 @@ func newRuntimeOIDCServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	var oidcServer *httptest.Server
-	oidcServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	oidcServer = newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/oidc/.well-known/openid-configuration":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -772,7 +785,7 @@ func newRuntimeOIDCServer(t *testing.T) *httptest.Server {
 func newRuntimeGitLabServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/user":
 			_ = json.NewEncoder(w).Encode(map[string]any{"username": "gitlab-owner"})
@@ -816,7 +829,7 @@ func newRuntimeGitLabServer(t *testing.T) *httptest.Server {
 func newRuntimeGitHubServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/app/installations/987654/access_tokens":
 			if r.Method != http.MethodPost {
@@ -861,7 +874,7 @@ func newRuntimeGitHubServer(t *testing.T) *httptest.Server {
 func newRuntimeKubernetesServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer kube-token" {
 			t.Fatalf("expected kubernetes bearer token, got %q", got)
 		}
@@ -901,7 +914,7 @@ func newRuntimeKubernetesServer(t *testing.T) *httptest.Server {
 func newRuntimePrometheusServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return newLocalIPv4Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer prom-token" {
 			t.Fatalf("expected prometheus bearer token, got %q", got)
 		}

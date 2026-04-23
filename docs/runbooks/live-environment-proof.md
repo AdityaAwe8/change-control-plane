@@ -21,6 +21,25 @@ Instead, it captures the strongest honest external proof this repository can aut
 Run:
 
 ```bash
+make proof-live-preflight
+```
+
+This wraps:
+
+```bash
+./scripts/live-proof-preflight.sh
+```
+
+and writes:
+
+```text
+.tmp/live-proof/live-proof-preflight.json
+.tmp/live-proof/live-proof-operator-checklist.md
+```
+
+Then, after the checklist is satisfied, run:
+
+```bash
 make proof-live-verify
 ```
 
@@ -48,7 +67,34 @@ This wraps:
 ./scripts/live-proof-validate.sh
 ```
 
+The preflight report is intentionally secret-safe. It records whether referenced secret envs are configured, but it does not print their values.
+It now also renders the exact GitHub callback URL and GitHub/GitLab webhook URL patterns derived from `CCP_LIVE_PROOF_API_BASE_URL`, along with reachability guidance when the current API base is still local or private.
+
+When present, the proof scripts now auto-load these gitignored local env files before running:
+
+- `.env`
+- `.env.live-proof.local`
+- `.env.live-proof.secrets`
+
+That lets operators persist live-proof inputs on disk without manually sourcing them into the shell first.
+
 ## Required Configuration
+
+The fastest operator path is:
+
+1. run `make proof-live-preflight`
+2. open `.tmp/live-proof/live-proof-operator-checklist.md`
+3. satisfy the missing env vars, provider access, callback/webhook routing, cluster access, and Prometheus access listed there
+4. rerun `make proof-live-preflight` until it reports ready
+5. run `make proof-live-verify`
+
+The checklist now tells you the exact route patterns to expose:
+
+- GitHub callback: `<CCP_LIVE_PROOF_API_BASE_URL>/api/v1/integrations/github/callback`
+- GitHub webhook pattern: `<CCP_LIVE_PROOF_API_BASE_URL>/api/v1/integrations/{integration_id}/webhooks/github`
+- GitLab webhook pattern: `<CCP_LIVE_PROOF_API_BASE_URL>/api/v1/integrations/{integration_id}/webhooks/gitlab`
+
+The `{integration_id}` placeholder must be replaced with the real integration id created by the control plane. When `CCP_LIVE_PROOF_API_BASE_URL` is still local or private, the checklist now warns explicitly that hosted SCM proof still needs public DNS, ingress, or a trusted tunnel.
 
 Common:
 
@@ -128,9 +174,13 @@ Useful secondary evidence:
 - control-plane audit and status-event queries
 - browser inspection of the integrations, discovery, and coverage pages
 - provider-side webhook configuration screenshots or exported settings
+- `.tmp/live-proof/live-proof-preflight.json`
+- `.tmp/live-proof/live-proof-operator-checklist.md`
 
 Validation note:
 
+- `live-proof-preflight` renders a secret-safe operator checklist and exact missing-input list without contacting external systems
+- that preflight output now includes the concrete callback/webhook URL patterns and selected-provider reachability guidance that still must exist before hosted proof can succeed
 - `live-proof-verify` now validates the generated report structure before writing it
 - `live-proof-validate` rechecks a saved report without contacting external systems
 

@@ -1063,6 +1063,16 @@ func (s *InMemoryStore) CreateBrowserSession(_ context.Context, session types.Br
 	return nil
 }
 
+func (s *InMemoryStore) GetBrowserSession(_ context.Context, id string) (types.BrowserSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	session, ok := s.browserSessions[id]
+	if !ok {
+		return types.BrowserSession{}, storage.ErrNotFound
+	}
+	return session, nil
+}
+
 func (s *InMemoryStore) GetBrowserSessionByHash(_ context.Context, sessionHash string) (types.BrowserSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1074,6 +1084,25 @@ func (s *InMemoryStore) GetBrowserSessionByHash(_ context.Context, sessionHash s
 	return types.BrowserSession{}, storage.ErrNotFound
 }
 
+func (s *InMemoryStore) ListBrowserSessions(_ context.Context, query storage.BrowserSessionQuery) ([]types.BrowserSession, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	now := time.Now().UTC()
+	items := filterSortedValues(s.browserSessions, func(item types.BrowserSession) bool {
+		if query.UserID != "" && item.UserID != query.UserID {
+			return false
+		}
+		if query.OrganizationID != "" && !s.userBelongsToOrganizationLocked(item.UserID, query.OrganizationID) {
+			return false
+		}
+		if query.Status != "" && browserSessionStatus(item, now) != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
 func (s *InMemoryStore) UpdateBrowserSession(_ context.Context, session types.BrowserSession) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1082,6 +1111,29 @@ func (s *InMemoryStore) UpdateBrowserSession(_ context.Context, session types.Br
 	}
 	s.browserSessions[session.ID] = session
 	return nil
+}
+
+func (s *InMemoryStore) userBelongsToOrganizationLocked(userID, organizationID string) bool {
+	user, ok := s.users[userID]
+	if ok && user.OrganizationID == organizationID {
+		return true
+	}
+	for _, membership := range s.orgMemberships {
+		if membership.UserID == userID && membership.OrganizationID == organizationID {
+			return true
+		}
+	}
+	return false
+}
+
+func browserSessionStatus(session types.BrowserSession, now time.Time) string {
+	if session.RevokedAt != nil {
+		return "revoked"
+	}
+	if now.After(session.ExpiresAt) {
+		return "expired"
+	}
+	return "active"
 }
 
 func (s *InMemoryStore) CreateRolloutExecution(_ context.Context, execution types.RolloutExecution) error {

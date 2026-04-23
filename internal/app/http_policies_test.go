@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -17,7 +16,7 @@ import (
 func TestPolicyCRUDAndAdvisoryEvaluationAPI(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -148,7 +147,7 @@ func TestPolicyCRUDAndAdvisoryEvaluationAPI(t *testing.T) {
 func TestPolicyRolloutReviewAndBlockOutcomes(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
@@ -249,14 +248,14 @@ func TestPolicyRolloutReviewAndBlockOutcomes(t *testing.T) {
 	}, admin.Token, orgID)
 
 	blockChange := postItemAuth[types.ChangeSet](t, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
-		OrganizationID: orgID,
-		ProjectID:      project.ID,
-		ServiceID:      service.ID,
-		EnvironmentID:  environment.ID,
-		Summary:        "blocked schema rollout",
-		ChangeTypes:    []string{"schema", "infra", "iam", "dependency"},
-		FileCount:      20,
-		ResourceCount:  4,
+		OrganizationID:        orgID,
+		ProjectID:             project.ID,
+		ServiceID:             service.ID,
+		EnvironmentID:         environment.ID,
+		Summary:               "blocked schema rollout",
+		ChangeTypes:           []string{"schema", "infra", "iam", "dependency"},
+		FileCount:             20,
+		ResourceCount:         4,
 		TouchesInfrastructure: true,
 		TouchesIAM:            true,
 		TouchesSchema:         true,
@@ -296,7 +295,7 @@ func TestPolicyRolloutReviewAndBlockOutcomes(t *testing.T) {
 func TestPolicyRoutesEnforceRBACAndTenantScope(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
-	server := httptest.NewServer(app.NewHTTPServer(application).Handler())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
 
 	admin := loginDev(t, server.URL, types.DevLoginRequest{
