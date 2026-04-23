@@ -6,8 +6,14 @@ import {
   BasicMetrics,
   CatalogSummary,
   ChangeSet,
+  ConfigSet,
   ControlPlaneState,
   CoverageSummary,
+  DatabaseConnectionReference,
+  DatabaseConnectionTest,
+  DatabaseChange,
+  DatabaseValidationExecution,
+  DatabaseValidationCheck,
   DiscoveredResource,
   GraphRelationship,
   IdentityProvider,
@@ -19,6 +25,8 @@ import {
   Policy,
   PolicyDecision,
   Project,
+  Release,
+  ReleaseAnalysis,
   Repository,
   RiskAssessment,
   RollbackPolicy,
@@ -90,6 +98,13 @@ const EMPTY_CHANGES: ChangeSet[] = [];
 const EMPTY_RISK_ASSESSMENTS: RiskAssessment[] = [];
 const EMPTY_ROLLOUT_PLANS: RolloutPlan[] = [];
 const EMPTY_ROLLOUT_EXECUTIONS: RolloutExecution[] = [];
+const EMPTY_RELEASES: Release[] = [];
+const EMPTY_CONFIG_SETS: ConfigSet[] = [];
+const EMPTY_DATABASE_CONNECTIONS: DatabaseConnectionReference[] = [];
+const EMPTY_DATABASE_CONNECTION_TESTS: DatabaseConnectionTest[] = [];
+const EMPTY_DATABASE_CHANGES: DatabaseChange[] = [];
+const EMPTY_DATABASE_CHECKS: DatabaseValidationCheck[] = [];
+const EMPTY_DATABASE_EXECUTIONS: DatabaseValidationExecution[] = [];
 const EMPTY_AUDIT_EVENTS: AuditEvent[] = [];
 const EMPTY_ROLLBACK_POLICIES: RollbackPolicy[] = [];
 const EMPTY_STATUS_EVENTS: StatusEvent[] = [];
@@ -306,6 +321,14 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
   const rolloutPlans = rolloutPlansForState(state);
   const rolloutExecutions = rolloutExecutionsForState(state);
   const rolloutExecutionDetail = rolloutExecutionDetailForState(state);
+  const releases = releasesForState(state);
+  const releaseAnalysis = releaseAnalysisForState(state);
+  const configSets = configSetsForState(state);
+  const databaseConnections = databaseConnectionsForState(state);
+  const databaseConnectionTests = databaseConnectionTestsForState(state);
+  const databaseChanges = databaseChangesForState(state);
+  const databaseChecks = databaseChecksForState(state);
+  const databaseExecutions = databaseExecutionsForState(state);
   const integrations = integrationsForState(state);
   const incidents = incidentsForState(state);
   const incidentDetail = incidentDetailForState(state);
@@ -338,6 +361,12 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
   const latestRisk = riskAssessments[0];
   const latestRollout = rolloutPlans[0];
   const latestExecution = rolloutExecutions[0];
+  const latestRelease = releases[releases.length - 1];
+  const latestDatabaseConnection = databaseConnections[databaseConnections.length - 1];
+  const latestDatabaseConnectionTest = databaseConnectionTests[0];
+  const latestDatabaseChange = databaseChanges[databaseChanges.length - 1];
+  const latestDatabaseCheck = databaseChecks[databaseChecks.length - 1];
+  const latestDatabaseExecution = databaseExecutions[0];
   const latestExecutionDetail = rolloutExecutionDetail;
   const latestRuntimeSummary = latestExecutionDetail?.runtime_summary;
   const latestBackendIntegration = latestExecution?.backend_integration_id
@@ -627,6 +656,30 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
               ${infoCard("Rollback Policy", latestExecutionDetail?.effective_rollback_policy ? `${latestExecutionDetail.effective_rollback_policy.name} (${latestExecutionDetail.effective_rollback_policy.rollback_on_critical_signals ? "auto-rollback on critical" : "manual review on critical"})` : "Built-in fallback policy")}
             </div>
             ${rolloutExecutions.length > 0 ? table(["Execution", "Status", "Decision", "Backend", "Progress", "Step"], rolloutExecutions.map((execution) => [execution.id, execution.status, execution.last_decision ? rolloutDecisionLabel(execution.last_decision) : "n/a", execution.backend_status || execution.backend_type || "n/a", `${execution.progress_percent ?? 0}%`, execution.current_step || "n/a"])) : emptyState("No rollout executions", "Create a rollout execution from the latest plan to begin the control loop.")}
+            ${releaseAnalysis ? `
+              <div class="panel-header compact-top">
+                <h3>Release Bundle Analysis</h3>
+                <p>${releaseAnalysis.release_summary}</p>
+              </div>
+              <div class="highlight-grid">
+                ${infoCard("Bundle", `${releaseAnalysis.release.name || releaseAnalysis.release.version} (${releaseAnalysis.release.status})`)}
+                ${infoCard("Combined Risk", `${releaseAnalysis.combined_risk_level} (${releaseAnalysis.combined_risk_score})`)}
+                ${infoCard("Blast Radius", releaseAnalysis.blast_radius.summary || releaseAnalysis.blast_radius.scope)}
+                ${infoCard("Rollback", releaseAnalysis.rollback_guidance.summary)}
+                ${infoCard("Database Posture", releaseAnalysis.database_posture.summary)}
+                ${infoCard("Warnings", String((releaseAnalysis.warnings || []).length))}
+                ${infoCard("Blockers", String((releaseAnalysis.blockers || []).length))}
+                ${infoCard("Linked Executions", String((releaseAnalysis.linked_rollout_executions || []).length))}
+                ${infoCard("Ops Summary", releaseAnalysis.ops_assistant.likely_cause)}
+              </div>
+              ${(releaseAnalysis.blockers || []).length > 0 ? `<p class="panel-muted">Blockers: ${(releaseAnalysis.blockers || []).join("; ")}</p>` : ""}
+              ${(releaseAnalysis.warnings || []).length > 0 ? `<p class="panel-muted">Warnings: ${(releaseAnalysis.warnings || []).join("; ")}</p>` : ""}
+              ${(releaseAnalysis.database_findings || []).length > 0 ? `<p class="panel-muted">Database findings: ${(releaseAnalysis.database_findings || []).join("; ")}</p>` : ""}
+              ${(releaseAnalysis.database_posture.blocking_findings || []).length > 0 ? `<p class="panel-muted">DB blockers: ${(releaseAnalysis.database_posture.blocking_findings || []).join("; ")}</p>` : ""}
+              ${(releaseAnalysis.database_posture.warning_findings || []).length > 0 ? `<p class="panel-muted">DB warnings: ${(releaseAnalysis.database_posture.warning_findings || []).join("; ")}</p>` : ""}
+              ${(releaseAnalysis.database_checks || []).length > 0 ? table(["DB Check", "Phase", "Status", "Required", "Mode"], (releaseAnalysis.database_checks || []).map((item) => [item.name, item.phase, item.status, item.required ? "required" : "optional", item.execution_mode])) : ""}
+              ${(releaseAnalysis.readiness_review || []).length > 0 ? table(["Category", "Severity", "Question", "Acknowledgment"], (releaseAnalysis.readiness_review || []).map((item) => [item.category, item.severity, item.question, item.acknowledgment_required ? "required" : "optional"])) : emptyState("No readiness review items", "Bundle analysis will generate targeted readiness questions when risks are present.")}
+            ` : emptyState("No release bundle analysis yet", "Create a release bundle below to inspect combined risk, config validation, dependency order, rollback posture, and operator-facing summaries.")}
             ${latestExecutionDetail ? `
               <div class="page-grid">
                 <article class="surface panel">
@@ -661,6 +714,12 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
             ${canOperate && latestRollout ? `
               <form id="create-rollout-execution-form" class="stack-form">
                 <input type="hidden" name="rollout_plan_id" value="${latestRollout.id}" />
+                <label><span>Release Bundle</span>
+                  <select name="release_id">
+                    <option value="">No linked release bundle</option>
+                    ${releases.map((release) => `<option value="${release.id}" ${latestRelease && release.id === latestRelease.id ? "selected" : ""}>${release.name || release.version} (${release.status})</option>`).join("")}
+                  </select>
+                </label>
                 <label><span>Backend</span>
                   <select name="backend_type">
                     <option value="simulated">simulated</option>
@@ -736,6 +795,294 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
                 </form>
               ` : ""}
             ` : emptyState("Execution access unavailable", "An org member or org admin can create executions and control rollout state from this surface.")}
+          </article>
+          <article class="surface panel">
+            <div class="panel-header">
+              <h3>Release Bundle Builder</h3>
+              <p>Select approved change sets and config sets into a governed release candidate, then inspect the combined analysis above.</p>
+            </div>
+            ${canOperate ? `
+              <form id="create-release-form" class="stack-form">
+                <label><span>Environment</span><select name="environment_id">${environmentOptions(state)}</select></label>
+                <label><span>Name</span><input name="name" type="text" placeholder="April Production Bundle" required /></label>
+                <label><span>Version</span><input name="version" type="text" placeholder="2026.04.23" required /></label>
+                <label><span>Summary</span><textarea name="summary" placeholder="Plain-language release summary"></textarea></label>
+                <label><span>Change Set IDs</span><input name="change_set_ids" type="text" value="${latestChange ? latestChange.id : ""}" placeholder="chg_123,chg_456" /></label>
+                <label><span>Config Set IDs</span><input name="config_set_ids" type="text" value="${latestRelease?.config_set_ids?.join(",") || configSets.slice(-2).map((item) => item.id).join(",")}" placeholder="cfg_123,cfg_456" /></label>
+                <button class="action" type="submit">Create Release Bundle</button>
+              </form>
+              ${latestRelease ? `
+                <form id="update-release-form" class="stack-form compact-top-form" data-release-id="${latestRelease.id}">
+                  <label><span>Name</span><input name="name" type="text" value="${latestRelease.name || ""}" required /></label>
+                  <label><span>Version</span><input name="version" type="text" value="${latestRelease.version || ""}" required /></label>
+                  <label><span>Status</span><input name="status" type="text" value="${latestRelease.status || ""}" placeholder="draft" /></label>
+                  <label><span>Summary</span><textarea name="summary">${latestRelease.summary || ""}</textarea></label>
+                  <label><span>Change Set IDs</span><input name="change_set_ids" type="text" value="${(latestRelease.change_set_ids || []).join(",")}" /></label>
+                  <label><span>Config Set IDs</span><input name="config_set_ids" type="text" value="${(latestRelease.config_set_ids || []).join(",")}" /></label>
+                  <button class="action ghost" type="submit">Update Latest Release</button>
+                </form>
+              ` : ""}
+            ` : emptyState("Read-only workspace", "Only operators with rollout permissions can create or update release bundles.")}
+            ${releases.length > 0 ? table(["Release", "Version", "Status", "Changes", "Config Sets"], releases.map((release) => [release.name || release.id, release.version, release.status, String((release.change_set_ids || []).length), String((release.config_set_ids || []).length)])) : emptyState("No release bundles yet", "Create the first bundle to connect release composition with risk, readiness review, rollback guidance, and evidence packs.")}
+          </article>
+          <article class="surface panel">
+            <div class="panel-header">
+              <h3>Configuration Sets</h3>
+              <p>Store environment-specific parameters and secret references as governed config sets rather than loose env files.</p>
+            </div>
+            ${canAdmin || canOperate ? `
+              <form id="create-config-set-form" class="stack-form">
+                <label><span>Environment</span><select name="environment_id">${environmentOptions(state)}</select></label>
+                <label><span>Service</span><select name="service_id"><option value="">Shared environment config</option>${serviceOptions(state)}</select></label>
+                <label><span>Name</span><input name="name" type="text" placeholder="production-app" required /></label>
+                <label><span>Version</span><input name="version" type="text" placeholder="v1" required /></label>
+                <label><span>Entries JSON</span><textarea name="entries_json" placeholder='[{"key":"DB_PASSWORD_REF","value":"prod/payments/db/password","value_type":"secret_ref","required":true}]'></textarea></label>
+                <button class="action" type="submit">Create Config Set</button>
+              </form>
+              ${configSets.length > 0 ? `
+                <form id="update-config-set-form" class="stack-form compact-top-form" data-config-set-id="${configSets[configSets.length - 1].id}">
+                  <label><span>Name</span><input name="name" type="text" value="${configSets[configSets.length - 1].name}" required /></label>
+                  <label><span>Version</span><input name="version" type="text" value="${configSets[configSets.length - 1].version}" required /></label>
+                  <label><span>Status</span><input name="status" type="text" value="${configSets[configSets.length - 1].status}" /></label>
+                  <label><span>Entries JSON</span><textarea name="entries_json">${JSON.stringify(configSets[configSets.length - 1].entries || [], null, 2)}</textarea></label>
+                  <button class="action ghost" type="submit">Update Latest Config Set</button>
+                </form>
+              ` : ""}
+            ` : emptyState("Read-only workspace", "Only administrators and rollout operators can govern config-set changes from this surface.")}
+            ${configSets.length > 0 ? table(["Config Set", "Version", "Status", "Entries", "Service"], configSets.map((configSet) => [configSet.name, configSet.version, configSet.status, String((configSet.entries || []).length), configSet.service_id || "shared"])) : emptyState("No config sets yet", "Create a config set with secret references to validate missing keys, deprecated vars, and diff summaries before rollout.")}
+          </article>
+          <article class="surface panel">
+            <div class="panel-header">
+              <h3>Database Governance</h3>
+              <p>Classify schema and migration work explicitly, attach environment-scoped connection references, then run controlled read-only validation checks with persisted execution evidence.</p>
+            </div>
+            ${canOperate ? `
+              <form id="create-database-connection-form" class="stack-form">
+                <label><span>Environment</span><select name="environment_id">${environmentOptions(state)}</select></label>
+                <label><span>Service</span><select name="service_id"><option value="">Shared environment connection</option>${serviceOptions(state)}</select></label>
+                <label><span>Name</span><input name="name" type="text" placeholder="checkout-primary-ro" required /></label>
+                <label><span>Datastore</span><input name="datastore" type="text" placeholder="checkout-primary" required /></label>
+                <label><span>Driver</span>
+                  <select name="driver">
+                    <option value="postgres">postgres</option>
+                  </select>
+                </label>
+                <label><span>Source Type</span>
+                  <select name="source_type">
+                    <option value="env_dsn">env_dsn</option>
+                    <option value="secret_ref_dsn">secret_ref_dsn</option>
+                  </select>
+                </label>
+                <label><span>DSN Env</span><input name="dsn_env" type="text" value="CCP_DB_DSN" placeholder="CCP_DB_DSN" /></label>
+                <label><span>Secret Ref</span><input name="secret_ref" type="text" placeholder="prod/checkout/db/readonly_dsn" /></label>
+                <label><span>Secret Ref Env</span><input name="secret_ref_env" type="text" placeholder="CCP_CHECKOUT_RUNTIME_DSN" /></label>
+                <label><span>Summary</span><textarea name="summary" placeholder="Explain what environment this reference targets and why it is safe for read-only validation."></textarea></label>
+                <label class="checkbox-row"><input name="read_only_capable" type="checkbox" checked /><span>Read-only capable</span></label>
+                <button class="action" type="submit">Create Connection Reference</button>
+              </form>
+              ${latestDatabaseConnection ? `
+                <form id="update-database-connection-form" class="stack-form compact-top-form" data-database-connection-id="${latestDatabaseConnection.id}">
+                  <label><span>Name</span><input name="name" type="text" value="${latestDatabaseConnection.name}" required /></label>
+                  <label><span>Datastore</span><input name="datastore" type="text" value="${latestDatabaseConnection.datastore}" required /></label>
+                  <label><span>Driver</span><input name="driver" type="text" value="${latestDatabaseConnection.driver}" /></label>
+                  <label><span>Source Type</span>
+                    <select name="source_type">
+                      <option value="env_dsn" ${latestDatabaseConnection.source_type === "env_dsn" ? "selected" : ""}>env_dsn</option>
+                      <option value="secret_ref_dsn" ${latestDatabaseConnection.source_type === "secret_ref_dsn" ? "selected" : ""}>secret_ref_dsn</option>
+                    </select>
+                  </label>
+                  <label><span>DSN Env</span><input name="dsn_env" type="text" value="${latestDatabaseConnection.dsn_env || ""}" /></label>
+                  <label><span>Secret Ref</span><input name="secret_ref" type="text" value="${latestDatabaseConnection.secret_ref || ""}" /></label>
+                  <label><span>Secret Ref Env</span><input name="secret_ref_env" type="text" value="${latestDatabaseConnection.secret_ref_env || ""}" /></label>
+                  <label><span>Summary</span><textarea name="summary">${latestDatabaseConnection.summary}</textarea></label>
+                  <label class="checkbox-row"><input name="read_only_capable" type="checkbox" ${latestDatabaseConnection.read_only_capable ? "checked" : ""} /><span>Read-only capable</span></label>
+                  <button class="action ghost" type="submit">Update Latest Connection Reference</button>
+                </form>
+                <form id="test-database-connection-form" class="stack-form compact-top-form">
+                  <label><span>Connection Reference</span>
+                    <select name="database_connection_id">
+                      ${databaseConnections.map((item) => `<option value="${item.id}" ${item.id === latestDatabaseConnection.id ? "selected" : ""}>${item.name} (${item.status})</option>`).join("")}
+                    </select>
+                  </label>
+                  <label><span>Trigger</span>
+                    <select name="trigger">
+                      <option value="manual">manual</option>
+                      <option value="release_analysis">release_analysis</option>
+                      <option value="rollout_pre_deploy">rollout_pre_deploy</option>
+                      <option value="rollout_post_deploy">rollout_post_deploy</option>
+                      <option value="rollback">rollback</option>
+                    </select>
+                  </label>
+                  <button class="action ghost" type="submit">Test Connection Reference</button>
+                </form>
+              ` : ""}
+              <form id="create-database-change-form" class="stack-form">
+                <label><span>Environment</span><select name="environment_id">${environmentOptions(state)}</select></label>
+                <label><span>Service</span><select name="service_id">${serviceOptions(state)}</select></label>
+                <label><span>Change Set ID</span><input name="change_set_id" type="text" value="${latestChange ? latestChange.id : ""}" placeholder="chg_123" required /></label>
+                <label><span>Name</span><input name="name" type="text" placeholder="Expand orders table" required /></label>
+                <label><span>Datastore</span><input name="datastore" type="text" placeholder="checkout-primary" required /></label>
+                <label><span>Operation</span>
+                  <select name="operation_type">
+                    <option value="schema_change">schema_change</option>
+                    <option value="data_backfill">data_backfill</option>
+                    <option value="index_change">index_change</option>
+                    <option value="destructive_change">destructive_change</option>
+                    <option value="expand_contract">expand_contract</option>
+                  </select>
+                </label>
+                <label><span>Intent</span>
+                  <select name="execution_intent">
+                    <option value="pre_deploy">pre_deploy</option>
+                    <option value="during_deploy">during_deploy</option>
+                    <option value="post_deploy">post_deploy</option>
+                    <option value="out_of_band">out_of_band</option>
+                  </select>
+                </label>
+                <label><span>Compatibility</span>
+                  <select name="compatibility">
+                    <option value="backward_compatible">backward_compatible</option>
+                    <option value="expand_contract">expand_contract</option>
+                    <option value="forward_incompatible">forward_incompatible</option>
+                  </select>
+                </label>
+                <label><span>Reversibility</span>
+                  <select name="reversibility">
+                    <option value="reversible">reversible</option>
+                    <option value="manual_only">manual_only</option>
+                    <option value="irreversible">irreversible</option>
+                  </select>
+                </label>
+                <label><span>Risk</span>
+                  <select name="risk_level">
+                    <option value="low">low</option>
+                    <option value="medium" selected>medium</option>
+                    <option value="high">high</option>
+                    <option value="critical">critical</option>
+                  </select>
+                </label>
+                <label><span>Summary</span><textarea name="summary" placeholder="Describe why this DB work is needed and how it should be sequenced."></textarea></label>
+                <label><span>Evidence</span><input name="evidence" type="text" placeholder="ticket:DB-42,runbook:migration-plan" /></label>
+                <label class="checkbox-row"><input name="lock_risk" type="checkbox" /><span>Lock risk</span></label>
+                <label class="checkbox-row"><input name="manual_approval_required" type="checkbox" /><span>Manual approval required</span></label>
+                <button class="action" type="submit">Create Database Change</button>
+              </form>
+              ${latestDatabaseChange ? `
+                <form id="update-database-change-form" class="stack-form compact-top-form" data-database-change-id="${latestDatabaseChange.id}">
+                  <label><span>Name</span><input name="name" type="text" value="${latestDatabaseChange.name}" required /></label>
+                  <label><span>Datastore</span><input name="datastore" type="text" value="${latestDatabaseChange.datastore}" required /></label>
+                  <label><span>Operation</span><input name="operation_type" type="text" value="${latestDatabaseChange.operation_type}" /></label>
+                  <label><span>Intent</span><input name="execution_intent" type="text" value="${latestDatabaseChange.execution_intent}" /></label>
+                  <label><span>Compatibility</span><input name="compatibility" type="text" value="${latestDatabaseChange.compatibility}" /></label>
+                  <label><span>Reversibility</span><input name="reversibility" type="text" value="${latestDatabaseChange.reversibility}" /></label>
+                  <label><span>Risk</span><input name="risk_level" type="text" value="${latestDatabaseChange.risk_level}" /></label>
+                  <label><span>Status</span><input name="status" type="text" value="${latestDatabaseChange.status}" /></label>
+                  <label><span>Summary</span><textarea name="summary">${latestDatabaseChange.summary}</textarea></label>
+                  <label><span>Evidence</span><input name="evidence" type="text" value="${(latestDatabaseChange.evidence || []).join(",")}" /></label>
+                  <label class="checkbox-row"><input name="lock_risk" type="checkbox" ${latestDatabaseChange.lock_risk ? "checked" : ""} /><span>Lock risk</span></label>
+                  <label class="checkbox-row"><input name="manual_approval_required" type="checkbox" ${latestDatabaseChange.manual_approval_required ? "checked" : ""} /><span>Manual approval required</span></label>
+                  <button class="action ghost" type="submit">Update Latest Database Change</button>
+                </form>
+              ` : ""}
+              <form id="create-database-check-form" class="stack-form compact-top-form">
+                <label><span>Environment</span><select name="environment_id">${environmentOptions(state)}</select></label>
+                <label><span>Service</span><select name="service_id">${serviceOptions(state)}</select></label>
+                <label><span>Change Set ID</span><input name="change_set_id" type="text" value="${latestDatabaseChange?.change_set_id || (latestChange ? latestChange.id : "")}" placeholder="chg_123" required /></label>
+                <label><span>Database Change ID</span><input name="database_change_id" type="text" value="${latestDatabaseChange?.id || ""}" placeholder="dbchg_123" /></label>
+                <label><span>Connection Reference</span>
+                  <select name="connection_ref_id">
+                    <option value="">Manual-only check</option>
+                    ${databaseConnections.map((item) => `<option value="${item.id}" ${latestDatabaseConnection && item.id === latestDatabaseConnection.id ? "selected" : ""}>${item.name} (${item.status})</option>`).join("")}
+                  </select>
+                </label>
+                <label><span>Name</span><input name="name" type="text" placeholder="Pre-deploy compatibility check" required /></label>
+                <label><span>Phase</span>
+                  <select name="phase">
+                    <option value="pre_deploy">pre_deploy</option>
+                    <option value="post_deploy">post_deploy</option>
+                    <option value="rollback">rollback</option>
+                  </select>
+                </label>
+                <label><span>Check Type</span>
+                  <select name="check_type">
+                    <option value="migration_completion">migration_completion</option>
+                    <option value="compatibility_check">compatibility_check</option>
+                    <option value="row_count_assertion">row_count_assertion</option>
+                    <option value="existence_assertion">existence_assertion</option>
+                    <option value="custom_read_only">custom_read_only</option>
+                  </select>
+                </label>
+                <label><span>Mode</span>
+                  <select name="execution_mode">
+                    <option value="manual_attestation">manual_attestation</option>
+                    <option value="advisory_only">advisory_only</option>
+                    <option value="runtime_read_only">runtime_read_only</option>
+                  </select>
+                </label>
+                <label><span>Status</span>
+                  <select name="status">
+                    <option value="defined">defined</option>
+                    <option value="passed">passed</option>
+                    <option value="failed">failed</option>
+                    <option value="blocked">blocked</option>
+                    <option value="advisory_only">advisory_only</option>
+                  </select>
+                </label>
+                <label><span>Specification</span><textarea name="specification" placeholder="Describe the exact read-only check or manual validation expected."></textarea></label>
+                <label><span>Summary</span><textarea name="summary" placeholder="Explain what this check proves."></textarea></label>
+                <label><span>Evidence</span><input name="evidence" type="text" placeholder="dashboard:db-health,owner:dba-team" /></label>
+                <label class="checkbox-row"><input name="read_only" type="checkbox" checked /><span>Read only</span></label>
+                <label class="checkbox-row"><input name="required" type="checkbox" checked /><span>Required</span></label>
+                <button class="action ghost" type="submit">Create Validation Check</button>
+              </form>
+              ${latestDatabaseCheck ? `
+                <form id="update-database-check-form" class="stack-form compact-top-form" data-database-check-id="${latestDatabaseCheck.id}">
+                  <label><span>Database Change ID</span><input name="database_change_id" type="text" value="${latestDatabaseCheck.database_change_id || ""}" /></label>
+                  <label><span>Connection Reference ID</span><input name="connection_ref_id" type="text" value="${latestDatabaseCheck.connection_ref_id || ""}" /></label>
+                  <label><span>Name</span><input name="name" type="text" value="${latestDatabaseCheck.name}" required /></label>
+                  <label><span>Phase</span><input name="phase" type="text" value="${latestDatabaseCheck.phase}" /></label>
+                  <label><span>Check Type</span><input name="check_type" type="text" value="${latestDatabaseCheck.check_type}" /></label>
+                  <label><span>Mode</span><input name="execution_mode" type="text" value="${latestDatabaseCheck.execution_mode}" /></label>
+                  <label><span>Status</span><input name="status" type="text" value="${latestDatabaseCheck.status}" /></label>
+                  <label><span>Specification</span><textarea name="specification">${latestDatabaseCheck.specification}</textarea></label>
+                  <label><span>Summary</span><textarea name="summary">${latestDatabaseCheck.summary}</textarea></label>
+                  <label><span>Result Summary</span><textarea name="last_result_summary">${latestDatabaseCheck.last_result_summary || ""}</textarea></label>
+                  <label><span>Evidence</span><input name="evidence" type="text" value="${(latestDatabaseCheck.evidence || []).join(",")}" /></label>
+                  <label class="checkbox-row"><input name="read_only" type="checkbox" ${latestDatabaseCheck.read_only ? "checked" : ""} /><span>Read only</span></label>
+                  <label class="checkbox-row"><input name="required" type="checkbox" ${latestDatabaseCheck.required ? "checked" : ""} /><span>Required</span></label>
+                  <button class="action ghost" type="submit">Update Latest Validation Check</button>
+                </form>
+              ` : ""}
+              ${databaseChecks.some((item) => item.execution_mode === "runtime_read_only") ? `
+                <form id="execute-database-check-form" class="stack-form compact-top-form">
+                  <label><span>Runtime Check</span>
+                    <select name="database_check_id">
+                      ${databaseChecks
+                        .filter((item) => item.execution_mode === "runtime_read_only")
+                        .map((item) => `<option value="${item.id}" ${latestDatabaseCheck && item.id === latestDatabaseCheck.id ? "selected" : ""}>${item.name} (${item.status})</option>`)
+                        .join("")}
+                    </select>
+                  </label>
+                  <label><span>Trigger</span>
+                    <select name="trigger">
+                      <option value="manual">manual</option>
+                      <option value="release_analysis">release_analysis</option>
+                      <option value="rollout_pre_deploy">rollout_pre_deploy</option>
+                      <option value="rollout_post_deploy">rollout_post_deploy</option>
+                      <option value="rollback">rollback</option>
+                    </select>
+                  </label>
+                  <button class="action ghost" type="submit">Execute Runtime Validation Check</button>
+                </form>
+              ` : ""}
+            ` : emptyState("Read-only workspace", "Only rollout operators can classify database changes and define validation checks from this surface.")}
+            ${databaseConnections.length > 0 ? table(["Connection", "Datastore", "Driver", "Status", "Source", "Last Healthy"], databaseConnections.map((item) => [item.name, item.datastore, item.driver, item.status, item.source_type === "secret_ref_dsn" ? `${item.secret_ref || "unset"}${item.secret_ref_env ? ` via ${item.secret_ref_env}` : " via unbound env"}` : (item.dsn_env || "unset"), item.last_healthy_at || item.last_tested_at || "never"])) : emptyState("No database connections yet", "Create a connection reference so runtime validation checks can resolve an environment-backed DSN without exposing the secret value.")}
+            ${databaseConnectionTests.length > 0 ? table(["Connection Test", "Connection", "Status", "Trigger", "Started", "Summary"], databaseConnectionTests.slice(0, 10).map((item) => [item.id, item.connection_ref_id, item.status, item.trigger, item.started_at, item.summary])) : emptyState("No connection health evidence yet", "Connection test runs will appear here once a reference is actively health-checked and persisted.")}
+            ${databaseChanges.length > 0 ? table(["DB Change", "Datastore", "Operation", "Compatibility", "Rollback", "Status"], databaseChanges.map((item) => [item.name, item.datastore, item.operation_type, item.compatibility, item.reversibility, item.status])) : emptyState("No database governance records yet", "Create a database change record to replace heuristic schema assumptions with explicit compatibility and rollback posture.")}
+            ${databaseChecks.length > 0 ? table(["Validation Check", "Phase", "Status", "Mode", "Connection", "Change"], databaseChecks.map((item) => [item.name, item.phase, item.status, item.execution_mode, item.connection_ref_id || "manual", item.database_change_id || item.change_set_id])) : emptyState("No validation checks yet", "Define pre-deploy and post-deploy checks so release analysis can tell the difference between pending review and verified readiness.")}
+            ${databaseExecutions.length > 0 ? table(["Execution", "Check", "Status", "Trigger", "Started", "Summary"], databaseExecutions.slice(0, 10).map((item) => [item.id, item.validation_check_id, item.status, item.trigger, item.started_at, item.summary])) : emptyState("No execution evidence yet", "Runtime validation executions will appear here once a read-only check is triggered and persisted.")}
+            ${latestDatabaseConnectionTest ? `<p class="panel-muted">Latest connection test: ${(latestDatabaseConnectionTest.details || []).join("; ") || latestDatabaseConnectionTest.summary}</p>` : ""}
+            ${latestDatabaseExecution ? `<p class="panel-muted">Latest execution details: ${(latestDatabaseExecution.result_details || []).join("; ") || latestDatabaseExecution.summary}</p>` : ""}
           </article>
         </section>
       `;
@@ -2267,6 +2614,7 @@ function catalogForState(state: ControlPlaneState) {
     || state.servicePage.data?.catalog
     || state.environmentPage.data?.catalog
     || state.policiesPage.data?.catalog
+    || state.rolloutPage.data?.catalog
     || state.integrationsPage.data?.catalog
     || state.graphPage.data?.catalog
     || state.deploymentsPage.data?.catalog
@@ -2328,6 +2676,38 @@ function rolloutExecutionsForState(state: ControlPlaneState) {
 
 function rolloutExecutionDetailForState(state: ControlPlaneState) {
   return state.rolloutPage.data?.rolloutExecutionDetail || state.simulationPage.data?.rolloutExecutionDetail || null;
+}
+
+function releasesForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.releases || EMPTY_RELEASES;
+}
+
+function releaseAnalysisForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.releaseAnalysis || null;
+}
+
+function configSetsForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.configSets || EMPTY_CONFIG_SETS;
+}
+
+function databaseConnectionsForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.databaseConnections || EMPTY_DATABASE_CONNECTIONS;
+}
+
+function databaseConnectionTestsForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.databaseConnectionTests || EMPTY_DATABASE_CONNECTION_TESTS;
+}
+
+function databaseChangesForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.databaseChanges || EMPTY_DATABASE_CHANGES;
+}
+
+function databaseChecksForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.databaseChecks || EMPTY_DATABASE_CHECKS;
+}
+
+function databaseExecutionsForState(state: ControlPlaneState) {
+  return state.rolloutPage.data?.databaseExecutions || EMPTY_DATABASE_EXECUTIONS;
 }
 
 function auditEventsForState(state: ControlPlaneState) {
@@ -2492,6 +2872,22 @@ function teamOptions(state: ControlPlaneState, selectedID = ""): string {
     return `<option value="">Create a team through the API or CLI first</option>`;
   }
   return teams.map((team) => `<option value="${team.id}" ${team.id === selectedID ? "selected" : ""}>${team.name}</option>`).join("");
+}
+
+function serviceOptions(state: ControlPlaneState, selectedID = ""): string {
+  const services = catalogForState(state).services;
+  if (services.length === 0) {
+    return `<option value="">Register a service first</option>`;
+  }
+  return services.map((service) => `<option value="${service.id}" ${service.id === selectedID ? "selected" : ""}>${service.name}</option>`).join("");
+}
+
+function environmentOptions(state: ControlPlaneState, selectedID = ""): string {
+  const environments = catalogForState(state).environments;
+  if (environments.length === 0) {
+    return `<option value="">Create an environment first</option>`;
+  }
+  return environments.map((environment) => `<option value="${environment.id}" ${environment.id === selectedID ? "selected" : ""}>${environment.name}</option>`).join("");
 }
 
 function projectNameForID(projects: Project[], projectID: string): string {

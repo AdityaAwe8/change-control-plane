@@ -140,9 +140,50 @@ func (a *Application) GetRolloutEvidencePack(ctx context.Context, id string) (ty
 	if err != nil {
 		return types.RolloutEvidencePack{}, err
 	}
+	var release *types.Release
+	var releaseAnalysis *types.ReleaseAnalysis
+	var databaseConnections []types.DatabaseConnectionReference
+	var databaseConnectionTests []types.DatabaseConnectionTest
+	var databaseChanges []types.DatabaseChange
+	var databaseChecks []types.DatabaseValidationCheck
+	var databaseExecutions []types.DatabaseValidationExecution
+	var databasePosture *types.DatabasePosture
+	if strings.TrimSpace(runtimeContext.Execution.ReleaseID) != "" {
+		item, err := a.Store.GetRelease(ctx, runtimeContext.Execution.ReleaseID)
+		if err != nil {
+			return types.RolloutEvidencePack{}, err
+		}
+		release = &item
+		analysis, err := a.buildReleaseAnalysis(ctx, item)
+		if err != nil {
+			return types.RolloutEvidencePack{}, err
+		}
+		releaseAnalysis = &analysis
+		databaseConnections = append(databaseConnections, analysis.DatabaseConnections...)
+		databaseConnectionTests = append(databaseConnectionTests, analysis.DatabaseConnectionTests...)
+		databaseChanges = append(databaseChanges, analysis.DatabaseChanges...)
+		databaseChecks = append(databaseChecks, analysis.DatabaseChecks...)
+		databaseExecutions = append(databaseExecutions, analysis.DatabaseExecutions...)
+		posture := analysis.DatabasePosture
+		databasePosture = &posture
+	} else {
+		snapshot, err := a.buildDatabaseGovernanceSnapshot(ctx, runtimeContext.Execution.OrganizationID, runtimeContext.Execution.ProjectID, runtimeContext.Environment, []types.ChangeSet{runtimeContext.ChangeSet})
+		if err != nil {
+			return types.RolloutEvidencePack{}, err
+		}
+		databaseConnections = append(databaseConnections, snapshot.Connections...)
+		databaseConnectionTests = append(databaseConnectionTests, snapshot.ConnectionTests...)
+		databaseChanges = append(databaseChanges, snapshot.Changes...)
+		databaseChecks = append(databaseChecks, snapshot.Checks...)
+		databaseExecutions = append(databaseExecutions, snapshot.Executions...)
+		if snapshot.Posture.Status != "none" {
+			posture := snapshot.Posture
+			databasePosture = &posture
+		}
+	}
 
 	return types.RolloutEvidencePack{
-		Summary:             buildRolloutEvidencePackSummary(detail, runtimeContext, policyDecisions, incidents, repositories, discoveredResources),
+		Summary:             buildRolloutEvidencePackSummary(detail, runtimeContext, policyDecisions, incidents, repositories, discoveredResources, release, databasePosture, len(databaseChanges), len(databaseChecks)),
 		Organization:        organization,
 		Project:             project,
 		Service:             runtimeContext.Service,
@@ -159,6 +200,14 @@ func (a *Application) GetRolloutEvidencePack(ctx context.Context, id string) (ty
 		DiscoveredResources: discoveredResources,
 		GraphRelationships:  graphRelationships,
 		AuditTrail:          auditTrail,
+		Release:             release,
+		ReleaseAnalysis:     releaseAnalysis,
+		DatabaseConnections: databaseConnections,
+		DatabaseConnectionTests: databaseConnectionTests,
+		DatabaseChanges:     databaseChanges,
+		DatabaseChecks:      databaseChecks,
+		DatabaseExecutions:  databaseExecutions,
+		DatabasePosture:     databasePosture,
 	}, nil
 }
 
@@ -326,7 +375,7 @@ func (a *Application) listEvidenceAuditTrail(ctx context.Context, runtimeContext
 	return merged, nil
 }
 
-func buildRolloutEvidencePackSummary(detail types.RolloutExecutionDetail, runtimeContext types.RolloutExecutionRuntimeContext, policyDecisions []types.PolicyDecision, incidents []types.Incident, repositories []types.Repository, discoveredResources []types.DiscoveredResource) types.RolloutEvidencePackSummary {
+func buildRolloutEvidencePackSummary(detail types.RolloutExecutionDetail, runtimeContext types.RolloutExecutionRuntimeContext, policyDecisions []types.PolicyDecision, incidents []types.Incident, repositories []types.Repository, discoveredResources []types.DiscoveredResource, release *types.Release, databasePosture *types.DatabasePosture, databaseChangeCount, databaseCheckCount int) types.RolloutEvidencePackSummary {
 	blockingPolicies := 0
 	manualReviewPolicies := 0
 	for _, decision := range policyDecisions {
@@ -357,6 +406,17 @@ func buildRolloutEvidencePackSummary(detail types.RolloutExecutionDetail, runtim
 	if latestVerificationOutcome != "" || detail.RuntimeSummary.LatestDecision != "" {
 		highlights = append(highlights, "Latest verification outcome is "+valueOrDefault(latestVerificationOutcome, "unrecorded")+" with decision "+valueOrDefault(detail.RuntimeSummary.LatestDecision, "pending")+".")
 	}
+	releaseID := ""
+	releaseName := ""
+	if release != nil {
+		releaseID = release.ID
+		releaseName = valueOrDefault(release.Name, release.Version)
+		highlights = append(highlights, "Linked release bundle: "+releaseName+".")
+	}
+	if databasePosture != nil && databasePosture.Status != "none" {
+		highlights = append(highlights, "Database posture: "+databasePosture.Summary+".")
+		highlights = append(highlights, "Database evidence includes "+intToString(databaseChangeCount)+" classified change(s) and "+intToString(databaseCheckCount)+" validation check(s).")
+	}
 	return types.RolloutEvidencePackSummary{
 		GeneratedAt:               time.Now().UTC(),
 		ApprovalState:             rolloutEvidenceApprovalState(runtimeContext.Plan, runtimeContext.Execution),
@@ -373,6 +433,8 @@ func buildRolloutEvidencePackSummary(detail types.RolloutExecutionDetail, runtim
 		DiscoveredResourceCount:   len(discoveredResources),
 		BlockingPolicyCount:       blockingPolicies,
 		ManualReviewPolicyCount:   manualReviewPolicies,
+		ReleaseID:                 releaseID,
+		ReleaseName:               releaseName,
 		EvidenceHighlights:        highlights,
 	}
 }

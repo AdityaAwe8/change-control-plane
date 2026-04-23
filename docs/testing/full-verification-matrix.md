@@ -22,7 +22,7 @@ Authenticated routes now read from page-owned page-state models only. The chatti
 | `#/bootstrap` | verified and hardened | Browser tests cover route-local loading/error states, route-isolated request patterns, project creation, team create/update/archive with visible route refresh, and read-only org-member view |
 | `#/service` | verified and hardened | Browser tests cover route-local loading/error states, route-isolated request patterns, service creation/update/archive with visible route refresh, and org-member visibility denial |
 | `#/environment` | verified and hardened | Browser tests cover route-local loading/error states, route-isolated request patterns, environment creation/update/archive with visible route refresh, and org-member visibility denial |
-| `#/rollout` | verified and hardened | Browser tests cover route-local loading/error states, bundled page-state request usage, execution creation, approve/start, dedicated pause/resume/rollback control routes, reconcile, signal ingest, rollback visibility, and advisory recommendation-only affordances |
+| `#/rollout` | verified and hardened | Browser tests cover route-local loading/error states, bundled page-state request usage, config-set creation/update, database-governance create/update, DB connection-reference create/update, env-bound secret-ref connection posture visibility, DB connection testing and history visibility, runtime DB check execution, release-bundle creation/update, linked execution creation, execution approve/start, dedicated pause/resume/rollback control routes, reconcile, signal ingest, DB posture visibility, DB execution evidence visibility, rollback visibility, and advisory recommendation-only affordances |
 | `#/deployments` | verified and hardened | Browser tests now cover route-local loading/error states, bundled page-state request usage, server-backed search submit, rollback-only filtering, service/environment/source/automation filters, next-page pagination, reset behavior, and paginated summary visibility |
 | `#/settings` | verified and hardened | Browser tests cover route-local loading/error states, route-isolated request patterns, service-account create/deactivate, token issue/rotate/revoke, consecutive route-local mutation refreshes, and read-only org-member view |
 | `#/catalog` | verified and hardened | Browser tests cover route-local loading/error states, route-isolated request patterns, and seeded catalog rendering |
@@ -52,6 +52,18 @@ Authenticated routes now read from page-owned page-state models only. The chatti
 | `#create-environment-form` | verified and hardened | Browser-tested |
 | `#archive-environment-button` | verified and hardened | Browser-tested |
 | `#create-rollout-execution-form` | verified and hardened | Browser-tested |
+| `#create-release-form` | verified with automated tests | Browser tests cover persisted release-bundle creation plus visible release-analysis rendering |
+| `#update-release-form` | verified with automated tests | Browser tests cover persisted release-bundle update and route-local refresh |
+| `#create-config-set-form` | verified with automated tests | Browser tests cover persisted config-set creation with secret-reference JSON input |
+| `#update-config-set-form` | verified with automated tests | Browser tests cover persisted config-set update and route-local refresh |
+| `#create-database-change-form` | verified with automated tests | Browser tests cover persisted database-governance change creation from the rollout route |
+| `#update-database-change-form` | verified with automated tests | Browser tests cover persisted database-governance change updates and route-local refresh |
+| `#create-database-check-form` | verified with automated tests | Browser tests cover persisted database validation-check creation from the rollout route |
+| `#update-database-check-form` | verified with automated tests | Browser tests cover persisted database validation-check updates, including runtime-read-only configuration and route-local refresh |
+| `#create-database-connection-form` | verified with automated tests | Browser tests cover persisted DB connection-reference creation with explicit source type, secret-safe reference metadata, env-bound `secret_ref_dsn` metadata, and visible route refresh |
+| `#update-database-connection-form` | verified with automated tests | Browser tests cover persisted DB connection-reference updates, source-type switching, `secret_ref_env` binding changes, and visible route refresh |
+| `#test-database-connection-form` | verified with automated tests | Browser tests cover persisted DB connection-health checks, env-bound secret-ref runtime truth, unbound-secret unresolved posture, and visible route-local refresh of connection test history |
+| `#execute-database-check-form` | verified with automated tests | Browser tests cover runtime DB validation execution, persisted execution evidence, and release/rollout posture updates derived from the execution result |
 | `#advance-rollout-form` | verified and hardened | Browser-tested for approve, start, pause, resume, and rollback, and now proved to hit the dedicated manual-control routes |
 | `#reconcile-rollout-form` | verified and hardened | Browser-tested |
 | `#create-signal-snapshot-form` | verified and hardened | Browser-tested |
@@ -103,7 +115,7 @@ Authenticated routes now read from page-owned page-state models only. The chatti
 | `GET /api/v1/catalog` | verified with automated tests | browser load path plus direct runtime contract validation now cover the documented catalog envelope |
 | `GET /api/v1/metrics/basics` | verified and hardened | integration test, browser load path, and runtime contract validation now cover the documented metrics envelope |
 | `GET /api/v1/incidents` | verified with automated tests | Direct HTTP route test now covers derived-incident listing, query filters, limit behavior, and cross-org denial; browser incident-feed coverage remains in place |
-| `GET /api/v1/incidents/{id}` | verified with automated tests | Dedicated HTTP route test covers success, non-incident not-found, and cross-org forbidden behavior |
+| `GET /api/v1/incidents/{id}` | verified with automated tests | Dedicated HTTP route test covers success, non-incident not-found, cross-org forbidden behavior, and the deterministic assistant-summary payload |
 
 ### Organization, Project, Team, Service, Environment
 
@@ -145,11 +157,37 @@ Authenticated routes now read from page-owned page-state models only. The chatti
 | `POST /api/v1/risk-assessments` | verified and hardened | HTTP policy tests now prove persisted advisory policy-decision evaluation and response visibility alongside integration flow and Python augmentation coverage |
 | `GET /api/v1/rollout-plans` | verified with automated tests | Direct HTTP route test covers list membership and tenant scoping; browser load path remains in place |
 | `POST /api/v1/rollout-plans` | verified and hardened | HTTP policy tests now prove manual-review gating, blocked-plan rejection, persisted rollout-plan policy decisions, and audit/status evidence alongside integration flow and smoke |
-| `GET /api/v1/page-state/rollout` | verified and hardened | Dedicated HTTP route test covers bundled rollout plans, execution detail, and integration context; browser request-isolation tests prove rollout now uses the bundled endpoint |
+| `GET /api/v1/config-sets` | verified with automated tests | Direct HTTP route test covers list membership through the governed config-set flow and browser governance flow now exercises the route |
+| `POST /api/v1/config-sets` | verified with automated tests | Direct HTTP route test covers validation-backed creation and browser governance flow exercises persisted creation |
+| `GET /api/v1/config-sets/{id}` | verified with automated tests | Direct HTTP route test covers config-set detail retrieval via the governed config/release scenario |
+| `PATCH /api/v1/config-sets/{id}` | verified with automated tests | CLI and browser governance flows cover persisted config-set updates |
+| `GET /api/v1/database-changes` | verified with automated tests | Direct HTTP database-governance test covers list visibility through the governed release flow and browser governance flow now exercises the route |
+| `POST /api/v1/database-changes` | verified with automated tests | Direct HTTP database-governance test covers persisted database-change creation and browser governance flow exercises the same path |
+| `GET /api/v1/database-changes/{id}` | verified with automated tests | Direct HTTP database-governance test covers detail retrieval with linked validation checks plus cross-org denial |
+| `PATCH /api/v1/database-changes/{id}` | verified with automated tests | CLI and browser governance flows cover persisted database-change updates |
+| `GET /api/v1/database-validation-checks` | verified with automated tests | Direct HTTP database-governance test covers list visibility through the governed release flow and browser governance flow now exercises the route |
+| `POST /api/v1/database-validation-checks` | verified with automated tests | Direct HTTP database-governance test covers persisted validation-check creation and browser governance flow exercises the same path |
+| `GET /api/v1/database-validation-checks/{id}` | verified with automated tests | Direct HTTP database-governance test covers detail retrieval with linked database-change context, connection-reference context, and execution history |
+| `PATCH /api/v1/database-validation-checks/{id}` | verified with automated tests | CLI and browser governance flows cover persisted validation-check updates, and direct HTTP tests now assert runtime-read-only checks cannot be manually forced to `passed` |
+| `POST /api/v1/database-validation-checks/{id}/execute` | verified with automated tests | Direct HTTP database-governance test covers safe runtime execution of a structured read-only Postgres check, runtime-only connection resolution, persisted execution evidence, connection health updates, and release posture changes derived from execution truth |
+| `GET /api/v1/database-connection-references` | verified with automated tests | Direct HTTP database-governance test covers scoped list visibility and the browser rollout route exercises the same surface |
+| `POST /api/v1/database-connection-references` | verified with automated tests | Direct HTTP database-governance test covers persisted connection-reference creation using explicit source-type metadata, no plaintext DSN response leakage, and browser governance flow exercises the same path |
+| `GET /api/v1/database-connection-references/{id}` | verified with automated tests | Direct HTTP database-governance test covers detail retrieval with linked validation checks, linked connection-test history, and cross-org denial |
+| `PATCH /api/v1/database-connection-references/{id}` | verified with automated tests | CLI and browser governance flows cover persisted connection-reference updates, source-type changes, and health reset behavior |
+| `POST /api/v1/database-connection-references/{id}/test` | verified with automated tests | Direct HTTP database-governance test covers persisted connection-health testing for `env_dsn` and env-bound `secret_ref_dsn`, secret-safe unbound-secret failure summaries, and connection status/last-healthy updates |
+| `GET /api/v1/database-connection-tests` | verified with automated tests | Direct HTTP database-governance test covers scoped connection-test history listing and rollout page-state consumes the same data |
+| `GET /api/v1/database-connection-tests/{id}` | verified with automated tests | Direct HTTP database-governance test covers test-detail retrieval with redacted connection metadata and cross-org denial |
+| `GET /api/v1/database-validation-executions` | verified with automated tests | Direct HTTP database-governance test covers scoped execution-history listing and filtering by validation check |
+| `GET /api/v1/database-validation-executions/{id}` | verified with automated tests | Direct HTTP database-governance test covers execution detail retrieval with linked check, change, and connection metadata |
+| `GET /api/v1/releases` | verified with automated tests | Direct HTTP route test covers list membership through the governed release flow and browser governance flow now exercises the route |
+| `POST /api/v1/releases` | verified with automated tests | Direct HTTP route test covers persisted release-bundle creation with deterministic release analysis and browser governance flow exercises the same path |
+| `GET /api/v1/releases/{id}` | verified with automated tests | Direct HTTP route test covers release-analysis retrieval via the governed config/release scenario |
+| `PATCH /api/v1/releases/{id}` | verified with automated tests | CLI and browser governance flows cover persisted release-bundle updates |
+| `GET /api/v1/page-state/rollout` | verified and hardened | Dedicated HTTP route test covers bundled catalog, rollout plans, execution detail, config sets, database-governance records, database connection-test history, release bundles, release analysis, and integration context; browser request-isolation tests prove rollout now uses the bundled endpoint |
 | `GET /api/v1/rollout-executions` | verified and hardened | browser load path, smoke, integration, and runtime-contract validation now cover the documented list envelope |
-| `POST /api/v1/rollout-executions` | verified and hardened | browser, integration, smoke, and runtime-contract validation now cover the documented create envelope |
+| `POST /api/v1/rollout-executions` | verified and hardened | browser, integration, smoke, governed release-link coverage, and runtime-contract validation now cover the documented create envelope |
 | `GET /api/v1/rollout-executions/{id}` | verified and hardened | direct API test, browser, and runtime-contract validation now cover the documented detail envelope |
-| `GET /api/v1/rollout-executions/{id}/evidence-pack` | verified with automated tests | direct API test and runtime-contract validation now cover the exportable evidence-pack envelope, including rollout context, policy outcomes, incidents, mapped repositories/resources, graph relationships, and audit trail |
+| `GET /api/v1/rollout-executions/{id}/evidence-pack` | verified with automated tests | direct API test and runtime-contract validation now cover the exportable evidence-pack envelope, including rollout context, linked release context, release analysis, database-governance context, DB connection references, DB connection-test history, DB execution history, policy outcomes, incidents, mapped repositories/resources, graph relationships, and audit trail |
 | `POST /api/v1/rollout-executions/{id}/advance` | verified and hardened | integration, browser, smoke, and runtime-contract validation now cover the documented execution envelope |
 | `POST /api/v1/rollout-executions/{id}/pause` | verified with automated tests | Direct HTTP route test covers successful pause transition and rollout timeline evidence; browser form and CLI command now hit the dedicated route |
 | `POST /api/v1/rollout-executions/{id}/resume` | verified with automated tests | Direct HTTP route test covers successful resume transition and rollout timeline evidence; browser form and CLI command now hit the dedicated route |
@@ -228,7 +266,7 @@ Authenticated routes now read from page-owned page-state models only. The chatti
 
 | Path | Status | Evidence / Notes |
 | --- | --- | --- |
-| Core entity round-trips | verified with automated tests | PostgreSQL round-trip test covers org/project/team/service/env/change/risk/plan/audit/integration/repository/graph/service-account/token/execution/snapshot/verification/policy/policy-decision/status-event, including repository/discovered-resource/graph metadata persistence for ownership and provenance fields |
+| Core entity round-trips | verified with automated tests | PostgreSQL round-trip test covers org/project/team/service/env/change/config-set/release/database-change/database-validation-check/risk/plan/audit/integration/repository/graph/service-account/token/execution/snapshot/verification/policy/policy-decision/status-event, including repository/discovered-resource/graph metadata persistence for ownership and provenance fields, DB-governance evidence/specification persistence, required-check run metadata, and release-linked rollout execution persistence |
 | Browser session persistence | verified with automated tests | In-memory auth tests cover issue, expiry, revocation, logout invalidation, and admin-scoped session listing/revocation; PostgreSQL round-trip test covers create, lookup-by-id, org/user/status-scoped listing, and revoked-session persistence |
 | Status-event search/filter | verified with automated tests | PostgreSQL test covers rollback-only filter, text search, service scope, and not-found behavior |
 | Outbox compare-and-update status guard | verified with automated tests | Dedicated PostgreSQL test covers status-guarded outbox updates succeeding for the expected source status and rejecting stale expected statuses without overwriting a fresher `processing` claim; local runs skip when PostgreSQL is unavailable |

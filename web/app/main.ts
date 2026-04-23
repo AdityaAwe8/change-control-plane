@@ -8,17 +8,23 @@ import {
   archiveEnvironment,
   archiveService,
   consumeAuthRedirectQuery,
+  createConfigSet,
+  createDatabaseConnectionReference,
+  createDatabaseChange,
+  createDatabaseValidationCheck,
   createEnvironment,
   createIntegration,
   createIdentityProvider,
   createPolicy,
   createProject,
+  createRelease,
   createRolloutExecution,
   createSignalSnapshot,
   createService,
   createTeam,
   createServiceAccount,
   deactivateServiceAccount,
+  executeDatabaseValidationCheck,
   loadAuditPageState,
   loadBootstrapPageState,
   loadCatalogPageState,
@@ -53,6 +59,7 @@ import {
   revokeServiceAccountToken,
   rotateServiceAccountToken,
   sessionExpiredEventName,
+  ConfigEntry,
   SignalValue,
   signIn,
   signUp,
@@ -62,13 +69,19 @@ import {
   startGitHubOnboarding,
   syncWebhookRegistration,
   syncIntegration,
+  testDatabaseConnectionReference,
   testIntegration,
   testIdentityProvider,
+  updateConfigSet,
+  updateDatabaseConnectionReference,
+  updateDatabaseChange,
+  updateDatabaseValidationCheck,
   updateDiscoveredResource,
   updateEnvironment,
   updateIntegration,
   updateIdentityProvider,
   updatePolicy,
+  updateRelease,
   updateService,
   updateTeam,
   updateRepository
@@ -1019,8 +1032,239 @@ function applyRenderedState(route: ReturnType<typeof getCurrentRoute>, state: Co
     await runAction(submitButton(createRolloutExecutionForm), "Creating rollout execution...", "Rollout execution created.", async () => {
       await createRolloutExecution({
         rollout_plan_id: readInputValue(createRolloutExecutionForm, "rollout_plan_id"),
+        release_id: readInputValue(createRolloutExecutionForm, "release_id") || undefined,
         backend_type: readInputValue(createRolloutExecutionForm, "backend_type"),
         signal_provider_type: readInputValue(createRolloutExecutionForm, "signal_provider_type")
+      });
+    });
+  });
+
+  const createReleaseForm = document.querySelector<HTMLFormElement>("#create-release-form");
+  createReleaseForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runAction(submitButton(createReleaseForm), "Creating release bundle...", "Release bundle created.", async () => {
+      await createRelease({
+        organization_id: state.session.active_organization_id || "",
+        project_id: primaryProjectID(state),
+        environment_id: readInputValue(createReleaseForm, "environment_id"),
+        name: readInputValue(createReleaseForm, "name"),
+        summary: readInputValue(createReleaseForm, "summary"),
+        change_set_ids: readCSVInput(createReleaseForm, "change_set_ids") || [],
+        config_set_ids: readCSVInput(createReleaseForm, "config_set_ids"),
+        version: readInputValue(createReleaseForm, "version")
+      });
+    });
+  });
+
+  const updateReleaseForm = document.querySelector<HTMLFormElement>("#update-release-form");
+  updateReleaseForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const releaseID = updateReleaseForm.dataset.releaseId || "";
+    await runAction(submitButton(updateReleaseForm), "Updating release bundle...", "Release bundle updated.", async () => {
+      await updateRelease(releaseID, {
+        name: readInputValue(updateReleaseForm, "name") || undefined,
+        summary: readInputValue(updateReleaseForm, "summary") || undefined,
+        change_set_ids: readCSVInput(updateReleaseForm, "change_set_ids"),
+        config_set_ids: readCSVInput(updateReleaseForm, "config_set_ids"),
+        version: readInputValue(updateReleaseForm, "version") || undefined,
+        status: readInputValue(updateReleaseForm, "status") || undefined
+      });
+    });
+  });
+
+  const createConfigSetForm = document.querySelector<HTMLFormElement>("#create-config-set-form");
+  createConfigSetForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runAction(submitButton(createConfigSetForm), "Creating config set...", "Config set created.", async () => {
+      await createConfigSet({
+        organization_id: state.session.active_organization_id || "",
+        project_id: primaryProjectID(state),
+        environment_id: readInputValue(createConfigSetForm, "environment_id"),
+        service_id: readInputValue(createConfigSetForm, "service_id") || undefined,
+        name: readInputValue(createConfigSetForm, "name"),
+        version: readInputValue(createConfigSetForm, "version"),
+        entries: parseConfigEntries(readRawInputValue(createConfigSetForm, "entries_json"))
+      });
+    });
+  });
+
+  const updateConfigSetForm = document.querySelector<HTMLFormElement>("#update-config-set-form");
+  updateConfigSetForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const configSetID = updateConfigSetForm.dataset.configSetId || "";
+    await runAction(submitButton(updateConfigSetForm), "Updating config set...", "Config set updated.", async () => {
+      await updateConfigSet(configSetID, {
+        name: readInputValue(updateConfigSetForm, "name") || undefined,
+        version: readInputValue(updateConfigSetForm, "version") || undefined,
+        status: readInputValue(updateConfigSetForm, "status") || undefined,
+        entries: parseConfigEntries(readRawInputValue(updateConfigSetForm, "entries_json"))
+      });
+    });
+  });
+
+  const createDatabaseConnectionForm = document.querySelector<HTMLFormElement>("#create-database-connection-form");
+  createDatabaseConnectionForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runAction(submitButton(createDatabaseConnectionForm), "Creating database connection reference...", "Database connection reference created.", async () => {
+      const sourceType = readInputValue(createDatabaseConnectionForm, "source_type") || "env_dsn";
+      await createDatabaseConnectionReference({
+        organization_id: state.session.active_organization_id || "",
+        project_id: primaryProjectID(state),
+        environment_id: readInputValue(createDatabaseConnectionForm, "environment_id"),
+        service_id: readInputValue(createDatabaseConnectionForm, "service_id") || undefined,
+        name: readInputValue(createDatabaseConnectionForm, "name"),
+        datastore: readInputValue(createDatabaseConnectionForm, "datastore"),
+        driver: readInputValue(createDatabaseConnectionForm, "driver"),
+        source_type: sourceType,
+        dsn_env: sourceType === "env_dsn" ? readInputValue(createDatabaseConnectionForm, "dsn_env") || undefined : "",
+        secret_ref: sourceType === "secret_ref_dsn" ? readInputValue(createDatabaseConnectionForm, "secret_ref") || undefined : "",
+        secret_ref_env: sourceType === "secret_ref_dsn" ? readInputValue(createDatabaseConnectionForm, "secret_ref_env") || undefined : "",
+        read_only_capable: readCheckboxValue(createDatabaseConnectionForm, "read_only_capable"),
+        summary: readInputValue(createDatabaseConnectionForm, "summary")
+      });
+    });
+  });
+
+  const updateDatabaseConnectionForm = document.querySelector<HTMLFormElement>("#update-database-connection-form");
+  updateDatabaseConnectionForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const databaseConnectionID = updateDatabaseConnectionForm.dataset.databaseConnectionId || "";
+    await runAction(submitButton(updateDatabaseConnectionForm), "Updating database connection reference...", "Database connection reference updated.", async () => {
+      const sourceType = readInputValue(updateDatabaseConnectionForm, "source_type") || undefined;
+      await updateDatabaseConnectionReference(databaseConnectionID, {
+        name: readInputValue(updateDatabaseConnectionForm, "name") || undefined,
+        datastore: readInputValue(updateDatabaseConnectionForm, "datastore") || undefined,
+        driver: readInputValue(updateDatabaseConnectionForm, "driver") || undefined,
+        source_type: sourceType,
+        dsn_env: sourceType === "env_dsn"
+          ? readRawInputValue(updateDatabaseConnectionForm, "dsn_env")
+          : (sourceType === "secret_ref_dsn" ? "" : undefined),
+        secret_ref: sourceType === "secret_ref_dsn"
+          ? readRawInputValue(updateDatabaseConnectionForm, "secret_ref")
+          : (sourceType === "env_dsn" ? "" : undefined),
+        secret_ref_env: sourceType === "secret_ref_dsn"
+          ? readRawInputValue(updateDatabaseConnectionForm, "secret_ref_env")
+          : (sourceType === "env_dsn" ? "" : undefined),
+        read_only_capable: readCheckboxValue(updateDatabaseConnectionForm, "read_only_capable"),
+        summary: readInputValue(updateDatabaseConnectionForm, "summary") || undefined
+      });
+    });
+  });
+
+  const testDatabaseConnectionForm = document.querySelector<HTMLFormElement>("#test-database-connection-form");
+  testDatabaseConnectionForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const databaseConnectionID = readInputValue(testDatabaseConnectionForm, "database_connection_id");
+    await runAction(submitButton(testDatabaseConnectionForm), "Testing database connection reference...", "Database connection reference tested.", async () => {
+      await testDatabaseConnectionReference(databaseConnectionID, {
+        trigger: readInputValue(testDatabaseConnectionForm, "trigger") || "manual"
+      });
+    });
+  });
+
+  const createDatabaseChangeForm = document.querySelector<HTMLFormElement>("#create-database-change-form");
+  createDatabaseChangeForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runAction(submitButton(createDatabaseChangeForm), "Creating database governance record...", "Database change recorded.", async () => {
+      await createDatabaseChange({
+        organization_id: state.session.active_organization_id || "",
+        project_id: primaryProjectID(state),
+        environment_id: readInputValue(createDatabaseChangeForm, "environment_id"),
+        service_id: readInputValue(createDatabaseChangeForm, "service_id") || undefined,
+        change_set_id: readInputValue(createDatabaseChangeForm, "change_set_id"),
+        name: readInputValue(createDatabaseChangeForm, "name"),
+        datastore: readInputValue(createDatabaseChangeForm, "datastore"),
+        operation_type: readInputValue(createDatabaseChangeForm, "operation_type"),
+        execution_intent: readInputValue(createDatabaseChangeForm, "execution_intent"),
+        compatibility: readInputValue(createDatabaseChangeForm, "compatibility"),
+        reversibility: readInputValue(createDatabaseChangeForm, "reversibility"),
+        risk_level: readInputValue(createDatabaseChangeForm, "risk_level"),
+        lock_risk: readCheckboxValue(createDatabaseChangeForm, "lock_risk"),
+        manual_approval_required: readCheckboxValue(createDatabaseChangeForm, "manual_approval_required"),
+        summary: readInputValue(createDatabaseChangeForm, "summary"),
+        evidence: readCSVInput(createDatabaseChangeForm, "evidence")
+      });
+    });
+  });
+
+  const updateDatabaseChangeForm = document.querySelector<HTMLFormElement>("#update-database-change-form");
+  updateDatabaseChangeForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const databaseChangeID = updateDatabaseChangeForm.dataset.databaseChangeId || "";
+    await runAction(submitButton(updateDatabaseChangeForm), "Updating database governance record...", "Database change updated.", async () => {
+      await updateDatabaseChange(databaseChangeID, {
+        name: readInputValue(updateDatabaseChangeForm, "name") || undefined,
+        datastore: readInputValue(updateDatabaseChangeForm, "datastore") || undefined,
+        operation_type: readInputValue(updateDatabaseChangeForm, "operation_type") || undefined,
+        execution_intent: readInputValue(updateDatabaseChangeForm, "execution_intent") || undefined,
+        compatibility: readInputValue(updateDatabaseChangeForm, "compatibility") || undefined,
+        reversibility: readInputValue(updateDatabaseChangeForm, "reversibility") || undefined,
+        risk_level: readInputValue(updateDatabaseChangeForm, "risk_level") || undefined,
+        lock_risk: readCheckboxValue(updateDatabaseChangeForm, "lock_risk"),
+        manual_approval_required: readCheckboxValue(updateDatabaseChangeForm, "manual_approval_required"),
+        status: readInputValue(updateDatabaseChangeForm, "status") || undefined,
+        summary: readInputValue(updateDatabaseChangeForm, "summary") || undefined,
+        evidence: readCSVInput(updateDatabaseChangeForm, "evidence")
+      });
+    });
+  });
+
+  const createDatabaseCheckForm = document.querySelector<HTMLFormElement>("#create-database-check-form");
+  createDatabaseCheckForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runAction(submitButton(createDatabaseCheckForm), "Creating database validation check...", "Database validation check created.", async () => {
+      await createDatabaseValidationCheck({
+        organization_id: state.session.active_organization_id || "",
+        project_id: primaryProjectID(state),
+        environment_id: readInputValue(createDatabaseCheckForm, "environment_id"),
+        service_id: readInputValue(createDatabaseCheckForm, "service_id") || undefined,
+        change_set_id: readInputValue(createDatabaseCheckForm, "change_set_id"),
+        database_change_id: readInputValue(createDatabaseCheckForm, "database_change_id") || undefined,
+        connection_ref_id: readInputValue(createDatabaseCheckForm, "connection_ref_id") || undefined,
+        name: readInputValue(createDatabaseCheckForm, "name"),
+        phase: readInputValue(createDatabaseCheckForm, "phase"),
+        check_type: readInputValue(createDatabaseCheckForm, "check_type"),
+        read_only: readCheckboxValue(createDatabaseCheckForm, "read_only"),
+        required: readCheckboxValue(createDatabaseCheckForm, "required"),
+        execution_mode: readInputValue(createDatabaseCheckForm, "execution_mode"),
+        specification: readInputValue(createDatabaseCheckForm, "specification"),
+        status: readInputValue(createDatabaseCheckForm, "status") || undefined,
+        summary: readInputValue(createDatabaseCheckForm, "summary"),
+        evidence: readCSVInput(createDatabaseCheckForm, "evidence")
+      });
+    });
+  });
+
+  const updateDatabaseCheckForm = document.querySelector<HTMLFormElement>("#update-database-check-form");
+  updateDatabaseCheckForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const databaseCheckID = updateDatabaseCheckForm.dataset.databaseCheckId || "";
+    await runAction(submitButton(updateDatabaseCheckForm), "Updating database validation check...", "Database validation check updated.", async () => {
+      await updateDatabaseValidationCheck(databaseCheckID, {
+        database_change_id: readInputValue(updateDatabaseCheckForm, "database_change_id") || undefined,
+        connection_ref_id: readInputValue(updateDatabaseCheckForm, "connection_ref_id") || undefined,
+        name: readInputValue(updateDatabaseCheckForm, "name") || undefined,
+        phase: readInputValue(updateDatabaseCheckForm, "phase") || undefined,
+        check_type: readInputValue(updateDatabaseCheckForm, "check_type") || undefined,
+        read_only: readCheckboxValue(updateDatabaseCheckForm, "read_only"),
+        required: readCheckboxValue(updateDatabaseCheckForm, "required"),
+        execution_mode: readInputValue(updateDatabaseCheckForm, "execution_mode") || undefined,
+        specification: readInputValue(updateDatabaseCheckForm, "specification") || undefined,
+        status: readInputValue(updateDatabaseCheckForm, "status") || undefined,
+        summary: readInputValue(updateDatabaseCheckForm, "summary") || undefined,
+        last_result_summary: readInputValue(updateDatabaseCheckForm, "last_result_summary") || undefined,
+        evidence: readCSVInput(updateDatabaseCheckForm, "evidence")
+      });
+    });
+  });
+
+  const executeDatabaseCheckForm = document.querySelector<HTMLFormElement>("#execute-database-check-form");
+  executeDatabaseCheckForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const databaseCheckID = readInputValue(executeDatabaseCheckForm, "database_check_id");
+    await runAction(submitButton(executeDatabaseCheckForm), "Executing runtime database validation...", "Runtime database validation executed.", async () => {
+      await executeDatabaseValidationCheck(databaseCheckID, {
+        trigger: readInputValue(executeDatabaseCheckForm, "trigger") || "manual"
       });
     });
   });
@@ -1300,6 +1544,10 @@ function readRawInputValue(form: HTMLFormElement, name: string): string {
   return "";
 }
 
+function readCSVInput(form: HTMLFormElement, name: string): string[] | undefined {
+  return splitCommaValues(readInputValue(form, name));
+}
+
 function readCheckboxValue(form: HTMLFormElement, name: string): boolean {
   const field = form.elements.namedItem(name);
   return field instanceof HTMLInputElement && field.checked;
@@ -1346,6 +1594,27 @@ function readOptionalInteger(form: HTMLFormElement, name: string): number | unde
     throw new Error(`Enter a valid integer for ${name.replaceAll("_", " ")}.`);
   }
   return value;
+}
+
+function parseConfigEntries(raw: string): ConfigEntry[] {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const parsed = JSON.parse(trimmed);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Entries JSON must be an array of config entries.");
+  }
+  return parsed as ConfigEntry[];
+}
+
+function primaryProjectID(state: ControlPlaneState): string {
+  return state.bootstrapPage.data?.projects?.[0]?.id
+    || state.servicePage.data?.projects?.[0]?.id
+    || state.environmentPage.data?.projects?.[0]?.id
+    || state.policiesPage.data?.projects?.[0]?.id
+    || state.rolloutPage.data?.rolloutPlans?.[0]?.project_id
+    || "";
 }
 
 function splitCommaValues(value: string): string[] | undefined {

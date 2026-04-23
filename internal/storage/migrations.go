@@ -9,6 +9,28 @@ import (
 	"sort"
 )
 
+func DefaultMigrationsDir() string {
+	const relative = "db/migrations"
+	if directoryExists(relative) {
+		return relative
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return relative
+	}
+	for dir := cwd; ; dir = filepath.Dir(dir) {
+		candidate := filepath.Join(dir, relative)
+		if directoryExists(candidate) {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+	return relative
+}
+
 func ApplyMigrations(ctx context.Context, db *sql.DB, dir string) error {
 	if err := ensureMigrationsTable(ctx, db); err != nil {
 		return err
@@ -87,4 +109,9 @@ func appliedMigrations(ctx context.Context, db *sql.DB) (map[string]bool, error)
 		versions[version] = true
 	}
 	return versions, rows.Err()
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

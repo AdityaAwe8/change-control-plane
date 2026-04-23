@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"log"
-	"path/filepath"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
@@ -20,7 +19,7 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := storage.ApplyMigrations(context.Background(), db, filepath.Join("db", "migrations")); err != nil {
+	if err := storage.ApplyMigrations(context.Background(), db, storage.DefaultMigrationsDir()); err != nil {
 		log.Fatal(err)
 	}
 

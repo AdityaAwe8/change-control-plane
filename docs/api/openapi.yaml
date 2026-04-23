@@ -808,6 +808,603 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+  /api/v1/config-sets:
+    get:
+      summary: List configuration sets
+      responses:
+        '200':
+          description: Configuration set list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigSetListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create configuration set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConfigSetRequest'
+      responses:
+        '201':
+          description: Configuration set created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigSetDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/config-sets/{id}:
+    get:
+      summary: Get configuration set detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configuration set detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigSetDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update configuration set
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConfigSetRequest'
+      responses:
+        '200':
+          description: Configuration set updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigSetDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-changes:
+    get:
+      summary: List database governance change records
+      responses:
+        '200':
+          description: Database change list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseChangeListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create database governance change record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDatabaseChangeRequest'
+      responses:
+        '201':
+          description: Database change created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseChangeDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-changes/{id}:
+    get:
+      summary: Get database governance change detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Database change detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseChangeDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update database governance change record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDatabaseChangeRequest'
+      responses:
+        '200':
+          description: Database change updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseChangeDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-validation-checks:
+    get:
+      summary: List database validation checks
+      responses:
+        '200':
+          description: Database validation check list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationCheckListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create database validation check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDatabaseValidationCheckRequest'
+      responses:
+        '201':
+          description: Database validation check created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationCheckDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-validation-checks/{id}:
+    get:
+      summary: Get database validation check detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Database validation check detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationCheckDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update database validation check
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDatabaseValidationCheckRequest'
+      responses:
+        '200':
+          description: Database validation check updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationCheckDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-validation-checks/{id}/execute:
+    post:
+      summary: Execute database validation check
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteDatabaseValidationCheckRequest'
+      responses:
+        '201':
+          description: Database validation execution created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationExecutionDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-connection-references:
+    get:
+      summary: List database connection references
+      responses:
+        '200':
+          description: Database connection reference list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionReferenceListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create database connection reference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDatabaseConnectionReferenceRequest'
+      responses:
+        '201':
+          description: Database connection reference created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionReferenceDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-connection-references/{id}:
+    get:
+      summary: Get database connection reference detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Database connection reference detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionReferenceDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update database connection reference
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDatabaseConnectionReferenceRequest'
+      responses:
+        '200':
+          description: Database connection reference updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionReferenceDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-connection-references/{id}/test:
+    post:
+      summary: Execute database connection health test
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestDatabaseConnectionReferenceRequest'
+      responses:
+        '201':
+          description: Database connection test recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionTestDetailItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-connection-tests:
+    get:
+      summary: List database connection test history
+      responses:
+        '200':
+          description: Database connection test list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionTestListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/database-connection-tests/{id}:
+    get:
+      summary: Get database connection test detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Database connection test detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseConnectionTestDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/database-validation-executions:
+    get:
+      summary: List database validation executions
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: database_change_id
+          schema: { type: string }
+        - in: query
+          name: validation_check_id
+          schema: { type: string }
+        - in: query
+          name: connection_ref_id
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+      responses:
+        '200':
+          description: Database validation execution list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationExecutionListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+  /api/v1/database-validation-executions/{id}:
+    get:
+      summary: Get database validation execution detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Database validation execution detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseValidationExecutionDetailItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/releases:
+    get:
+      summary: List release bundles
+      responses:
+        '200':
+          description: Release bundle list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+    post:
+      summary: Create release bundle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReleaseRequest'
+      responses:
+        '201':
+          description: Release bundle created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseAnalysisItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/releases/{id}:
+    get:
+      summary: Get release bundle analysis
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Release bundle analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseAnalysisItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      summary: Update release bundle
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReleaseRequest'
+      responses:
+        '200':
+          description: Release bundle updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseAnalysisItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-executions:
     get:
       summary: List rollout executions
@@ -2677,6 +3274,8 @@ components:
       properties:
         rollout_plan_id:
           type: string
+        release_id:
+          type: string
         backend_type:
           type: string
         backend_integration_id:
@@ -3372,6 +3971,91 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Environment'
+    ConfigEntry:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        value_type:
+          type: string
+        required:
+          type: boolean
+        deprecated:
+          type: boolean
+        description:
+          type: string
+        source:
+          type: string
+    ConfigSet:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigEntry'
+    Release:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        change_set_ids:
+          type: array
+          items:
+            type: string
+        config_set_ids:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+        status:
+          type: string
     ChangeSet:
       type: object
       properties:
@@ -3776,6 +4460,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StatusEvent'
+        assistant_summary:
+          $ref: '#/components/schemas/OpsAssistantSummary'
     IncidentDetailItemResponse:
       type: object
       properties:
@@ -3936,6 +4622,351 @@ components:
       properties:
         change_set_id:
           type: string
+    CreateConfigSetRequest:
+      type: object
+      required: [organization_id, project_id, environment_id, name, version, entries]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigEntry'
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateConfigSetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigEntry'
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateReleaseRequest:
+      type: object
+      required: [organization_id, project_id, environment_id, name, summary, change_set_ids, version]
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        change_set_ids:
+          type: array
+          items:
+            type: string
+        config_set_ids:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateReleaseRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        summary:
+          type: string
+        change_set_ids:
+          type: array
+          items:
+            type: string
+        config_set_ids:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateDatabaseChangeRequest:
+      type: object
+      required:
+        - organization_id
+        - project_id
+        - environment_id
+        - change_set_id
+        - name
+        - datastore
+        - operation_type
+        - execution_intent
+        - compatibility
+        - reversibility
+        - risk_level
+        - summary
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        change_set_id:
+          type: string
+        name:
+          type: string
+        datastore:
+          type: string
+        operation_type:
+          type: string
+        execution_intent:
+          type: string
+        compatibility:
+          type: string
+        reversibility:
+          type: string
+        risk_level:
+          type: string
+        lock_risk:
+          type: boolean
+        manual_approval_required:
+          type: boolean
+        summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateDatabaseChangeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        datastore:
+          type: string
+        operation_type:
+          type: string
+        execution_intent:
+          type: string
+        compatibility:
+          type: string
+        reversibility:
+          type: string
+        risk_level:
+          type: string
+        lock_risk:
+          type: boolean
+        manual_approval_required:
+          type: boolean
+        status:
+          type: string
+        summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateDatabaseValidationCheckRequest:
+      type: object
+      required:
+        - organization_id
+        - project_id
+        - environment_id
+        - change_set_id
+        - name
+        - phase
+        - check_type
+        - read_only
+        - required
+        - execution_mode
+        - specification
+        - summary
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        change_set_id:
+          type: string
+        database_change_id:
+          type: string
+        connection_ref_id:
+          type: string
+        name:
+          type: string
+        phase:
+          type: string
+        check_type:
+          type: string
+        read_only:
+          type: boolean
+        required:
+          type: boolean
+        execution_mode:
+          type: string
+        specification:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateDatabaseValidationCheckRequest:
+      type: object
+      properties:
+        database_change_id:
+          type: string
+        connection_ref_id:
+          type: string
+        name:
+          type: string
+        phase:
+          type: string
+        check_type:
+          type: string
+        read_only:
+          type: boolean
+        required:
+          type: boolean
+        execution_mode:
+          type: string
+        specification:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        last_run_at:
+          type: string
+          format: date-time
+        last_result_summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateDatabaseConnectionReferenceRequest:
+      type: object
+      required:
+        - organization_id
+        - project_id
+        - environment_id
+        - name
+        - datastore
+        - driver
+        - summary
+      properties:
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        name:
+          type: string
+        datastore:
+          type: string
+        driver:
+          type: string
+        source_type:
+          type: string
+        dsn_env:
+          type: string
+        secret_ref:
+          type: string
+        secret_ref_env:
+          type: string
+        read_only_capable:
+          type: boolean
+        summary:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateDatabaseConnectionReferenceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        datastore:
+          type: string
+        driver:
+          type: string
+        source_type:
+          type: string
+        dsn_env:
+          type: string
+        secret_ref:
+          type: string
+        secret_ref_env:
+          type: string
+        read_only_capable:
+          type: boolean
+        summary:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    TestDatabaseConnectionReferenceRequest:
+      type: object
+      properties:
+        trigger:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    ExecuteDatabaseValidationCheckRequest:
+      type: object
+      properties:
+        trigger:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
     SignUpRequest:
       type: object
       required: [email, display_name, password, password_confirmation]
@@ -4539,6 +5570,8 @@ components:
     RolloutPageState:
       type: object
       properties:
+        catalog:
+          $ref: '#/components/schemas/CatalogSummary'
         rollout_plans:
           type: array
           items:
@@ -4555,6 +5588,38 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Integration'
+        releases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Release'
+        release_analysis:
+          allOf:
+            - $ref: '#/components/schemas/ReleaseAnalysis'
+          nullable: true
+        config_sets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigSet'
+        database_connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionReference'
+        database_connection_tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionTest'
+        database_changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseChange'
+        database_checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationCheck'
+        database_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationExecution'
     RolloutPageStateItemResponse:
       type: object
       properties:
@@ -5340,6 +6405,8 @@ components:
           type: string
         rollout_plan_id:
           type: string
+        release_id:
+          type: string
         change_set_id:
           type: string
         service_id:
@@ -5469,6 +6536,664 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/RolloutExecutionDetail'
+    ConfigSetValidation:
+      type: object
+      properties:
+        config_set_id:
+          type: string
+        status:
+          type: string
+        missing_required_keys:
+          type: array
+          items:
+            type: string
+        deprecated_keys:
+          type: array
+          items:
+            type: string
+        invalid_secret_refs:
+          type: array
+          items:
+            type: string
+        secret_reference_keys:
+          type: array
+          items:
+            type: string
+        diff_summary:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    ReadinessReviewItem:
+      type: object
+      properties:
+        severity:
+          type: string
+        category:
+          type: string
+        question:
+          type: string
+        reason:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        acknowledgment_required:
+          type: boolean
+    ReleaseDependency:
+      type: object
+      properties:
+        service_id:
+          type: string
+        service_name:
+          type: string
+        depends_on_service_id:
+          type: string
+        depends_on_service_name:
+          type: string
+        critical:
+          type: boolean
+        summary:
+          type: string
+    RollbackGuidance:
+      type: object
+      properties:
+        safe:
+          type: boolean
+        strategy:
+          type: string
+        summary:
+          type: string
+        steps:
+          type: array
+          items:
+            type: string
+        blockers:
+          type: array
+          items:
+            type: string
+    OpsAssistantSummary:
+      type: object
+      properties:
+        status:
+          type: string
+        likely_cause:
+          type: string
+        suspicious_changes:
+          type: array
+          items:
+            type: string
+        guidance:
+          type: array
+          items:
+            type: string
+    TeamMemoryInsight:
+      type: object
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+    CommunicationDrafts:
+      type: object
+      properties:
+        release_notes:
+          type: string
+        approver_summary:
+          type: string
+        stakeholder_update:
+          type: string
+        maintenance_notice:
+          type: string
+        incident_handoff:
+          type: string
+        postmortem_starter:
+          type: string
+    ConfigSetDetail:
+      type: object
+      properties:
+        config_set:
+          $ref: '#/components/schemas/ConfigSet'
+        validation:
+          $ref: '#/components/schemas/ConfigSetValidation'
+        related_releases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Release'
+    ConfigSetListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigSet'
+    ConfigSetDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ConfigSetDetail'
+    DatabaseChange:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        change_set_id:
+          type: string
+        name:
+          type: string
+        datastore:
+          type: string
+        operation_type:
+          type: string
+        execution_intent:
+          type: string
+        compatibility:
+          type: string
+        reversibility:
+          type: string
+        risk_level:
+          type: string
+        lock_risk:
+          type: boolean
+        manual_approval_required:
+          type: boolean
+        status:
+          type: string
+        summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+    DatabaseValidationCheck:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        change_set_id:
+          type: string
+        database_change_id:
+          type: string
+        connection_ref_id:
+          type: string
+        name:
+          type: string
+        phase:
+          type: string
+        check_type:
+          type: string
+        read_only:
+          type: boolean
+        required:
+          type: boolean
+        execution_mode:
+          type: string
+        specification:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        last_run_at:
+          type: string
+          format: date-time
+        last_result_summary:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+    DatabaseConnectionReference:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        name:
+          type: string
+        datastore:
+          type: string
+        driver:
+          type: string
+        source_type:
+          type: string
+        dsn_env:
+          type: string
+        secret_ref:
+          type: string
+        secret_ref_env:
+          type: string
+        read_only_capable:
+          type: boolean
+        status:
+          type: string
+        summary:
+          type: string
+        last_tested_at:
+          type: string
+          format: date-time
+        last_healthy_at:
+          type: string
+          format: date-time
+        last_error_class:
+          type: string
+        last_error_summary:
+          type: string
+    DatabaseConnectionTest:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        connection_ref_id:
+          type: string
+        trigger:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+        error_class:
+          type: string
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+    DatabaseValidationExecution:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+        organization_id:
+          type: string
+        project_id:
+          type: string
+        environment_id:
+          type: string
+        service_id:
+          type: string
+        change_set_id:
+          type: string
+        database_change_id:
+          type: string
+        validation_check_id:
+          type: string
+        connection_ref_id:
+          type: string
+        trigger:
+          type: string
+        execution_mode:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        result_details:
+          type: array
+          items:
+            type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        error_class:
+          type: string
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+    DatabaseChangeDetail:
+      type: object
+      properties:
+        database_change:
+          $ref: '#/components/schemas/DatabaseChange'
+        validation_checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationCheck'
+    DatabaseConnectionReferenceDetail:
+      type: object
+      properties:
+        connection_reference:
+          $ref: '#/components/schemas/DatabaseConnectionReference'
+        validation_checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationCheck'
+        connection_tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionTest'
+    DatabaseConnectionTestDetail:
+      type: object
+      properties:
+        connection_test:
+          $ref: '#/components/schemas/DatabaseConnectionTest'
+        connection_reference:
+          $ref: '#/components/schemas/DatabaseConnectionReference'
+    DatabaseValidationCheckDetail:
+      type: object
+      properties:
+        validation_check:
+          $ref: '#/components/schemas/DatabaseValidationCheck'
+        database_change:
+          allOf:
+            - $ref: '#/components/schemas/DatabaseChange'
+          nullable: true
+        connection_reference:
+          allOf:
+            - $ref: '#/components/schemas/DatabaseConnectionReference'
+          nullable: true
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationExecution'
+    DatabaseValidationExecutionDetail:
+      type: object
+      properties:
+        execution:
+          $ref: '#/components/schemas/DatabaseValidationExecution'
+        validation_check:
+          $ref: '#/components/schemas/DatabaseValidationCheck'
+        database_change:
+          allOf:
+            - $ref: '#/components/schemas/DatabaseChange'
+          nullable: true
+        connection_reference:
+          allOf:
+            - $ref: '#/components/schemas/DatabaseConnectionReference'
+          nullable: true
+    DatabasePosture:
+      type: object
+      properties:
+        status:
+          type: string
+        summary:
+          type: string
+        compatibility:
+          type: string
+        rollback_safety:
+          type: string
+        manual_approval_required:
+          type: boolean
+        change_count:
+          type: integer
+        required_check_count:
+          type: integer
+        pending_check_count:
+          type: integer
+        blocking_findings:
+          type: array
+          items:
+            type: string
+        warning_findings:
+          type: array
+          items:
+            type: string
+    DatabaseChangeListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseChange'
+    DatabaseChangeDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DatabaseChangeDetail'
+    DatabaseValidationCheckListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationCheck'
+    DatabaseConnectionReferenceListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionReference'
+    DatabaseConnectionReferenceDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DatabaseConnectionReferenceDetail'
+    DatabaseConnectionTestListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionTest'
+    DatabaseConnectionTestDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DatabaseConnectionTestDetail'
+    DatabaseValidationCheckDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DatabaseValidationCheckDetail'
+    DatabaseValidationExecutionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationExecution'
+    DatabaseValidationExecutionDetailItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/DatabaseValidationExecutionDetail'
+    ReleaseAnalysis:
+      type: object
+      properties:
+        release:
+          $ref: '#/components/schemas/Release'
+        change_sets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeSet'
+        assessments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskAssessment'
+        config_sets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigSet'
+        database_connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionReference'
+        database_connection_tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionTest'
+        database_changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseChange'
+        database_checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationCheck'
+        database_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationExecution'
+        linked_rollout_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RolloutExecution'
+        combined_risk_score:
+          type: integer
+        combined_risk_level:
+          type: string
+        blast_radius:
+          $ref: '#/components/schemas/BlastRadius'
+        release_summary:
+          type: string
+        dependency_plan:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseDependency'
+        config_validation:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigSetValidation'
+        database_posture:
+          $ref: '#/components/schemas/DatabasePosture'
+        database_findings:
+          type: array
+          items:
+            type: string
+        window_findings:
+          type: array
+          items:
+            type: string
+        policy_highlights:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        blockers:
+          type: array
+          items:
+            type: string
+        readiness_review:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadinessReviewItem'
+        rollback_guidance:
+          $ref: '#/components/schemas/RollbackGuidance'
+        ops_assistant:
+          $ref: '#/components/schemas/OpsAssistantSummary'
+        team_memory:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMemoryInsight'
+        communications:
+          $ref: '#/components/schemas/CommunicationDrafts'
+    ReleaseListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Release'
+    ReleaseAnalysisItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/ReleaseAnalysis'
     RolloutEvidencePackSummary:
       type: object
       properties:
@@ -5503,6 +7228,10 @@ components:
           type: integer
         manual_review_policy_count:
           type: integer
+        release_id:
+          type: string
+        release_name:
+          type: string
         evidence_highlights:
           type: array
           items:
@@ -5562,6 +7291,34 @@ components:
           nullable: true
           items:
             $ref: '#/components/schemas/AuditEvent'
+        release:
+          $ref: '#/components/schemas/Release'
+        release_analysis:
+          $ref: '#/components/schemas/ReleaseAnalysis'
+        database_changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseChange'
+        database_checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationCheck'
+        database_connections:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionReference'
+        database_connection_tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseConnectionTest'
+        database_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseValidationExecution'
+        database_posture:
+          allOf:
+            - $ref: '#/components/schemas/DatabasePosture'
+          nullable: true
     RolloutEvidencePackItemResponse:
       type: object
       properties:

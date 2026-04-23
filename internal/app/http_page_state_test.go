@@ -76,10 +76,79 @@ func TestRolloutPageStateRouteBundlesExecutionReads(t *testing.T) {
 		OrganizationName: "Acme",
 		OrganizationSlug: "acme-rollout",
 	})
-	_, _, _, _, change, _ := seedGraphContext(t, server.URL, admin.Token, admin.Session.ActiveOrganizationID, "rollout")
+	project, _, service, environment, change, _ := seedGraphContext(t, server.URL, admin.Token, admin.Session.ActiveOrganizationID, "rollout")
+
+	configSet := postItemAuth[types.ConfigSetDetail](t, server.URL+"/api/v1/config-sets", types.CreateConfigSetRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "browser-rollout",
+		Version:        "v1",
+		Entries: []types.ConfigEntry{
+			{Key: "DB_PASSWORD_REF", Value: "prod/checkout/db/password", ValueType: "secret_ref", Required: true},
+		},
+	}, admin.Token, admin.Session.ActiveOrganizationID)
 
 	rollout := postItemAuth[types.RolloutPlanResult](t, server.URL+"/api/v1/rollout-plans", types.CreateRolloutPlanRequest{
 		ChangeSetID: change.ID,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	release := postItemAuth[types.ReleaseAnalysis](t, server.URL+"/api/v1/releases", types.CreateReleaseRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		Name:           "Browser Rollout Bundle",
+		Summary:        "Release bundle for rollout page-state proof",
+		ChangeSetIDs:   []string{change.ID},
+		ConfigSetIDs:   []string{configSet.ConfigSet.ID},
+		Version:        "2026.04.23",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	databaseChange := postItemAuth[types.DatabaseChangeDetail](t, server.URL+"/api/v1/database-changes", types.CreateDatabaseChangeRequest{
+		OrganizationID:  admin.Session.ActiveOrganizationID,
+		ProjectID:       project.ID,
+		EnvironmentID:   environment.ID,
+		ServiceID:       service.ID,
+		ChangeSetID:     change.ID,
+		Name:            "Rollout page schema expansion",
+		Datastore:       "checkout-primary",
+		OperationType:   "schema_change",
+		ExecutionIntent: "pre_deploy",
+		Compatibility:   "expand_contract",
+		Reversibility:   "reversible",
+		RiskLevel:       types.RiskLevelHigh,
+		Summary:         "Page-state proof database change",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	databaseConnection := postItemAuth[types.DatabaseConnectionReferenceDetail](t, server.URL+"/api/v1/database-connection-references", types.CreateDatabaseConnectionReferenceRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "page-state-secret-ref",
+		Datastore:      "checkout-primary",
+		Driver:         "postgres",
+		SourceType:     "secret_ref_dsn",
+		SecretRef:      "prod/checkout/page-state/runtime_dsn",
+		Summary:        "Route-local proof connection reference",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	connectionTest := postItemAuth[types.DatabaseConnectionTestDetail](t, server.URL+"/api/v1/database-connection-references/"+databaseConnection.ConnectionReference.ID+"/test", types.TestDatabaseConnectionReferenceRequest{
+		Trigger: "manual",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	databaseCheck := postItemAuth[types.DatabaseValidationCheckDetail](t, server.URL+"/api/v1/database-validation-checks", types.CreateDatabaseValidationCheckRequest{
+		OrganizationID:   admin.Session.ActiveOrganizationID,
+		ProjectID:        project.ID,
+		EnvironmentID:    environment.ID,
+		ServiceID:        service.ID,
+		ChangeSetID:      change.ID,
+		DatabaseChangeID: databaseChange.DatabaseChange.ID,
+		ConnectionRefID:  databaseConnection.ConnectionReference.ID,
+		Name:             "Rollout page pre-check",
+		Phase:            "pre_deploy",
+		CheckType:        "compatibility_check",
+		ReadOnly:         true,
+		Required:         true,
+		ExecutionMode:    "manual_attestation",
+		Specification:    "Confirm rollout page state includes DB checks.",
+		Summary:          "Pending page-state test proof",
 	}, admin.Token, admin.Session.ActiveOrganizationID)
 	execution := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions", types.CreateRolloutExecutionRequest{
 		RolloutPlanID: rollout.Plan.ID,
@@ -97,6 +166,30 @@ func TestRolloutPageStateRouteBundlesExecutionReads(t *testing.T) {
 	}
 	if len(data.Integrations) == 0 {
 		t.Fatal("expected rollout page state to include backend integration context")
+	}
+	if len(data.Catalog.Services) == 0 || len(data.Catalog.Environments) == 0 {
+		t.Fatalf("expected rollout page state to include catalog context, got %+v", data.Catalog)
+	}
+	if len(data.ConfigSets) != 1 || data.ConfigSets[0].ID != configSet.ConfigSet.ID {
+		t.Fatalf("expected rollout page state to include config sets, got %+v", data.ConfigSets)
+	}
+	if len(data.DatabaseChanges) != 1 || data.DatabaseChanges[0].ID != databaseChange.DatabaseChange.ID {
+		t.Fatalf("expected rollout page state to include database changes, got %+v", data.DatabaseChanges)
+	}
+	if len(data.DatabaseChecks) != 1 || data.DatabaseChecks[0].ID != databaseCheck.ValidationCheck.ID {
+		t.Fatalf("expected rollout page state to include database checks, got %+v", data.DatabaseChecks)
+	}
+	if len(data.DatabaseConnections) != 1 || data.DatabaseConnections[0].ID != databaseConnection.ConnectionReference.ID {
+		t.Fatalf("expected rollout page state to include database connections, got %+v", data.DatabaseConnections)
+	}
+	if len(data.DatabaseConnectionTests) != 1 || data.DatabaseConnectionTests[0].ID != connectionTest.ConnectionTest.ID {
+		t.Fatalf("expected rollout page state to include database connection tests, got %+v", data.DatabaseConnectionTests)
+	}
+	if len(data.Releases) != 1 || data.Releases[0].ID != release.Release.ID {
+		t.Fatalf("expected rollout page state to include release bundles, got %+v", data.Releases)
+	}
+	if data.ReleaseAnalysis == nil || data.ReleaseAnalysis.Release.ID != release.Release.ID {
+		t.Fatalf("expected rollout page state to include latest release analysis, got %+v", data.ReleaseAnalysis)
 	}
 }
 

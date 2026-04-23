@@ -155,6 +155,118 @@ func (c *Client) ListRolloutPlans(ctx context.Context) ([]types.RolloutPlan, err
 	return doList[types.RolloutPlan](ctx, c, http.MethodGet, "/api/v1/rollout-plans")
 }
 
+func (c *Client) ListConfigSets(ctx context.Context) ([]types.ConfigSet, error) {
+	return doList[types.ConfigSet](ctx, c, http.MethodGet, "/api/v1/config-sets")
+}
+
+func (c *Client) CreateConfigSet(ctx context.Context, req types.CreateConfigSetRequest) (types.ConfigSetDetail, error) {
+	return doItem[types.ConfigSetDetail](ctx, c, http.MethodPost, "/api/v1/config-sets", req)
+}
+
+func (c *Client) GetConfigSet(ctx context.Context, id string) (types.ConfigSetDetail, error) {
+	return doItem[types.ConfigSetDetail](ctx, c, http.MethodGet, "/api/v1/config-sets/"+id, nil)
+}
+
+func (c *Client) UpdateConfigSet(ctx context.Context, id string, req types.UpdateConfigSetRequest) (types.ConfigSetDetail, error) {
+	return doItem[types.ConfigSetDetail](ctx, c, http.MethodPatch, "/api/v1/config-sets/"+id, req)
+}
+
+func (c *Client) ListReleases(ctx context.Context) ([]types.Release, error) {
+	return doList[types.Release](ctx, c, http.MethodGet, "/api/v1/releases")
+}
+
+func (c *Client) CreateRelease(ctx context.Context, req types.CreateReleaseRequest) (types.ReleaseAnalysis, error) {
+	return doItem[types.ReleaseAnalysis](ctx, c, http.MethodPost, "/api/v1/releases", req)
+}
+
+func (c *Client) GetRelease(ctx context.Context, id string) (types.ReleaseAnalysis, error) {
+	return doItem[types.ReleaseAnalysis](ctx, c, http.MethodGet, "/api/v1/releases/"+id, nil)
+}
+
+func (c *Client) UpdateRelease(ctx context.Context, id string, req types.UpdateReleaseRequest) (types.ReleaseAnalysis, error) {
+	return doItem[types.ReleaseAnalysis](ctx, c, http.MethodPatch, "/api/v1/releases/"+id, req)
+}
+
+func (c *Client) ListDatabaseConnectionReferences(ctx context.Context) ([]types.DatabaseConnectionReference, error) {
+	return doList[types.DatabaseConnectionReference](ctx, c, http.MethodGet, "/api/v1/database-connection-references")
+}
+
+func (c *Client) CreateDatabaseConnectionReference(ctx context.Context, req types.CreateDatabaseConnectionReferenceRequest) (types.DatabaseConnectionReferenceDetail, error) {
+	return doItem[types.DatabaseConnectionReferenceDetail](ctx, c, http.MethodPost, "/api/v1/database-connection-references", req)
+}
+
+func (c *Client) GetDatabaseConnectionReference(ctx context.Context, id string) (types.DatabaseConnectionReferenceDetail, error) {
+	return doItem[types.DatabaseConnectionReferenceDetail](ctx, c, http.MethodGet, "/api/v1/database-connection-references/"+id, nil)
+}
+
+func (c *Client) UpdateDatabaseConnectionReference(ctx context.Context, id string, req types.UpdateDatabaseConnectionReferenceRequest) (types.DatabaseConnectionReferenceDetail, error) {
+	return doItem[types.DatabaseConnectionReferenceDetail](ctx, c, http.MethodPatch, "/api/v1/database-connection-references/"+id, req)
+}
+
+func (c *Client) TestDatabaseConnectionReference(ctx context.Context, id string, req types.TestDatabaseConnectionReferenceRequest) (types.DatabaseConnectionTestDetail, error) {
+	return doItem[types.DatabaseConnectionTestDetail](ctx, c, http.MethodPost, "/api/v1/database-connection-references/"+id+"/test", req)
+}
+
+func (c *Client) ListDatabaseConnectionTests(ctx context.Context, rawQuery string) ([]types.DatabaseConnectionTest, error) {
+	path := "/api/v1/database-connection-tests"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.DatabaseConnectionTest](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) GetDatabaseConnectionTest(ctx context.Context, id string) (types.DatabaseConnectionTestDetail, error) {
+	return doItem[types.DatabaseConnectionTestDetail](ctx, c, http.MethodGet, "/api/v1/database-connection-tests/"+id, nil)
+}
+
+func (c *Client) ListDatabaseChanges(ctx context.Context) ([]types.DatabaseChange, error) {
+	return doList[types.DatabaseChange](ctx, c, http.MethodGet, "/api/v1/database-changes")
+}
+
+func (c *Client) CreateDatabaseChange(ctx context.Context, req types.CreateDatabaseChangeRequest) (types.DatabaseChangeDetail, error) {
+	return doItem[types.DatabaseChangeDetail](ctx, c, http.MethodPost, "/api/v1/database-changes", req)
+}
+
+func (c *Client) GetDatabaseChange(ctx context.Context, id string) (types.DatabaseChangeDetail, error) {
+	return doItem[types.DatabaseChangeDetail](ctx, c, http.MethodGet, "/api/v1/database-changes/"+id, nil)
+}
+
+func (c *Client) UpdateDatabaseChange(ctx context.Context, id string, req types.UpdateDatabaseChangeRequest) (types.DatabaseChangeDetail, error) {
+	return doItem[types.DatabaseChangeDetail](ctx, c, http.MethodPatch, "/api/v1/database-changes/"+id, req)
+}
+
+func (c *Client) ListDatabaseValidationChecks(ctx context.Context) ([]types.DatabaseValidationCheck, error) {
+	return doList[types.DatabaseValidationCheck](ctx, c, http.MethodGet, "/api/v1/database-validation-checks")
+}
+
+func (c *Client) CreateDatabaseValidationCheck(ctx context.Context, req types.CreateDatabaseValidationCheckRequest) (types.DatabaseValidationCheckDetail, error) {
+	return doItem[types.DatabaseValidationCheckDetail](ctx, c, http.MethodPost, "/api/v1/database-validation-checks", req)
+}
+
+func (c *Client) GetDatabaseValidationCheck(ctx context.Context, id string) (types.DatabaseValidationCheckDetail, error) {
+	return doItem[types.DatabaseValidationCheckDetail](ctx, c, http.MethodGet, "/api/v1/database-validation-checks/"+id, nil)
+}
+
+func (c *Client) UpdateDatabaseValidationCheck(ctx context.Context, id string, req types.UpdateDatabaseValidationCheckRequest) (types.DatabaseValidationCheckDetail, error) {
+	return doItem[types.DatabaseValidationCheckDetail](ctx, c, http.MethodPatch, "/api/v1/database-validation-checks/"+id, req)
+}
+
+func (c *Client) ExecuteDatabaseValidationCheck(ctx context.Context, id string, req types.ExecuteDatabaseValidationCheckRequest) (types.DatabaseValidationExecutionDetail, error) {
+	return doItem[types.DatabaseValidationExecutionDetail](ctx, c, http.MethodPost, "/api/v1/database-validation-checks/"+id+"/execute", req)
+}
+
+func (c *Client) ListDatabaseValidationExecutions(ctx context.Context, rawQuery string) ([]types.DatabaseValidationExecution, error) {
+	path := "/api/v1/database-validation-executions"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.DatabaseValidationExecution](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) GetDatabaseValidationExecution(ctx context.Context, id string) (types.DatabaseValidationExecutionDetail, error) {
+	return doItem[types.DatabaseValidationExecutionDetail](ctx, c, http.MethodGet, "/api/v1/database-validation-executions/"+id, nil)
+}
+
 func (c *Client) ListPolicies(ctx context.Context) ([]types.Policy, error) {
 	return doList[types.Policy](ctx, c, http.MethodGet, "/api/v1/policies")
 }

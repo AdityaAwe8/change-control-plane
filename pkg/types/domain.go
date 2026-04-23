@@ -252,13 +252,146 @@ type Deployment struct {
 	Strategy       string `json:"strategy"`
 }
 
+type ConfigEntry struct {
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	ValueType   string `json:"value_type"`
+	Required    bool   `json:"required,omitempty"`
+	Deprecated  bool   `json:"deprecated,omitempty"`
+	Description string `json:"description,omitempty"`
+	Source      string `json:"source,omitempty"`
+}
+
+type ConfigSet struct {
+	BaseRecord
+	OrganizationID string        `json:"organization_id"`
+	ProjectID      string        `json:"project_id"`
+	EnvironmentID  string        `json:"environment_id"`
+	ServiceID      string        `json:"service_id,omitempty"`
+	Name           string        `json:"name"`
+	Version        string        `json:"version"`
+	Status         string        `json:"status"`
+	Entries        []ConfigEntry `json:"entries"`
+}
+
 type Release struct {
 	BaseRecord
 	OrganizationID string   `json:"organization_id"`
 	ProjectID      string   `json:"project_id"`
+	EnvironmentID  string   `json:"environment_id"`
+	Name           string   `json:"name"`
+	Summary        string   `json:"summary"`
 	ChangeSetIDs   []string `json:"change_set_ids"`
+	ConfigSetIDs   []string `json:"config_set_ids,omitempty"`
 	Version        string   `json:"version"`
 	Status         string   `json:"status"`
+}
+
+type DatabaseChange struct {
+	BaseRecord
+	OrganizationID         string    `json:"organization_id"`
+	ProjectID              string    `json:"project_id"`
+	EnvironmentID          string    `json:"environment_id"`
+	ServiceID              string    `json:"service_id,omitempty"`
+	ChangeSetID            string    `json:"change_set_id"`
+	Name                   string    `json:"name"`
+	Datastore              string    `json:"datastore"`
+	OperationType          string    `json:"operation_type"`
+	ExecutionIntent        string    `json:"execution_intent"`
+	Compatibility          string    `json:"compatibility"`
+	Reversibility          string    `json:"reversibility"`
+	RiskLevel              RiskLevel `json:"risk_level"`
+	LockRisk               bool      `json:"lock_risk,omitempty"`
+	ManualApprovalRequired bool      `json:"manual_approval_required,omitempty"`
+	Status                 string    `json:"status"`
+	Summary                string    `json:"summary"`
+	Evidence               []string  `json:"evidence,omitempty"`
+}
+
+type DatabaseValidationCheck struct {
+	BaseRecord
+	OrganizationID    string     `json:"organization_id"`
+	ProjectID         string     `json:"project_id"`
+	EnvironmentID     string     `json:"environment_id"`
+	ServiceID         string     `json:"service_id,omitempty"`
+	ChangeSetID       string     `json:"change_set_id"`
+	DatabaseChangeID  string     `json:"database_change_id,omitempty"`
+	ConnectionRefID   string     `json:"connection_ref_id,omitempty"`
+	Name              string     `json:"name"`
+	Phase             string     `json:"phase"`
+	CheckType         string     `json:"check_type"`
+	ReadOnly          bool       `json:"read_only"`
+	Required          bool       `json:"required"`
+	ExecutionMode     string     `json:"execution_mode"`
+	Specification     string     `json:"specification"`
+	Status            string     `json:"status"`
+	Summary           string     `json:"summary"`
+	LastRunAt         *time.Time `json:"last_run_at,omitempty"`
+	LastResultSummary string     `json:"last_result_summary,omitempty"`
+	Evidence          []string   `json:"evidence,omitempty"`
+}
+
+type DatabaseConnectionReference struct {
+	BaseRecord
+	OrganizationID   string     `json:"organization_id"`
+	ProjectID        string     `json:"project_id"`
+	EnvironmentID    string     `json:"environment_id"`
+	ServiceID        string     `json:"service_id,omitempty"`
+	Name             string     `json:"name"`
+	Datastore        string     `json:"datastore"`
+	Driver           string     `json:"driver"`
+	SourceType       string     `json:"source_type"`
+	DSNEnv           string     `json:"dsn_env"`
+	SecretRef        string     `json:"secret_ref,omitempty"`
+	SecretRefEnv     string     `json:"secret_ref_env,omitempty"`
+	ReadOnlyCapable  bool       `json:"read_only_capable,omitempty"`
+	Status           string     `json:"status"`
+	Summary          string     `json:"summary"`
+	LastTestedAt     *time.Time `json:"last_tested_at,omitempty"`
+	LastHealthyAt    *time.Time `json:"last_healthy_at,omitempty"`
+	LastErrorClass   string     `json:"last_error_class,omitempty"`
+	LastErrorSummary string     `json:"last_error_summary,omitempty"`
+}
+
+type DatabaseConnectionTest struct {
+	BaseRecord
+	OrganizationID   string     `json:"organization_id"`
+	ProjectID        string     `json:"project_id"`
+	EnvironmentID    string     `json:"environment_id"`
+	ServiceID        string     `json:"service_id,omitempty"`
+	ConnectionRefID  string     `json:"connection_ref_id"`
+	Trigger          string     `json:"trigger"`
+	Status           string     `json:"status"`
+	Summary          string     `json:"summary"`
+	Details          []string   `json:"details,omitempty"`
+	ErrorClass       string     `json:"error_class,omitempty"`
+	ActorType        string     `json:"actor_type,omitempty"`
+	ActorID          string     `json:"actor_id,omitempty"`
+	StartedAt        time.Time  `json:"started_at"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+}
+
+type DatabaseValidationExecution struct {
+	BaseRecord
+	OrganizationID     string     `json:"organization_id"`
+	ProjectID          string     `json:"project_id"`
+	EnvironmentID      string     `json:"environment_id"`
+	ServiceID          string     `json:"service_id,omitempty"`
+	ChangeSetID        string     `json:"change_set_id"`
+	DatabaseChangeID   string     `json:"database_change_id,omitempty"`
+	ValidationCheckID  string     `json:"validation_check_id"`
+	ConnectionRefID    string     `json:"connection_ref_id"`
+	Trigger            string     `json:"trigger"`
+	ExecutionMode      string     `json:"execution_mode"`
+	Status             string     `json:"status"`
+	Summary            string     `json:"summary"`
+	ResultDetails      []string   `json:"result_details,omitempty"`
+	Evidence           []string   `json:"evidence,omitempty"`
+	ErrorClass         string     `json:"error_class,omitempty"`
+	ActorType          string     `json:"actor_type,omitempty"`
+	ActorID            string     `json:"actor_id,omitempty"`
+	StartedAt          time.Time  `json:"started_at"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 }
 
 type ChangeSet struct {
@@ -394,9 +527,10 @@ type Incident struct {
 }
 
 type IncidentDetail struct {
-	Incident           Incident      `json:"incident"`
-	RolloutExecutionID string        `json:"rollout_execution_id"`
-	StatusTimeline     []StatusEvent `json:"status_timeline,omitempty"`
+	Incident           Incident             `json:"incident"`
+	RolloutExecutionID string               `json:"rollout_execution_id"`
+	StatusTimeline     []StatusEvent        `json:"status_timeline,omitempty"`
+	AssistantSummary   *OpsAssistantSummary `json:"assistant_summary,omitempty"`
 }
 
 type Runbook struct {
@@ -438,23 +572,23 @@ type PolicyCondition struct {
 
 type PolicyDecision struct {
 	BaseRecord
-	OrganizationID  string   `json:"organization_id"`
-	ProjectID       string   `json:"project_id"`
-	ServiceID       string   `json:"service_id,omitempty"`
-	EnvironmentID   string   `json:"environment_id,omitempty"`
-	PolicyID        string   `json:"policy_id"`
-	PolicyName      string   `json:"policy_name"`
-	PolicyCode      string   `json:"policy_code"`
-	PolicyScope     string   `json:"policy_scope"`
-	AppliesTo       string   `json:"applies_to"`
-	Mode            string   `json:"mode"`
-	ChangeSetID     string   `json:"change_set_id,omitempty"`
-	RiskAssessmentID string  `json:"risk_assessment_id,omitempty"`
-	RolloutPlanID   string   `json:"rollout_plan_id,omitempty"`
-	RolloutExecutionID string `json:"rollout_execution_id,omitempty"`
-	Outcome         string   `json:"outcome"`
-	Summary         string   `json:"summary"`
-	Reasons         []string `json:"reasons"`
+	OrganizationID     string   `json:"organization_id"`
+	ProjectID          string   `json:"project_id"`
+	ServiceID          string   `json:"service_id,omitempty"`
+	EnvironmentID      string   `json:"environment_id,omitempty"`
+	PolicyID           string   `json:"policy_id"`
+	PolicyName         string   `json:"policy_name"`
+	PolicyCode         string   `json:"policy_code"`
+	PolicyScope        string   `json:"policy_scope"`
+	AppliesTo          string   `json:"applies_to"`
+	Mode               string   `json:"mode"`
+	ChangeSetID        string   `json:"change_set_id,omitempty"`
+	RiskAssessmentID   string   `json:"risk_assessment_id,omitempty"`
+	RolloutPlanID      string   `json:"rollout_plan_id,omitempty"`
+	RolloutExecutionID string   `json:"rollout_execution_id,omitempty"`
+	Outcome            string   `json:"outcome"`
+	Summary            string   `json:"summary"`
+	Reasons            []string `json:"reasons"`
 }
 
 type AuditEvent struct {
@@ -606,6 +740,7 @@ type RolloutExecution struct {
 	OrganizationID         string     `json:"organization_id"`
 	ProjectID              string     `json:"project_id"`
 	RolloutPlanID          string     `json:"rollout_plan_id"`
+	ReleaseID              string     `json:"release_id,omitempty"`
 	ChangeSetID            string     `json:"change_set_id"`
 	ServiceID              string     `json:"service_id"`
 	EnvironmentID          string     `json:"environment_id"`

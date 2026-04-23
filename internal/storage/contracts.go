@@ -80,6 +80,87 @@ type RolloutPlanQuery struct {
 	Offset         int
 }
 
+type ConfigSetQuery struct {
+	OrganizationID string
+	ProjectID      string
+	EnvironmentID  string
+	ServiceID      string
+	Status         string
+	Limit          int
+	Offset         int
+}
+
+type ReleaseQuery struct {
+	OrganizationID string
+	ProjectID      string
+	EnvironmentID  string
+	Status         string
+	Limit          int
+	Offset         int
+}
+
+type DatabaseChangeQuery struct {
+	OrganizationID string
+	ProjectID      string
+	EnvironmentID  string
+	ServiceID      string
+	ChangeSetID    string
+	Datastore      string
+	Status         string
+	Limit          int
+	Offset         int
+}
+
+type DatabaseValidationCheckQuery struct {
+	OrganizationID   string
+	ProjectID        string
+	EnvironmentID    string
+	ServiceID        string
+	ChangeSetID      string
+	DatabaseChangeID string
+	ConnectionRefID  string
+	Phase            string
+	Status           string
+	Limit            int
+	Offset           int
+}
+
+type DatabaseConnectionReferenceQuery struct {
+	OrganizationID string
+	ProjectID      string
+	EnvironmentID  string
+	ServiceID      string
+	Datastore      string
+	Status         string
+	Limit          int
+	Offset         int
+}
+
+type DatabaseValidationExecutionQuery struct {
+	OrganizationID    string
+	ProjectID         string
+	EnvironmentID     string
+	ServiceID         string
+	ChangeSetID       string
+	DatabaseChangeID  string
+	ValidationCheckID string
+	ConnectionRefID   string
+	Status            string
+	Limit             int
+	Offset            int
+}
+
+type DatabaseConnectionTestQuery struct {
+	OrganizationID  string
+	ProjectID       string
+	EnvironmentID   string
+	ServiceID       string
+	ConnectionRefID string
+	Status          string
+	Limit           int
+	Offset          int
+}
+
 type AuditEventQuery struct {
 	OrganizationID string
 	ProjectID      string
@@ -315,6 +396,40 @@ type Store interface {
 	CreateRolloutPlan(context.Context, types.RolloutPlan) error
 	GetRolloutPlan(context.Context, string) (types.RolloutPlan, error)
 	ListRolloutPlans(context.Context, RolloutPlanQuery) ([]types.RolloutPlan, error)
+
+	CreateConfigSet(context.Context, types.ConfigSet) error
+	GetConfigSet(context.Context, string) (types.ConfigSet, error)
+	ListConfigSets(context.Context, ConfigSetQuery) ([]types.ConfigSet, error)
+	UpdateConfigSet(context.Context, types.ConfigSet) error
+
+	CreateRelease(context.Context, types.Release) error
+	GetRelease(context.Context, string) (types.Release, error)
+	ListReleases(context.Context, ReleaseQuery) ([]types.Release, error)
+	UpdateRelease(context.Context, types.Release) error
+
+	CreateDatabaseChange(context.Context, types.DatabaseChange) error
+	GetDatabaseChange(context.Context, string) (types.DatabaseChange, error)
+	ListDatabaseChanges(context.Context, DatabaseChangeQuery) ([]types.DatabaseChange, error)
+	UpdateDatabaseChange(context.Context, types.DatabaseChange) error
+
+	CreateDatabaseValidationCheck(context.Context, types.DatabaseValidationCheck) error
+	GetDatabaseValidationCheck(context.Context, string) (types.DatabaseValidationCheck, error)
+	ListDatabaseValidationChecks(context.Context, DatabaseValidationCheckQuery) ([]types.DatabaseValidationCheck, error)
+	UpdateDatabaseValidationCheck(context.Context, types.DatabaseValidationCheck) error
+
+	CreateDatabaseConnectionReference(context.Context, types.DatabaseConnectionReference) error
+	GetDatabaseConnectionReference(context.Context, string) (types.DatabaseConnectionReference, error)
+	ListDatabaseConnectionReferences(context.Context, DatabaseConnectionReferenceQuery) ([]types.DatabaseConnectionReference, error)
+	UpdateDatabaseConnectionReference(context.Context, types.DatabaseConnectionReference) error
+	CreateDatabaseConnectionTest(context.Context, types.DatabaseConnectionTest) error
+	GetDatabaseConnectionTest(context.Context, string) (types.DatabaseConnectionTest, error)
+	ListDatabaseConnectionTests(context.Context, DatabaseConnectionTestQuery) ([]types.DatabaseConnectionTest, error)
+	UpdateDatabaseConnectionTest(context.Context, types.DatabaseConnectionTest) error
+
+	CreateDatabaseValidationExecution(context.Context, types.DatabaseValidationExecution) error
+	GetDatabaseValidationExecution(context.Context, string) (types.DatabaseValidationExecution, error)
+	ListDatabaseValidationExecutions(context.Context, DatabaseValidationExecutionQuery) ([]types.DatabaseValidationExecution, error)
+	UpdateDatabaseValidationExecution(context.Context, types.DatabaseValidationExecution) error
 
 	CreateAuditEvent(context.Context, types.AuditEvent) error
 	ListAuditEvents(context.Context, AuditEventQuery) ([]types.AuditEvent, error)

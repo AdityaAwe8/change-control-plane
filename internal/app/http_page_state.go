@@ -8,6 +8,11 @@ import (
 )
 
 func (s *HTTPServer) getRolloutPageState(w http.ResponseWriter, r *http.Request) {
+	catalog, err := s.app.Catalog(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
 	rolloutPlans, err := s.app.ListRolloutPlans(r.Context())
 	if err != nil {
 		writeAppError(w, err)
@@ -23,6 +28,41 @@ func (s *HTTPServer) getRolloutPageState(w http.ResponseWriter, r *http.Request)
 		writeAppError(w, err)
 		return
 	}
+	releases, err := s.app.ListReleases(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	configSets, err := s.app.ListConfigSets(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	databaseConnections, err := s.app.ListDatabaseConnectionReferences(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	databaseConnectionTests, err := s.app.ListDatabaseConnectionTests(r.Context(), storage.DatabaseConnectionTestQuery{Limit: 500})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	databaseChanges, err := s.app.ListDatabaseChanges(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	databaseChecks, err := s.app.ListDatabaseValidationChecks(r.Context())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	databaseExecutions, err := s.app.ListDatabaseValidationExecutions(r.Context(), storage.DatabaseValidationExecutionQuery{Limit: 500})
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
 	var rolloutExecutionDetail *types.RolloutExecutionDetail
 	if len(rolloutExecutions) > 0 {
 		detail, err := s.app.GetRolloutExecutionDetail(r.Context(), rolloutExecutions[0].ID)
@@ -32,11 +72,29 @@ func (s *HTTPServer) getRolloutPageState(w http.ResponseWriter, r *http.Request)
 		}
 		rolloutExecutionDetail = &detail
 	}
+	var releaseAnalysis *types.ReleaseAnalysis
+	if len(releases) > 0 {
+		analysis, err := s.app.GetReleaseAnalysis(r.Context(), releases[len(releases)-1].ID)
+		if err != nil {
+			writeAppError(w, err)
+			return
+		}
+		releaseAnalysis = &analysis
+	}
 	writeJSON(w, http.StatusOK, types.ItemResponse[types.RolloutPageState]{Data: types.RolloutPageState{
+		Catalog:                catalog,
 		RolloutPlans:           rolloutPlans,
 		RolloutExecutions:      rolloutExecutions,
 		RolloutExecutionDetail: rolloutExecutionDetail,
 		Integrations:           integrations,
+		Releases:               releases,
+		ReleaseAnalysis:        releaseAnalysis,
+		ConfigSets:             configSets,
+		DatabaseConnections:    databaseConnections,
+		DatabaseConnectionTests: databaseConnectionTests,
+		DatabaseChanges:        databaseChanges,
+		DatabaseChecks:         databaseChecks,
+		DatabaseExecutions:     databaseExecutions,
 	}})
 }
 
@@ -204,14 +262,14 @@ func (s *HTTPServer) getGraphPageState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, types.ItemResponse[types.GraphPageState]{Data: types.GraphPageState{
-		GraphRelationships: graphRelationships,
-		Catalog:            catalog,
-		Integrations:       integrations,
-		Projects:           projects,
-		Teams:              teams,
-		Repositories:       repositories,
+		GraphRelationships:  graphRelationships,
+		Catalog:             catalog,
+		Integrations:        integrations,
+		Projects:            projects,
+		Teams:               teams,
+		Repositories:        repositories,
 		DiscoveredResources: discoveredResources,
-		Changes:            changes,
+		Changes:             changes,
 	}})
 }
 

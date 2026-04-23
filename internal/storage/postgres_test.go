@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -162,6 +161,170 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 	}
 	if err := store.CreateChangeSet(ctx, change); err != nil {
 		t.Fatal(err)
+	}
+
+	configSet := types.ConfigSet{
+		BaseRecord:     types.BaseRecord{ID: "cfg_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID: org.ID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "production-app",
+		Version:        "v1",
+		Status:         "active",
+		Entries: []types.ConfigEntry{
+			{Key: "DB_PASSWORD_REF", Value: "prod/checkout/db/password", ValueType: "secret_ref", Required: true},
+			{Key: "FEATURE_FLAG_CHECKOUT_GUARD", Value: "enabled", ValueType: "literal"},
+		},
+	}
+	if err := store.CreateConfigSet(ctx, configSet); err != nil {
+		t.Fatal(err)
+	}
+
+	release := types.Release{
+		BaseRecord:     types.BaseRecord{ID: "rel_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID: org.ID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		Name:           "April Production Bundle",
+		Summary:        "Governed release bundle",
+		ChangeSetIDs:   []string{change.ID},
+		ConfigSetIDs:   []string{configSet.ID},
+		Version:        "2026.04.23",
+		Status:         "draft",
+	}
+	if err := store.CreateRelease(ctx, release); err != nil {
+		t.Fatal(err)
+	}
+
+	databaseChange := types.DatabaseChange{
+		BaseRecord:             types.BaseRecord{ID: "dbchg_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:         org.ID,
+		ProjectID:              project.ID,
+		EnvironmentID:          environment.ID,
+		ServiceID:              service.ID,
+		ChangeSetID:            change.ID,
+		Name:                   "Expand checkout schema",
+		Datastore:              "checkout-primary",
+		OperationType:          "schema_change",
+		ExecutionIntent:        "pre_deploy",
+		Compatibility:          "expand_contract",
+		Reversibility:          "reversible",
+		RiskLevel:              types.RiskLevelHigh,
+		ManualApprovalRequired: true,
+		Status:                 "defined",
+		Summary:                "Add nullable columns before application rollout",
+		Evidence:               []string{"ticket:DB-42"},
+	}
+	if err := store.CreateDatabaseChange(ctx, databaseChange); err != nil {
+		t.Fatal(err)
+	}
+
+	databaseCheck := types.DatabaseValidationCheck{
+		BaseRecord:       types.BaseRecord{ID: "dbchk_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:   org.ID,
+		ProjectID:        project.ID,
+		EnvironmentID:    environment.ID,
+		ServiceID:        service.ID,
+		ChangeSetID:      change.ID,
+		DatabaseChangeID: databaseChange.ID,
+		Name:             "Pre-deploy compatibility check",
+		Phase:            "pre_deploy",
+		CheckType:        "compatibility_check",
+		ReadOnly:         true,
+		Required:         true,
+		ExecutionMode:    "manual_attestation",
+		Specification:    "Confirm compatibility with the currently deployed application version",
+		Status:           "defined",
+		Summary:          "Awaiting manual DBA review",
+	}
+	if err := store.CreateDatabaseValidationCheck(ctx, databaseCheck); err != nil {
+		t.Fatal(err)
+	}
+
+	connectionRef := types.DatabaseConnectionReference{
+		BaseRecord:      types.BaseRecord{ID: "dbconn_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:  org.ID,
+		ProjectID:       project.ID,
+		EnvironmentID:   environment.ID,
+		ServiceID:       service.ID,
+		Name:            "checkout-primary-secret-ref",
+		Datastore:       "checkout-primary",
+		Driver:          "postgres",
+		SourceType:      "secret_ref_dsn",
+		SecretRef:       "prod/checkout/db/runtime_dsn",
+		SecretRefEnv:    "CCP_CHECKOUT_RUNTIME_DSN",
+		ReadOnlyCapable: true,
+		Status:          "defined",
+		Summary:         "Secret-ref-backed runtime DB connection",
+	}
+	if err := store.CreateDatabaseConnectionReference(ctx, connectionRef); err != nil {
+		t.Fatal(err)
+	}
+	loadedConnectionRef, err := store.GetDatabaseConnectionReference(ctx, connectionRef.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedConnectionRef.SecretRef != connectionRef.SecretRef || loadedConnectionRef.SecretRefEnv != connectionRef.SecretRefEnv {
+		t.Fatalf("expected secret-ref connection fields to round-trip, got %+v", loadedConnectionRef)
+	}
+	if loadedConnectionRef.DSNEnv != "" {
+		t.Fatalf("expected secret-ref connection to leave dsn env empty, got %+v", loadedConnectionRef)
+	}
+
+	envConnectionRef := types.DatabaseConnectionReference{
+		BaseRecord:      types.BaseRecord{ID: "dbconn_env_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:  org.ID,
+		ProjectID:       project.ID,
+		EnvironmentID:   environment.ID,
+		ServiceID:       service.ID,
+		Name:            "checkout-primary-env",
+		Datastore:       "checkout-primary",
+		Driver:          "postgres",
+		SourceType:      "env_dsn",
+		DSNEnv:          "CCP_CHECKOUT_DATABASE_DSN",
+		ReadOnlyCapable: true,
+		Status:          "defined",
+		Summary:         "Env-var-backed runtime DB connection",
+	}
+	if err := store.CreateDatabaseConnectionReference(ctx, envConnectionRef); err != nil {
+		t.Fatal(err)
+	}
+	loadedEnvConnectionRef, err := store.GetDatabaseConnectionReference(ctx, envConnectionRef.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loadedEnvConnectionRef.DSNEnv != envConnectionRef.DSNEnv || loadedEnvConnectionRef.SecretRef != "" || loadedEnvConnectionRef.SecretRefEnv != "" {
+		t.Fatalf("expected env-backed connection fields to round-trip without secret fields, got %+v", loadedEnvConnectionRef)
+	}
+
+	connectionTest := types.DatabaseConnectionTest{
+		BaseRecord:      types.BaseRecord{ID: "dbct_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:  org.ID,
+		ProjectID:       project.ID,
+		EnvironmentID:   environment.ID,
+		ServiceID:       service.ID,
+		ConnectionRefID: connectionRef.ID,
+		Trigger:         "manual",
+		Status:          "passed",
+		Summary:         "database connection checkout-primary-secret-ref is ready for read-only validation",
+		Details:         []string{"source=secret_ref_dsn:prod/checkout/db/runtime_dsn", "resolved_via_env=CCP_CHECKOUT_RUNTIME_DSN"},
+		StartedAt:       now,
+		CompletedAt:     timePointer(now),
+	}
+	if err := store.CreateDatabaseConnectionTest(ctx, connectionTest); err != nil {
+		t.Fatal(err)
+	}
+	loadedConnectionTests, err := store.ListDatabaseConnectionTests(ctx, DatabaseConnectionTestQuery{
+		OrganizationID:  org.ID,
+		ConnectionRefID: connectionRef.ID,
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loadedConnectionTests) != 1 || loadedConnectionTests[0].ID != connectionTest.ID {
+		t.Fatalf("expected connection tests to round-trip, got %+v", loadedConnectionTests)
 	}
 
 	assessment := types.RiskAssessment{
@@ -346,6 +509,7 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 		OrganizationID:  org.ID,
 		ProjectID:       project.ID,
 		RolloutPlanID:   plan.ID,
+		ReleaseID:       release.ID,
 		ChangeSetID:     change.ID,
 		ServiceID:       service.ID,
 		EnvironmentID:   environment.ID,
@@ -574,6 +738,67 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 	if executions[0].BackendType != "simulated" || executions[0].ProgressPercent != 60 {
 		t.Fatalf("expected runtime fields to persist, got %+v", executions[0])
 	}
+	if executions[0].ReleaseID != release.ID {
+		t.Fatalf("expected rollout execution release link to persist, got %+v", executions[0])
+	}
+
+	configSets, err := store.ListConfigSets(ctx, ConfigSetQuery{OrganizationID: org.ID, ProjectID: project.ID, EnvironmentID: environment.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(configSets) != 1 || configSets[0].ID != configSet.ID {
+		t.Fatalf("unexpected config sets payload: %+v", configSets)
+	}
+	if len(configSets[0].Entries) != 2 || configSets[0].Entries[0].Key == "" {
+		t.Fatalf("expected config set entries to persist, got %+v", configSets[0])
+	}
+
+	releases, err := store.ListReleases(ctx, ReleaseQuery{OrganizationID: org.ID, ProjectID: project.ID, EnvironmentID: environment.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(releases) != 1 || releases[0].ID != release.ID {
+		t.Fatalf("unexpected releases payload: %+v", releases)
+	}
+	if len(releases[0].ChangeSetIDs) != 1 || releases[0].ChangeSetIDs[0] != change.ID || len(releases[0].ConfigSetIDs) != 1 || releases[0].ConfigSetIDs[0] != configSet.ID {
+		t.Fatalf("expected release bundle composition to persist, got %+v", releases[0])
+	}
+
+	databaseChanges, err := store.ListDatabaseChanges(ctx, DatabaseChangeQuery{OrganizationID: org.ID, ProjectID: project.ID, EnvironmentID: environment.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(databaseChanges) != 1 || databaseChanges[0].ID != databaseChange.ID {
+		t.Fatalf("unexpected database changes payload: %+v", databaseChanges)
+	}
+	if databaseChanges[0].Datastore != "checkout-primary" || len(databaseChanges[0].Evidence) != 1 {
+		t.Fatalf("expected database change evidence to persist, got %+v", databaseChanges[0])
+	}
+
+	databaseChecks, err := store.ListDatabaseValidationChecks(ctx, DatabaseValidationCheckQuery{OrganizationID: org.ID, DatabaseChangeID: databaseChange.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(databaseChecks) != 1 || databaseChecks[0].ID != databaseCheck.ID {
+		t.Fatalf("unexpected database validation checks payload: %+v", databaseChecks)
+	}
+
+	databaseCheck.Status = "passed"
+	passedAt := now.Add(10 * time.Minute)
+	databaseCheck.LastRunAt = &passedAt
+	databaseCheck.LastResultSummary = "Compatibility confirmed"
+	databaseCheck.UpdatedAt = passedAt
+	if err := store.UpdateDatabaseValidationCheck(ctx, databaseCheck); err != nil {
+		t.Fatal(err)
+	}
+
+	updatedDatabaseCheck, err := store.GetDatabaseValidationCheck(ctx, databaseCheck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedDatabaseCheck.Status != "passed" || updatedDatabaseCheck.LastRunAt == nil || updatedDatabaseCheck.LastResultSummary != "Compatibility confirmed" {
+		t.Fatalf("expected updated database validation check to persist, got %+v", updatedDatabaseCheck)
+	}
 
 	verifications, err := store.ListVerificationResults(ctx, VerificationResultQuery{OrganizationID: org.ID, RolloutExecutionID: execution.ID})
 	if err != nil {
@@ -736,6 +961,67 @@ func TestPostgresStoreStatusEventFiltersAndNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	change := types.ChangeSet{
+		BaseRecord:     types.BaseRecord{ID: "chg_status_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID: org.ID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Summary:        "Release checkout with rollback filter coverage",
+		ChangeTypes:    []string{"code"},
+		FileCount:      3,
+		ResourceCount:  1,
+		Status:         "ingested",
+	}
+	if err := store.CreateChangeSet(ctx, change); err != nil {
+		t.Fatal(err)
+	}
+	assessment := types.RiskAssessment{
+		BaseRecord:                 types.BaseRecord{ID: "risk_status_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:             org.ID,
+		ProjectID:                  project.ID,
+		ChangeSetID:                change.ID,
+		ServiceID:                  service.ID,
+		EnvironmentID:              environment.ID,
+		Score:                      66,
+		Level:                      types.RiskLevelHigh,
+		BlastRadius:                types.BlastRadius{Scope: "service", ServicesImpacted: 1, ResourcesImpacted: 1, Summary: "service impact"},
+		RecommendedApprovalLevel:   "platform-owner",
+		RecommendedRolloutStrategy: "canary",
+	}
+	if err := store.CreateRiskAssessment(ctx, assessment); err != nil {
+		t.Fatal(err)
+	}
+	plan := types.RolloutPlan{
+		BaseRecord:       types.BaseRecord{ID: "roll_status_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:   org.ID,
+		ProjectID:        project.ID,
+		ChangeSetID:      change.ID,
+		RiskAssessmentID: assessment.ID,
+		Strategy:         "canary",
+		ApprovalRequired: true,
+		ApprovalLevel:    "platform-owner",
+	}
+	if err := store.CreateRolloutPlan(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+	execution := types.RolloutExecution{
+		BaseRecord:     types.BaseRecord{ID: "exec_rollback_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID: org.ID,
+		ProjectID:      project.ID,
+		RolloutPlanID:  plan.ID,
+		ChangeSetID:    change.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		BackendType:    "simulated",
+		BackendStatus:  "rolled_back",
+		Status:         "rolled_back",
+		CurrentStep:    "rollback",
+	}
+	if err := store.CreateRolloutExecution(ctx, execution); err != nil {
+		t.Fatal(err)
+	}
+
 	rollbackEvent := types.StatusEvent{
 		BaseRecord:         types.BaseRecord{ID: "status_rollback_pg", CreatedAt: now, UpdatedAt: now},
 		OrganizationID:     org.ID,
@@ -861,6 +1147,16 @@ func TestPostgresStoreUpdateOutboxEventIfStatusHonorsExpectedStatus(t *testing.T
 
 	ctx := context.Background()
 	now := time.Now().UTC()
+	org := types.Organization{
+		BaseRecord: types.BaseRecord{ID: "org_pg_compare", CreatedAt: now, UpdatedAt: now},
+		Name:       "Compare Org",
+		Slug:       "compare-org",
+		Tier:       "growth",
+		Mode:       "startup",
+	}
+	if err := store.CreateOrganization(ctx, org); err != nil {
+		t.Fatal(err)
+	}
 	event := types.OutboxEvent{
 		BaseRecord: types.BaseRecord{
 			ID:        "evt_pg_compare_and_update",
@@ -1318,7 +1614,7 @@ func TestPostgresStoreFreshBootstrapAppliesMigrations(t *testing.T) {
 		t.Fatalf("expected %d applied migrations on fresh bootstrap, got %d", expectedMigrations, appliedCount)
 	}
 
-	if err := ApplyMigrations(context.Background(), store.db, filepath.Join("db", "migrations")); err != nil {
+	if err := ApplyMigrations(context.Background(), store.db, DefaultMigrationsDir()); err != nil {
 		t.Fatalf("expected migration replay to be idempotent, got %v", err)
 	}
 	var replayedCount int
@@ -1403,7 +1699,7 @@ func postgresTestDSN() string {
 
 func countMigrationFiles(t *testing.T) int {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join("db", "migrations"))
+	entries, err := os.ReadDir(DefaultMigrationsDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1454,4 +1750,8 @@ func createTemporaryDatabase(sourceDSN string) (string, func(), error) {
 	}
 
 	return fresh.String(), cleanup, nil
+}
+
+func timePointer(value time.Time) *time.Time {
+	return &value
 }

@@ -59,6 +59,18 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return handleService(ctx, c, session, args[1:], stdout, stderr)
 	case "env":
 		return handleEnvironment(ctx, c, session, args[1:], stdout, stderr)
+	case "config-set":
+		return handleConfigSet(ctx, c, session, args[1:], stdout, stderr)
+	case "release":
+		return handleRelease(ctx, c, session, args[1:], stdout, stderr)
+	case "db-connection":
+		return handleDatabaseConnection(ctx, c, session, args[1:], stdout, stderr)
+	case "db-change":
+		return handleDatabaseChange(ctx, c, session, args[1:], stdout, stderr)
+	case "db-check":
+		return handleDatabaseCheck(ctx, c, session, args[1:], stdout, stderr)
+	case "db-execution":
+		return handleDatabaseExecution(ctx, c, session, args[1:], stdout, stderr)
 	case "service-account":
 		return handleServiceAccount(ctx, c, session, args[1:], stdout, stderr)
 	case "token":
@@ -471,6 +483,665 @@ func handleEnvironment(ctx context.Context, c *client.Client, session cliSession
 	}
 }
 
+func handleConfigSet(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		result, err := c.ListConfigSets(ctx)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("config-set show", flag.ExitOnError)
+		id := fs.String("id", "", "config set id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetConfigSet(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "create":
+		fs := flag.NewFlagSet("config-set create", flag.ExitOnError)
+		orgID := fs.String("org", session.OrganizationID, "organization id")
+		projectID := fs.String("project", "", "project id")
+		environmentID := fs.String("env", "", "environment id")
+		serviceID := fs.String("service", "", "service id")
+		name := fs.String("name", "", "config set name")
+		version := fs.String("version", "", "config set version")
+		entriesJSON := fs.String("entries-json", "[]", "config entries as JSON array")
+		_ = fs.Parse(args[1:])
+		entries, err := parseConfigEntriesJSON(*entriesJSON)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		c.SetOrganizationID(*orgID)
+		result, err := c.CreateConfigSet(ctx, types.CreateConfigSetRequest{
+			OrganizationID: *orgID,
+			ProjectID:      *projectID,
+			EnvironmentID:  *environmentID,
+			ServiceID:      *serviceID,
+			Name:           *name,
+			Version:        *version,
+			Entries:        entries,
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "update":
+		fs := flag.NewFlagSet("config-set update", flag.ExitOnError)
+		id := fs.String("id", "", "config set id")
+		name := fs.String("name", "", "config set name")
+		version := fs.String("version", "", "config set version")
+		status := fs.String("status", "", "config set status")
+		entriesJSON := fs.String("entries-json", "", "config entries as JSON array")
+		_ = fs.Parse(args[1:])
+		req := types.UpdateConfigSetRequest{}
+		if *name != "" {
+			req.Name = name
+		}
+		if *version != "" {
+			req.Version = version
+		}
+		if *status != "" {
+			req.Status = status
+		}
+		if strings.TrimSpace(*entriesJSON) != "" {
+			entries, err := parseConfigEntriesJSON(*entriesJSON)
+			if !exitOnErr(stderr, err) {
+				return 1
+			}
+			req.Entries = &entries
+		}
+		result, err := c.UpdateConfigSet(ctx, *id, req)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
+func handleRelease(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		result, err := c.ListReleases(ctx)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("release show", flag.ExitOnError)
+		id := fs.String("id", "", "release id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetRelease(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "create":
+		fs := flag.NewFlagSet("release create", flag.ExitOnError)
+		orgID := fs.String("org", session.OrganizationID, "organization id")
+		projectID := fs.String("project", "", "project id")
+		environmentID := fs.String("env", "", "environment id")
+		name := fs.String("name", "", "release name")
+		summary := fs.String("summary", "", "release summary")
+		version := fs.String("version", "", "release version")
+		changes := fs.String("changes", "", "comma-separated change set ids")
+		configSets := fs.String("config-sets", "", "comma-separated config set ids")
+		_ = fs.Parse(args[1:])
+		c.SetOrganizationID(*orgID)
+		result, err := c.CreateRelease(ctx, types.CreateReleaseRequest{
+			OrganizationID: *orgID,
+			ProjectID:      *projectID,
+			EnvironmentID:  *environmentID,
+			Name:           *name,
+			Summary:        *summary,
+			ChangeSetIDs:   splitCSV(*changes),
+			ConfigSetIDs:   splitCSV(*configSets),
+			Version:        *version,
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "update":
+		fs := flag.NewFlagSet("release update", flag.ExitOnError)
+		id := fs.String("id", "", "release id")
+		name := fs.String("name", "", "release name")
+		summary := fs.String("summary", "", "release summary")
+		version := fs.String("version", "", "release version")
+		status := fs.String("status", "", "release status")
+		changes := fs.String("changes", "", "comma-separated change set ids")
+		configSets := fs.String("config-sets", "", "comma-separated config set ids")
+		_ = fs.Parse(args[1:])
+		req := types.UpdateReleaseRequest{}
+		if *name != "" {
+			req.Name = name
+		}
+		if *summary != "" {
+			req.Summary = summary
+		}
+		if *version != "" {
+			req.Version = version
+		}
+		if *status != "" {
+			req.Status = status
+		}
+		if strings.TrimSpace(*changes) != "" {
+			changeIDs := splitCSV(*changes)
+			req.ChangeSetIDs = &changeIDs
+		}
+		if strings.TrimSpace(*configSets) != "" {
+			configSetIDs := splitCSV(*configSets)
+			req.ConfigSetIDs = &configSetIDs
+		}
+		result, err := c.UpdateRelease(ctx, *id, req)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
+func handleDatabaseChange(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		result, err := c.ListDatabaseChanges(ctx)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("db-change show", flag.ExitOnError)
+		id := fs.String("id", "", "database change id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetDatabaseChange(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "create":
+		fs := flag.NewFlagSet("db-change create", flag.ExitOnError)
+		orgID := fs.String("org", session.OrganizationID, "organization id")
+		projectID := fs.String("project", "", "project id")
+		environmentID := fs.String("env", "", "environment id")
+		serviceID := fs.String("service", "", "service id")
+		changeSetID := fs.String("change", "", "change set id")
+		name := fs.String("name", "", "database change name")
+		datastore := fs.String("datastore", "", "target datastore")
+		operationType := fs.String("operation", "schema_change", "operation type")
+		executionIntent := fs.String("intent", "pre_deploy", "execution intent")
+		compatibility := fs.String("compatibility", "backward_compatible", "compatibility posture")
+		reversibility := fs.String("reversibility", "reversible", "reversibility posture")
+		riskLevel := fs.String("risk", "medium", "database risk level")
+		lockRisk := fs.Bool("lock-risk", false, "mark the database change as lock-risk")
+		manualApproval := fs.Bool("manual-approval", false, "require manual approval")
+		summary := fs.String("summary", "", "database change summary")
+		evidence := fs.String("evidence", "", "comma-separated evidence notes")
+		_ = fs.Parse(args[1:])
+		c.SetOrganizationID(*orgID)
+		result, err := c.CreateDatabaseChange(ctx, types.CreateDatabaseChangeRequest{
+			OrganizationID:         *orgID,
+			ProjectID:              *projectID,
+			EnvironmentID:          *environmentID,
+			ServiceID:              *serviceID,
+			ChangeSetID:            *changeSetID,
+			Name:                   *name,
+			Datastore:              *datastore,
+			OperationType:          *operationType,
+			ExecutionIntent:        *executionIntent,
+			Compatibility:          *compatibility,
+			Reversibility:          *reversibility,
+			RiskLevel:              types.RiskLevel(strings.ToLower(strings.TrimSpace(*riskLevel))),
+			LockRisk:               *lockRisk,
+			ManualApprovalRequired: *manualApproval,
+			Summary:                *summary,
+			Evidence:               splitCSV(*evidence),
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "update":
+		fs := flag.NewFlagSet("db-change update", flag.ExitOnError)
+		id := fs.String("id", "", "database change id")
+		name := fs.String("name", "", "database change name")
+		datastore := fs.String("datastore", "", "target datastore")
+		operationType := fs.String("operation", "", "operation type")
+		executionIntent := fs.String("intent", "", "execution intent")
+		compatibility := fs.String("compatibility", "", "compatibility posture")
+		reversibility := fs.String("reversibility", "", "reversibility posture")
+		riskLevel := fs.String("risk", "", "database risk level")
+		status := fs.String("status", "", "database change status")
+		lockRisk := fs.Bool("lock-risk", false, "mark the database change as lock-risk")
+		manualApproval := fs.Bool("manual-approval", false, "require manual approval")
+		summary := fs.String("summary", "", "database change summary")
+		evidence := fs.String("evidence", "", "comma-separated evidence notes")
+		_ = fs.Parse(args[1:])
+		req := types.UpdateDatabaseChangeRequest{}
+		if *name != "" {
+			req.Name = name
+		}
+		if *datastore != "" {
+			req.Datastore = datastore
+		}
+		if *operationType != "" {
+			req.OperationType = operationType
+		}
+		if *executionIntent != "" {
+			req.ExecutionIntent = executionIntent
+		}
+		if *compatibility != "" {
+			req.Compatibility = compatibility
+		}
+		if *reversibility != "" {
+			req.Reversibility = reversibility
+		}
+		if *riskLevel != "" {
+			normalizedRisk := types.RiskLevel(strings.ToLower(strings.TrimSpace(*riskLevel)))
+			req.RiskLevel = &normalizedRisk
+		}
+		if *status != "" {
+			req.Status = status
+		}
+		if flagProvided(fs, "lock-risk") {
+			req.LockRisk = lockRisk
+		}
+		if flagProvided(fs, "manual-approval") {
+			req.ManualApprovalRequired = manualApproval
+		}
+		if *summary != "" {
+			req.Summary = summary
+		}
+		if strings.TrimSpace(*evidence) != "" {
+			evidenceItems := splitCSV(*evidence)
+			req.Evidence = &evidenceItems
+		}
+		result, err := c.UpdateDatabaseChange(ctx, *id, req)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
+func handleDatabaseConnection(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		result, err := c.ListDatabaseConnectionReferences(ctx)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("db-connection show", flag.ExitOnError)
+		id := fs.String("id", "", "database connection reference id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetDatabaseConnectionReference(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "create":
+		fs := flag.NewFlagSet("db-connection create", flag.ExitOnError)
+		orgID := fs.String("org", session.OrganizationID, "organization id")
+		projectID := fs.String("project", "", "project id")
+		environmentID := fs.String("env", "", "environment id")
+		serviceID := fs.String("service", "", "service id")
+		name := fs.String("name", "", "connection reference name")
+		datastore := fs.String("datastore", "", "logical datastore name")
+		driver := fs.String("driver", "postgres", "database driver")
+		sourceType := fs.String("source-type", "env_dsn", "connection source type")
+		dsnEnv := fs.String("dsn-env", "CCP_DB_DSN", "env var name holding the database DSN")
+		secretRef := fs.String("secret-ref", "", "secret reference for DSN-backed sources")
+		secretRefEnv := fs.String("secret-ref-env", "", "env var name that resolves the logical secret reference at runtime")
+		readOnlyCapable := fs.Bool("read-only-capable", true, "mark this reference as read-only capable")
+		summary := fs.String("summary", "", "connection reference summary")
+		_ = fs.Parse(args[1:])
+		resolvedDSNEnv := *dsnEnv
+		if *sourceType == "secret_ref_dsn" && !flagProvided(fs, "dsn-env") {
+			resolvedDSNEnv = ""
+		}
+		resolvedSecretRefEnv := *secretRefEnv
+		c.SetOrganizationID(*orgID)
+		result, err := c.CreateDatabaseConnectionReference(ctx, types.CreateDatabaseConnectionReferenceRequest{
+			OrganizationID:  *orgID,
+			ProjectID:       *projectID,
+			EnvironmentID:   *environmentID,
+			ServiceID:       *serviceID,
+			Name:            *name,
+			Datastore:       *datastore,
+			Driver:          *driver,
+			SourceType:      *sourceType,
+			DSNEnv:          resolvedDSNEnv,
+			SecretRef:       *secretRef,
+			SecretRefEnv:    resolvedSecretRefEnv,
+			ReadOnlyCapable: *readOnlyCapable,
+			Summary:         *summary,
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "update":
+		fs := flag.NewFlagSet("db-connection update", flag.ExitOnError)
+		id := fs.String("id", "", "database connection reference id")
+		name := fs.String("name", "", "connection reference name")
+		datastore := fs.String("datastore", "", "logical datastore name")
+		driver := fs.String("driver", "", "database driver")
+		sourceType := fs.String("source-type", "", "connection source type")
+		dsnEnv := fs.String("dsn-env", "", "env var name holding the database DSN")
+		secretRef := fs.String("secret-ref", "", "secret reference for DSN-backed sources")
+		secretRefEnv := fs.String("secret-ref-env", "", "env var name that resolves the logical secret reference at runtime")
+		readOnlyCapable := fs.Bool("read-only-capable", true, "mark this reference as read-only capable")
+		summary := fs.String("summary", "", "connection reference summary")
+		_ = fs.Parse(args[1:])
+		req := types.UpdateDatabaseConnectionReferenceRequest{}
+		if *name != "" {
+			req.Name = name
+		}
+		if *datastore != "" {
+			req.Datastore = datastore
+		}
+		if *driver != "" {
+			req.Driver = driver
+		}
+		if *sourceType != "" {
+			req.SourceType = sourceType
+			if *sourceType == "env_dsn" && !flagProvided(fs, "secret-ref") {
+				empty := ""
+				req.SecretRef = &empty
+			}
+			if *sourceType == "env_dsn" && !flagProvided(fs, "secret-ref-env") {
+				empty := ""
+				req.SecretRefEnv = &empty
+			}
+			if *sourceType == "secret_ref_dsn" && !flagProvided(fs, "dsn-env") {
+				empty := ""
+				req.DSNEnv = &empty
+			}
+		}
+		if *dsnEnv != "" {
+			req.DSNEnv = dsnEnv
+		}
+		if *secretRef != "" {
+			req.SecretRef = secretRef
+		}
+		if *secretRefEnv != "" {
+			req.SecretRefEnv = secretRefEnv
+		}
+		if flagProvided(fs, "read-only-capable") {
+			req.ReadOnlyCapable = readOnlyCapable
+		}
+		if *summary != "" {
+			req.Summary = summary
+		}
+		result, err := c.UpdateDatabaseConnectionReference(ctx, *id, req)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "test":
+		fs := flag.NewFlagSet("db-connection test", flag.ExitOnError)
+		id := fs.String("id", "", "database connection reference id")
+		trigger := fs.String("trigger", "manual", "test trigger")
+		_ = fs.Parse(args[1:])
+		result, err := c.TestDatabaseConnectionReference(ctx, *id, types.TestDatabaseConnectionReferenceRequest{
+			Trigger: *trigger,
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
+func handleDatabaseCheck(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		result, err := c.ListDatabaseValidationChecks(ctx)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("db-check show", flag.ExitOnError)
+		id := fs.String("id", "", "database validation check id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetDatabaseValidationCheck(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "create":
+		fs := flag.NewFlagSet("db-check create", flag.ExitOnError)
+		orgID := fs.String("org", session.OrganizationID, "organization id")
+		projectID := fs.String("project", "", "project id")
+		environmentID := fs.String("env", "", "environment id")
+		serviceID := fs.String("service", "", "service id")
+		changeSetID := fs.String("change", "", "change set id")
+		databaseChangeID := fs.String("db-change", "", "database change id")
+		connectionRefID := fs.String("conn-ref", "", "database connection reference id")
+		name := fs.String("name", "", "database check name")
+		phase := fs.String("phase", "pre_deploy", "validation phase")
+		checkType := fs.String("type", "migration_completion", "validation check type")
+		readOnly := fs.Bool("read-only", true, "mark the check as read only")
+		required := fs.Bool("required", true, "require this check")
+		executionMode := fs.String("mode", "manual_attestation", "execution mode")
+		status := fs.String("status", "defined", "validation check status")
+		specification := fs.String("spec", "", "operator-facing validation specification")
+		summary := fs.String("summary", "", "validation check summary")
+		evidence := fs.String("evidence", "", "comma-separated evidence notes")
+		_ = fs.Parse(args[1:])
+		c.SetOrganizationID(*orgID)
+		result, err := c.CreateDatabaseValidationCheck(ctx, types.CreateDatabaseValidationCheckRequest{
+			OrganizationID:   *orgID,
+			ProjectID:        *projectID,
+			EnvironmentID:    *environmentID,
+			ServiceID:        *serviceID,
+			ChangeSetID:      *changeSetID,
+			DatabaseChangeID: *databaseChangeID,
+			ConnectionRefID:  *connectionRefID,
+			Name:             *name,
+			Phase:            *phase,
+			CheckType:        *checkType,
+			ReadOnly:         *readOnly,
+			Required:         *required,
+			ExecutionMode:    *executionMode,
+			Status:           *status,
+			Specification:    *specification,
+			Summary:          *summary,
+			Evidence:         splitCSV(*evidence),
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "update":
+		fs := flag.NewFlagSet("db-check update", flag.ExitOnError)
+		id := fs.String("id", "", "database validation check id")
+		databaseChangeID := fs.String("db-change", "", "database change id")
+		connectionRefID := fs.String("conn-ref", "", "database connection reference id")
+		name := fs.String("name", "", "database check name")
+		phase := fs.String("phase", "", "validation phase")
+		checkType := fs.String("type", "", "validation check type")
+		readOnly := fs.Bool("read-only", true, "mark the check as read only")
+		required := fs.Bool("required", true, "require this check")
+		executionMode := fs.String("mode", "", "execution mode")
+		status := fs.String("status", "", "validation check status")
+		specification := fs.String("spec", "", "operator-facing validation specification")
+		summary := fs.String("summary", "", "validation check summary")
+		resultSummary := fs.String("result", "", "latest validation result summary")
+		evidence := fs.String("evidence", "", "comma-separated evidence notes")
+		_ = fs.Parse(args[1:])
+		req := types.UpdateDatabaseValidationCheckRequest{}
+		if flagProvided(fs, "db-change") {
+			req.DatabaseChangeID = databaseChangeID
+		}
+		if flagProvided(fs, "conn-ref") {
+			req.ConnectionRefID = connectionRefID
+		}
+		if *name != "" {
+			req.Name = name
+		}
+		if *phase != "" {
+			req.Phase = phase
+		}
+		if *checkType != "" {
+			req.CheckType = checkType
+		}
+		if flagProvided(fs, "read-only") {
+			req.ReadOnly = readOnly
+		}
+		if flagProvided(fs, "required") {
+			req.Required = required
+		}
+		if *executionMode != "" {
+			req.ExecutionMode = executionMode
+		}
+		if *status != "" {
+			req.Status = status
+		}
+		if *specification != "" {
+			req.Specification = specification
+		}
+		if *summary != "" {
+			req.Summary = summary
+		}
+		if *resultSummary != "" {
+			req.LastResultSummary = resultSummary
+		}
+		if strings.TrimSpace(*evidence) != "" {
+			evidenceItems := splitCSV(*evidence)
+			req.Evidence = &evidenceItems
+		}
+		result, err := c.UpdateDatabaseValidationCheck(ctx, *id, req)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "execute":
+		fs := flag.NewFlagSet("db-check execute", flag.ExitOnError)
+		id := fs.String("id", "", "database validation check id")
+		trigger := fs.String("trigger", "manual", "execution trigger")
+		_ = fs.Parse(args[1:])
+		result, err := c.ExecuteDatabaseValidationCheck(ctx, *id, types.ExecuteDatabaseValidationCheckRequest{
+			Trigger: *trigger,
+		})
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
+func handleDatabaseExecution(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		usage(stdout)
+		return 1
+	}
+	c.SetOrganizationID(session.OrganizationID)
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("db-execution list", flag.ExitOnError)
+		checkID := fs.String("check", "", "database validation check id")
+		connectionRefID := fs.String("conn-ref", "", "database connection reference id")
+		status := fs.String("status", "", "execution status")
+		_ = fs.Parse(args[1:])
+		values := url.Values{}
+		if strings.TrimSpace(*checkID) != "" {
+			values.Set("validation_check_id", *checkID)
+		}
+		if strings.TrimSpace(*connectionRefID) != "" {
+			values.Set("connection_ref_id", *connectionRefID)
+		}
+		if strings.TrimSpace(*status) != "" {
+			values.Set("status", *status)
+		}
+		result, err := c.ListDatabaseValidationExecutions(ctx, values.Encode())
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("db-execution show", flag.ExitOnError)
+		id := fs.String("id", "", "database validation execution id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetDatabaseValidationExecution(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
+		return 1
+	}
+}
+
 func handleChange(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		usage(stdout)
@@ -602,8 +1273,16 @@ func handleRollout(ctx context.Context, c *client.Client, session cliSession, ar
 	case "execute":
 		fs := flag.NewFlagSet("rollout execute", flag.ExitOnError)
 		planID := fs.String("plan", "", "rollout plan id")
+		releaseID := fs.String("release", "", "optional release bundle id")
+		backendType := fs.String("backend", "", "backend type")
+		signalType := fs.String("signal", "", "signal provider type")
 		_ = fs.Parse(args[1:])
-		result, err := c.CreateRolloutExecution(ctx, types.CreateRolloutExecutionRequest{RolloutPlanID: *planID})
+		result, err := c.CreateRolloutExecution(ctx, types.CreateRolloutExecutionRequest{
+			RolloutPlanID:      *planID,
+			ReleaseID:          *releaseID,
+			BackendType:        *backendType,
+			SignalProviderType: *signalType,
+		})
 		if !exitOnErr(stderr, err) {
 			return 1
 		}
@@ -2145,6 +2824,17 @@ func splitCSV(raw string) []string {
 	return items
 }
 
+func parseConfigEntriesJSON(raw string) ([]types.ConfigEntry, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var entries []types.ConfigEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, fmt.Errorf("invalid entries-json payload: %w", err)
+	}
+	return entries, nil
+}
+
 func flagProvided(fs *flag.FlagSet, name string) bool {
 	provided := false
 	fs.Visit(func(f *flag.Flag) {
@@ -2184,6 +2874,19 @@ func usage(w io.Writer) {
   ccp env create --org <org_id> --project <project_id> --name production --slug prod --type production --production
   ccp env update --id <env_id> --name "Production"
   ccp env archive --id <env_id>
+  ccp config-set list
+  ccp config-set show --id <config_set_id>
+  ccp config-set create --org <org_id> --project <project_id> --env <env_id> --service <service_id> --name prod-app --version v1 --entries-json '[{"key":"DB_PASSWORD_REF","value":"prod/payments/db/password","value_type":"secret_ref"}]'
+  ccp release list
+  ccp release show --id <release_id>
+  ccp release create --org <org_id> --project <project_id> --env <env_id> --name "April bundle" --version 2026.04.23 --changes <change_id_1>,<change_id_2> --config-sets <config_set_id>
+  ccp db-connection list
+  ccp db-connection create --org <org_id> --project <project_id> --env <env_id> --name primary --datastore checkout-primary --source-type env_dsn --dsn-env CCP_DB_DSN --summary "Read-only validation reference"
+  ccp db-connection create --org <org_id> --project <project_id> --env <env_id> --name primary-secret-ref --datastore checkout-primary --source-type secret_ref_dsn --secret-ref prod/checkout/db/runtime_dsn --secret-ref-env CCP_CHECKOUT_RUNTIME_DSN --summary "Logical secret-ref-backed read-only validation reference"
+  ccp db-connection test --id <database_connection_ref_id>
+  ccp db-check create --org <org_id> --project <project_id> --env <env_id> --change <change_id> --conn-ref <db_connection_ref_id> --name "Orders table exists" --type existence_assertion --mode runtime_read_only --spec '{"subject":"table","schema":"public","table":"organizations"}' --summary "Confirm the table exists before rollout"
+  ccp db-check execute --id <database_check_id>
+  ccp db-execution list --check <database_check_id>
   ccp service-account create --org <org_id> --name deployer --role org_member
   ccp service-account list
   ccp token issue --service-account <service_account_id> --name primary
@@ -2194,7 +2897,7 @@ func usage(w io.Writer) {
   ccp risk list
   ccp rollout-plan list
   ccp rollout plan --change <change_id>
-  ccp rollout execute --plan <rollout_plan_id>
+  ccp rollout execute --plan <rollout_plan_id> --release <release_id>
   ccp rollout list
   ccp rollout show --id <rollout_execution_id>
   ccp rollout status --id <rollout_execution_id>

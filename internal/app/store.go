@@ -21,6 +21,13 @@ type InMemoryStore struct {
 	changeSets           map[string]types.ChangeSet
 	riskAssessments      map[string]types.RiskAssessment
 	rolloutPlans         map[string]types.RolloutPlan
+	configSets           map[string]types.ConfigSet
+	releases             map[string]types.Release
+	databaseChanges      map[string]types.DatabaseChange
+	databaseChecks       map[string]types.DatabaseValidationCheck
+	databaseConnections  map[string]types.DatabaseConnectionReference
+	databaseConnectionTests map[string]types.DatabaseConnectionTest
+	databaseExecutions   map[string]types.DatabaseValidationExecution
 	rolloutExecutions    map[string]types.RolloutExecution
 	verificationResults  map[string]types.VerificationResult
 	signalSnapshots      map[string]types.SignalSnapshot
@@ -57,6 +64,13 @@ func NewInMemoryStore() *InMemoryStore {
 		changeSets:           make(map[string]types.ChangeSet),
 		riskAssessments:      make(map[string]types.RiskAssessment),
 		rolloutPlans:         make(map[string]types.RolloutPlan),
+		configSets:           make(map[string]types.ConfigSet),
+		releases:             make(map[string]types.Release),
+		databaseChanges:      make(map[string]types.DatabaseChange),
+		databaseChecks:       make(map[string]types.DatabaseValidationCheck),
+		databaseConnections:  make(map[string]types.DatabaseConnectionReference),
+		databaseConnectionTests: make(map[string]types.DatabaseConnectionTest),
+		databaseExecutions:   make(map[string]types.DatabaseValidationExecution),
 		rolloutExecutions:    make(map[string]types.RolloutExecution),
 		verificationResults:  make(map[string]types.VerificationResult),
 		signalSnapshots:      make(map[string]types.SignalSnapshot),
@@ -410,6 +424,408 @@ func (s *InMemoryStore) ListRolloutPlans(_ context.Context, query storage.Rollou
 		return true
 	})
 	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) CreateConfigSet(_ context.Context, configSet types.ConfigSet) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configSets[configSet.ID] = configSet
+	return nil
+}
+
+func (s *InMemoryStore) GetConfigSet(_ context.Context, id string) (types.ConfigSet, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	configSet, ok := s.configSets[id]
+	if !ok {
+		return types.ConfigSet{}, storage.ErrNotFound
+	}
+	return configSet, nil
+}
+
+func (s *InMemoryStore) ListConfigSets(_ context.Context, query storage.ConfigSetQuery) ([]types.ConfigSet, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.configSets, func(item types.ConfigSet) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateConfigSet(_ context.Context, configSet types.ConfigSet) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.configSets[configSet.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.configSets[configSet.ID] = configSet
+	return nil
+}
+
+func (s *InMemoryStore) CreateRelease(_ context.Context, release types.Release) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.releases[release.ID] = release
+	return nil
+}
+
+func (s *InMemoryStore) GetRelease(_ context.Context, id string) (types.Release, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	release, ok := s.releases[id]
+	if !ok {
+		return types.Release{}, storage.ErrNotFound
+	}
+	return release, nil
+}
+
+func (s *InMemoryStore) ListReleases(_ context.Context, query storage.ReleaseQuery) ([]types.Release, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.releases, func(item types.Release) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateRelease(_ context.Context, release types.Release) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.releases[release.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.releases[release.ID] = release
+	return nil
+}
+
+func (s *InMemoryStore) CreateDatabaseChange(_ context.Context, item types.DatabaseChange) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.databaseChanges[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) GetDatabaseChange(_ context.Context, id string) (types.DatabaseChange, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.databaseChanges[id]
+	if !ok {
+		return types.DatabaseChange{}, storage.ErrNotFound
+	}
+	return item, nil
+}
+
+func (s *InMemoryStore) ListDatabaseChanges(_ context.Context, query storage.DatabaseChangeQuery) ([]types.DatabaseChange, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.databaseChanges, func(item types.DatabaseChange) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.ChangeSetID != "" && item.ChangeSetID != query.ChangeSetID {
+			return false
+		}
+		if query.Datastore != "" && item.Datastore != query.Datastore {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateDatabaseChange(_ context.Context, item types.DatabaseChange) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.databaseChanges[item.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.databaseChanges[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) CreateDatabaseValidationCheck(_ context.Context, item types.DatabaseValidationCheck) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.databaseChecks[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) GetDatabaseValidationCheck(_ context.Context, id string) (types.DatabaseValidationCheck, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.databaseChecks[id]
+	if !ok {
+		return types.DatabaseValidationCheck{}, storage.ErrNotFound
+	}
+	return item, nil
+}
+
+func (s *InMemoryStore) ListDatabaseValidationChecks(_ context.Context, query storage.DatabaseValidationCheckQuery) ([]types.DatabaseValidationCheck, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.databaseChecks, func(item types.DatabaseValidationCheck) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.ChangeSetID != "" && item.ChangeSetID != query.ChangeSetID {
+			return false
+		}
+		if query.DatabaseChangeID != "" && item.DatabaseChangeID != query.DatabaseChangeID {
+			return false
+		}
+		if query.ConnectionRefID != "" && item.ConnectionRefID != query.ConnectionRefID {
+			return false
+		}
+		if query.Phase != "" && item.Phase != query.Phase {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateDatabaseValidationCheck(_ context.Context, item types.DatabaseValidationCheck) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.databaseChecks[item.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.databaseChecks[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) CreateDatabaseConnectionReference(_ context.Context, item types.DatabaseConnectionReference) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.databaseConnections[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) GetDatabaseConnectionReference(_ context.Context, id string) (types.DatabaseConnectionReference, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.databaseConnections[id]
+	if !ok {
+		return types.DatabaseConnectionReference{}, storage.ErrNotFound
+	}
+	return item, nil
+}
+
+func (s *InMemoryStore) ListDatabaseConnectionReferences(_ context.Context, query storage.DatabaseConnectionReferenceQuery) ([]types.DatabaseConnectionReference, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.databaseConnections, func(item types.DatabaseConnectionReference) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.Datastore != "" && item.Datastore != query.Datastore {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateDatabaseConnectionReference(_ context.Context, item types.DatabaseConnectionReference) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.databaseConnections[item.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.databaseConnections[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) CreateDatabaseConnectionTest(_ context.Context, item types.DatabaseConnectionTest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.databaseConnectionTests[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) GetDatabaseConnectionTest(_ context.Context, id string) (types.DatabaseConnectionTest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.databaseConnectionTests[id]
+	if !ok {
+		return types.DatabaseConnectionTest{}, storage.ErrNotFound
+	}
+	return item, nil
+}
+
+func (s *InMemoryStore) ListDatabaseConnectionTests(_ context.Context, query storage.DatabaseConnectionTestQuery) ([]types.DatabaseConnectionTest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.databaseConnectionTests, func(item types.DatabaseConnectionTest) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.ConnectionRefID != "" && item.ConnectionRefID != query.ConnectionRefID {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].StartedAt.Equal(items[j].StartedAt) {
+			return items[i].ID > items[j].ID
+		}
+		return items[i].StartedAt.After(items[j].StartedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateDatabaseConnectionTest(_ context.Context, item types.DatabaseConnectionTest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.databaseConnectionTests[item.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.databaseConnectionTests[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) CreateDatabaseValidationExecution(_ context.Context, item types.DatabaseValidationExecution) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.databaseExecutions[item.ID] = item
+	return nil
+}
+
+func (s *InMemoryStore) GetDatabaseValidationExecution(_ context.Context, id string) (types.DatabaseValidationExecution, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.databaseExecutions[id]
+	if !ok {
+		return types.DatabaseValidationExecution{}, storage.ErrNotFound
+	}
+	return item, nil
+}
+
+func (s *InMemoryStore) ListDatabaseValidationExecutions(_ context.Context, query storage.DatabaseValidationExecutionQuery) ([]types.DatabaseValidationExecution, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := filterSortedValues(s.databaseExecutions, func(item types.DatabaseValidationExecution) bool {
+		if query.OrganizationID != "" && item.OrganizationID != query.OrganizationID {
+			return false
+		}
+		if query.ProjectID != "" && item.ProjectID != query.ProjectID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.ChangeSetID != "" && item.ChangeSetID != query.ChangeSetID {
+			return false
+		}
+		if query.DatabaseChangeID != "" && item.DatabaseChangeID != query.DatabaseChangeID {
+			return false
+		}
+		if query.ValidationCheckID != "" && item.ValidationCheckID != query.ValidationCheckID {
+			return false
+		}
+		if query.ConnectionRefID != "" && item.ConnectionRefID != query.ConnectionRefID {
+			return false
+		}
+		if query.Status != "" && item.Status != query.Status {
+			return false
+		}
+		return true
+	})
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].StartedAt.Equal(items[j].StartedAt) {
+			return items[i].ID > items[j].ID
+		}
+		return items[i].StartedAt.After(items[j].StartedAt)
+	})
+	return paginate(items, query.Offset, query.Limit), nil
+}
+
+func (s *InMemoryStore) UpdateDatabaseValidationExecution(_ context.Context, item types.DatabaseValidationExecution) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.databaseExecutions[item.ID]; !ok {
+		return storage.ErrNotFound
+	}
+	s.databaseExecutions[item.ID] = item
+	return nil
 }
 
 func (s *InMemoryStore) CreateAuditEvent(_ context.Context, event types.AuditEvent) error {

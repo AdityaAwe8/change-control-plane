@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ func NewPostgresStore(cfg common.Config) (*PostgresStore, error) {
 		return nil, err
 	}
 	if cfg.AutoMigrate {
-		if err := ApplyMigrations(context.Background(), db, filepath.Join("db", "migrations")); err != nil {
+		if err := ApplyMigrations(context.Background(), db, DefaultMigrationsDir()); err != nil {
 			_ = db.Close()
 			return nil, err
 		}

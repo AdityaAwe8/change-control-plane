@@ -1598,10 +1598,20 @@ func (a *Application) GetIncidentDetail(ctx context.Context, id string) (types.I
 		return types.IncidentDetail{}, storage.ErrNotFound
 	}
 
+	var releaseAnalysis *types.ReleaseAnalysis
+	if strings.TrimSpace(detail.Execution.ReleaseID) != "" {
+		analysis, err := a.GetReleaseAnalysis(ctx, detail.Execution.ReleaseID)
+		if err == nil {
+			releaseAnalysis = &analysis
+		}
+	}
+	assistantSummary := buildIncidentAssistantSummary(detail, releaseAnalysis)
+
 	return types.IncidentDetail{
 		Incident:           incident,
 		RolloutExecutionID: detail.Execution.ID,
 		StatusTimeline:     detail.StatusTimeline,
+		AssistantSummary:   &assistantSummary,
 	}, nil
 }
 

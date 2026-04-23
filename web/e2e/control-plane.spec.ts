@@ -480,6 +480,179 @@ test("rollout automation and operational status history are visible from the bro
   await expect(page.locator("#status-event-table")).toContainText("rollback");
 });
 
+test("rollout route governs config sets, release bundles, and linked executions from the browser", async ({ page, request }) => {
+  const seed = uniqueSeed();
+  await signUpThroughUI(page, `owner-${seed}@acme.local`, `Release ${seed}`, "ChangeMe123!");
+  await bootstrapOrganizationForSignedInUser(page, request, `Release ${seed}`, `release-${seed}`);
+  const session = await currentSession(page);
+  const rollout = await seedRolloutScenario(request, session, seed);
+
+  await page.getByRole("button", { name: "Refresh Data" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("refreshed");
+  await page.getByRole("link", { name: "Rollout Plan" }).click();
+
+  await page.locator('#create-config-set-form select[name="environment_id"]').selectOption(rollout.environment.id);
+  await page.locator('#create-config-set-form select[name="service_id"]').selectOption(rollout.service.id);
+  await page.locator('#create-config-set-form input[name="name"]').fill(`browser-config-${seed}`);
+  await page.locator('#create-config-set-form input[name="version"]').fill("v1");
+  await page.locator('#create-config-set-form textarea[name="entries_json"]').fill(JSON.stringify([
+    {
+      key: "DB_PASSWORD_REF",
+      value: `prod/checkout/${seed}/db/password`,
+      value_type: "secret_ref",
+      required: true
+    }
+  ]));
+  await page.locator('#create-config-set-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Config set created");
+  await expect(page.locator("body")).toContainText(`browser-config-${seed}`);
+
+  let configSets = await apiGetList<any>(request, session, "/api/v1/config-sets");
+  const configSet = configSets.find((entry) => entry.name === `browser-config-${seed}`);
+  expect(configSet).toBeTruthy();
+
+  await page.locator('#update-config-set-form input[name="version"]').fill("v2");
+  await page.locator('#update-config-set-form textarea[name="entries_json"]').fill(JSON.stringify([
+    {
+      key: "DB_PASSWORD_REF",
+      value: `prod/checkout/${seed}/db/password`,
+      value_type: "secret_ref",
+      required: true
+    },
+    {
+      key: "FEATURE_FLAG_CHECKOUT_GUARD",
+      value: "enabled",
+      value_type: "literal"
+    }
+  ]));
+  await page.getByRole("button", { name: "Update Latest Config Set" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("Config set updated");
+
+  configSets = await apiGetList<any>(request, session, "/api/v1/config-sets");
+  const updatedConfigSet = configSets.find((entry) => entry.id === configSet.id);
+  expect(updatedConfigSet?.version).toBe("v2");
+  expect((updatedConfigSet?.entries || []).length).toBe(2);
+
+  await page.locator('#create-database-connection-form select[name="environment_id"]').selectOption(rollout.environment.id);
+  await page.locator('#create-database-connection-form select[name="service_id"]').selectOption(rollout.service.id);
+  await page.locator('#create-database-connection-form input[name="name"]').fill(`browser-db-conn-${seed}`);
+  await page.locator('#create-database-connection-form input[name="datastore"]').fill(`checkout-${seed}-primary`);
+  await page.locator('#create-database-connection-form select[name="source_type"]').selectOption("secret_ref_dsn");
+  await page.locator('#create-database-connection-form input[name="dsn_env"]').fill("");
+  await page.locator('#create-database-connection-form input[name="secret_ref"]').fill(`prod/checkout/${seed}/runtime_dsn`);
+  await page.locator('#create-database-connection-form input[name="secret_ref_env"]').fill("CCP_BROWSER_RUNTIME_DSN_ONE");
+  await page.locator('#create-database-connection-form textarea[name="summary"]').fill("Browser-managed secret-backed connection reference");
+  await page.locator('#create-database-connection-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Database connection reference created");
+  await expect(page.locator("body")).toContainText(`browser-db-conn-${seed}`);
+
+  let databaseConnections = await apiGetList<any>(request, session, "/api/v1/database-connection-references");
+  const databaseConnection = databaseConnections.find((entry) => entry.name === `browser-db-conn-${seed}`);
+  expect(databaseConnection).toBeTruthy();
+
+  await page.locator('#update-database-connection-form input[name="name"]').fill(`browser-db-conn-${seed}-updated`);
+  await page.locator('#update-database-connection-form select[name="source_type"]').selectOption("secret_ref_dsn");
+  await page.locator('#update-database-connection-form input[name="dsn_env"]').fill("");
+  await page.locator('#update-database-connection-form input[name="secret_ref"]').fill(`prod/checkout/${seed}/runtime_dsn_v2`);
+  await page.locator('#update-database-connection-form input[name="secret_ref_env"]').fill("CCP_BROWSER_RUNTIME_DSN_TWO");
+  await page.getByRole("button", { name: "Update Latest Connection Reference" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("Database connection reference updated");
+
+  await page.locator('#test-database-connection-form select[name="database_connection_id"]').selectOption(databaseConnection.id);
+  await page.locator('#test-database-connection-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Database connection reference tested");
+  await expect(page.locator("body")).toContainText(`browser-db-conn-${seed}-updated (unresolved)`);
+  await expect(page.locator("body")).toContainText("database connection test could not resolve runtime access");
+  await expect(page.locator("body")).toContainText("via CCP_BROWSER_RUNTIME_DSN_TWO");
+
+  databaseConnections = await apiGetList<any>(request, session, "/api/v1/database-connection-references");
+  const updatedDatabaseConnection = databaseConnections.find((entry) => entry.id === databaseConnection.id);
+  expect(updatedDatabaseConnection?.status).toBe("unresolved");
+
+  await page.locator('#create-database-change-form select[name="environment_id"]').selectOption(rollout.environment.id);
+  await page.locator('#create-database-change-form select[name="service_id"]').selectOption(rollout.service.id);
+  await page.locator('#create-database-change-form input[name="change_set_id"]').fill(rollout.change.id);
+  await page.locator('#create-database-change-form input[name="name"]').fill(`schema-expand-${seed}`);
+  await page.locator('#create-database-change-form input[name="datastore"]').fill(`checkout-${seed}-primary`);
+  await page.locator('#create-database-change-form select[name="operation_type"]').selectOption("schema_change");
+  await page.locator('#create-database-change-form select[name="compatibility"]').selectOption("expand_contract");
+  await page.locator('#create-database-change-form select[name="reversibility"]').selectOption("reversible");
+  await page.locator('#create-database-change-form select[name="risk_level"]').selectOption("high");
+  await page.locator('#create-database-change-form textarea[name="summary"]').fill("Browser-managed database governance record");
+  await page.locator('#create-database-change-form input[name="evidence"]').fill("ticket:DB-42");
+  await page.locator('#create-database-change-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Database change recorded");
+  await expect(page.locator("body")).toContainText(`schema-expand-${seed}`);
+
+  let databaseChanges = await apiGetList<any>(request, session, "/api/v1/database-changes");
+  const databaseChange = databaseChanges.find((entry) => entry.name === `schema-expand-${seed}`);
+  expect(databaseChange).toBeTruthy();
+
+  await page.locator('#update-database-change-form input[name="status"]').fill("reviewed");
+  await page.locator('#update-database-change-form textarea[name="summary"]').fill("Reviewed browser-managed database governance record");
+  await page.getByRole("button", { name: "Update Latest Database Change" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("Database change updated");
+
+  await page.locator('#create-database-check-form select[name="environment_id"]').selectOption(rollout.environment.id);
+  await page.locator('#create-database-check-form select[name="service_id"]').selectOption(rollout.service.id);
+  await page.locator('#create-database-check-form input[name="change_set_id"]').fill(rollout.change.id);
+  await page.locator('#create-database-check-form input[name="database_change_id"]').fill(databaseChange.id);
+  await page.locator('#create-database-check-form input[name="name"]').fill(`compat-check-${seed}`);
+  await page.locator('#create-database-check-form select[name="phase"]').selectOption("pre_deploy");
+  await page.locator('#create-database-check-form select[name="check_type"]').selectOption("compatibility_check");
+  await page.locator('#create-database-check-form textarea[name="specification"]').fill("Confirm the running app tolerates the expanded schema.");
+  await page.locator('#create-database-check-form textarea[name="summary"]').fill("Pending manual compatibility confirmation");
+  await page.locator('#create-database-check-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Database validation check created");
+  await expect(page.locator("body")).toContainText(`compat-check-${seed}`);
+
+  let databaseChecks = await apiGetList<any>(request, session, "/api/v1/database-validation-checks");
+  const databaseCheck = databaseChecks.find((entry) => entry.name === `compat-check-${seed}`);
+  expect(databaseCheck).toBeTruthy();
+
+  await page.locator('#update-database-check-form input[name="status"]').fill("passed");
+  await page.locator('#update-database-check-form textarea[name="last_result_summary"]').fill("Confirmed before rollout execution starts.");
+  await page.getByRole("button", { name: "Update Latest Validation Check" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("Database validation check updated");
+
+  await page.locator('#create-release-form select[name="environment_id"]').selectOption(rollout.environment.id);
+  await page.locator('#create-release-form input[name="name"]').fill(`browser-release-${seed}`);
+  await page.locator('#create-release-form input[name="version"]').fill("2026.04.23");
+  await page.locator('#create-release-form textarea[name="summary"]').fill("Browser-managed governed release bundle");
+  await page.locator('#create-release-form input[name="change_set_ids"]').fill(rollout.change.id);
+  await page.locator('#create-release-form input[name="config_set_ids"]').fill(configSet.id);
+  await page.locator('#create-release-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Release bundle created");
+  await expect(page.locator("body")).toContainText(`browser-release-${seed}`);
+  await expect(page.locator("body")).toContainText("Release Bundle Analysis");
+  await expect(page.locator("body")).toContainText("Database Posture");
+
+  let releases = await apiGetList<any>(request, session, "/api/v1/releases");
+  const release = releases.find((entry) => entry.name === `browser-release-${seed}`);
+  expect(release).toBeTruthy();
+  expect(release.config_set_ids).toContain(configSet.id);
+
+  await page.locator('#update-release-form input[name="status"]').fill("candidate");
+  await page.locator('#update-release-form textarea[name="summary"]').fill("Updated browser-governed release bundle");
+  await page.getByRole("button", { name: "Update Latest Release" }).click();
+  await expect(page.locator("#app-feedback")).toContainText("Release bundle updated");
+
+  releases = await apiGetList<any>(request, session, "/api/v1/releases");
+  const updatedRelease = releases.find((entry) => entry.id === release.id);
+  expect(updatedRelease?.status).toBe("candidate");
+  expect(updatedRelease?.summary).toBe("Updated browser-governed release bundle");
+
+  await page.locator('#create-rollout-execution-form select[name="release_id"]').selectOption(release.id);
+  await page.locator('#create-rollout-execution-form button[type="submit"]').click();
+  await expect(page.locator("#app-feedback")).toContainText("Rollout execution created");
+
+  const executions = await apiGetList<any>(request, session, "/api/v1/rollout-executions");
+  const linkedExecution = executions.find((execution) =>
+    execution.rollout_plan_id === rollout.plan.id && execution.release_id === release.id
+  );
+  expect(linkedExecution).toBeTruthy();
+});
+
 test("deployments dashboard filters, pagination, and reset stay truthful with server-backed route-local queries", async ({ page, request }) => {
   const seed = uniqueSeed();
   await signUpThroughUI(page, `owner-${seed}@acme.local`, `Deployments ${seed}`, "ChangeMe123!");

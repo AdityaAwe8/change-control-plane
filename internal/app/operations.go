@@ -995,6 +995,26 @@ func (a *Application) CreateRolloutExecution(ctx context.Context, req types.Crea
 	if err != nil {
 		return types.RolloutExecution{}, err
 	}
+	releaseID := strings.TrimSpace(req.ReleaseID)
+	if releaseID != "" {
+		release, err := a.Store.GetRelease(ctx, releaseID)
+		if err != nil {
+			return types.RolloutExecution{}, err
+		}
+		if release.OrganizationID != plan.OrganizationID || release.ProjectID != plan.ProjectID || release.EnvironmentID != change.EnvironmentID {
+			return types.RolloutExecution{}, fmt.Errorf("%w: release scope mismatch", ErrValidation)
+		}
+		if !containsID(release.ChangeSetIDs, change.ID) {
+			return types.RolloutExecution{}, fmt.Errorf("%w: rollout plan change set %s is not part of release %s", ErrValidation, change.ID, release.ID)
+		}
+		analysis, err := a.buildReleaseAnalysis(ctx, release)
+		if err != nil {
+			return types.RolloutExecution{}, err
+		}
+		if analysis.DatabasePosture.Status == "blocked" {
+			return types.RolloutExecution{}, fmt.Errorf("%w: release %s is blocked by database governance findings: %s", ErrValidation, release.ID, strings.Join(analysis.DatabasePosture.BlockingFindings, "; "))
+		}
+	}
 	now := time.Now().UTC()
 	execution := types.RolloutExecution{
 		BaseRecord: types.BaseRecord{
@@ -1005,6 +1025,7 @@ func (a *Application) CreateRolloutExecution(ctx context.Context, req types.Crea
 		OrganizationID:       plan.OrganizationID,
 		ProjectID:            plan.ProjectID,
 		RolloutPlanID:        plan.ID,
+		ReleaseID:            releaseID,
 		ChangeSetID:          change.ID,
 		ServiceID:            change.ServiceID,
 		EnvironmentID:        change.EnvironmentID,

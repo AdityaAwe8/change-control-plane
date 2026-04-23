@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/change-control-plane/change-control-plane/pkg/types"
@@ -57,6 +58,458 @@ func (s *PostgresStore) UpdateEnvironment(ctx context.Context, environment types
 		WHERE id = $1
 	`, environment.ID, environment.Name, environment.Slug, environment.Type, environment.Region, environment.Production, environment.ComplianceZone,
 		environment.Status, jsonValue(environment.Metadata), environment.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateConfigSet(ctx context.Context, configSet types.ConfigSet) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO config_sets (
+			id, organization_id, project_id, environment_id, service_id, name, version, status, entries, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`, configSet.ID, configSet.OrganizationID, configSet.ProjectID, configSet.EnvironmentID, nullIfEmpty(configSet.ServiceID), configSet.Name, configSet.Version, configSet.Status, jsonValue(configSet.Entries), jsonValue(configSet.Metadata), configSet.CreatedAt, configSet.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetConfigSet(ctx context.Context, id string) (types.ConfigSet, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, service_id, name, version, status, entries, metadata, created_at, updated_at
+		FROM config_sets
+		WHERE id = $1
+	`, id)
+	return scanConfigSet(row)
+}
+
+func (s *PostgresStore) ListConfigSets(ctx context.Context, query ConfigSetQuery) ([]types.ConfigSet, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, service_id, name, version, status, entries, metadata, created_at, updated_at
+		FROM config_sets`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("status", query.Status),
+	)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.ConfigSet
+	for rows.Next() {
+		item, err := scanConfigSet(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateConfigSet(ctx context.Context, configSet types.ConfigSet) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE config_sets
+		SET environment_id = $2, service_id = $3, name = $4, version = $5, status = $6, entries = $7, metadata = $8, updated_at = $9
+		WHERE id = $1
+	`, configSet.ID, configSet.EnvironmentID, nullIfEmpty(configSet.ServiceID), configSet.Name, configSet.Version, configSet.Status, jsonValue(configSet.Entries), jsonValue(configSet.Metadata), configSet.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateRelease(ctx context.Context, release types.Release) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO releases (
+			id, organization_id, project_id, environment_id, name, summary, version, status, change_set_ids, config_set_ids, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, release.ID, release.OrganizationID, release.ProjectID, nullIfEmpty(release.EnvironmentID), release.Name, release.Summary, release.Version, release.Status, jsonValue(release.ChangeSetIDs), jsonValue(release.ConfigSetIDs), jsonValue(release.Metadata), release.CreatedAt, release.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetRelease(ctx context.Context, id string) (types.Release, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, name, summary, version, status, change_set_ids, config_set_ids, metadata, created_at, updated_at
+		FROM releases
+		WHERE id = $1
+	`, id)
+	return scanRelease(row)
+}
+
+func (s *PostgresStore) ListReleases(ctx context.Context, query ReleaseQuery) ([]types.Release, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, name, summary, version, status, change_set_ids, config_set_ids, metadata, created_at, updated_at
+		FROM releases`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("status", query.Status),
+	)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.Release
+	for rows.Next() {
+		item, err := scanRelease(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateRelease(ctx context.Context, release types.Release) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE releases
+		SET environment_id = $2, name = $3, summary = $4, version = $5, status = $6, change_set_ids = $7, config_set_ids = $8, metadata = $9, updated_at = $10
+		WHERE id = $1
+	`, release.ID, nullIfEmpty(release.EnvironmentID), release.Name, release.Summary, release.Version, release.Status, jsonValue(release.ChangeSetIDs), jsonValue(release.ConfigSetIDs), jsonValue(release.Metadata), release.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateDatabaseChange(ctx context.Context, item types.DatabaseChange) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO database_changes (
+			id, organization_id, project_id, environment_id, service_id, change_set_id, name, datastore, operation_type,
+			execution_intent, compatibility, reversibility, risk_level, lock_risk, manual_approval_required,
+			status, summary, evidence, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+	`, item.ID, item.OrganizationID, item.ProjectID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.ChangeSetID, item.Name, item.Datastore, item.OperationType,
+		item.ExecutionIntent, item.Compatibility, item.Reversibility, item.RiskLevel, item.LockRisk, item.ManualApprovalRequired,
+		item.Status, item.Summary, jsonValue(item.Evidence), jsonValue(item.Metadata), item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetDatabaseChange(ctx context.Context, id string) (types.DatabaseChange, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, service_id, change_set_id, name, datastore, operation_type,
+			execution_intent, compatibility, reversibility, risk_level, lock_risk, manual_approval_required,
+			status, summary, evidence, metadata, created_at, updated_at
+		FROM database_changes
+		WHERE id = $1
+	`, id)
+	return scanDatabaseChange(row)
+}
+
+func (s *PostgresStore) ListDatabaseChanges(ctx context.Context, query DatabaseChangeQuery) ([]types.DatabaseChange, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, service_id, change_set_id, name, datastore, operation_type,
+			execution_intent, compatibility, reversibility, risk_level, lock_risk, manual_approval_required,
+			status, summary, evidence, metadata, created_at, updated_at
+		FROM database_changes`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("change_set_id", query.ChangeSetID),
+		filterEqual("datastore", query.Datastore),
+		filterEqual("status", query.Status),
+	)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.DatabaseChange
+	for rows.Next() {
+		item, err := scanDatabaseChange(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateDatabaseChange(ctx context.Context, item types.DatabaseChange) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE database_changes
+		SET environment_id = $2, service_id = $3, change_set_id = $4, name = $5, datastore = $6, operation_type = $7,
+			execution_intent = $8, compatibility = $9, reversibility = $10, risk_level = $11, lock_risk = $12,
+			manual_approval_required = $13, status = $14, summary = $15, evidence = $16, metadata = $17, updated_at = $18
+		WHERE id = $1
+	`, item.ID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.ChangeSetID, item.Name, item.Datastore, item.OperationType,
+		item.ExecutionIntent, item.Compatibility, item.Reversibility, item.RiskLevel, item.LockRisk,
+		item.ManualApprovalRequired, item.Status, item.Summary, jsonValue(item.Evidence), jsonValue(item.Metadata), item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateDatabaseValidationCheck(ctx context.Context, item types.DatabaseValidationCheck) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO database_validation_checks (
+			id, organization_id, project_id, environment_id, service_id, change_set_id, database_change_id, connection_ref_id, name, phase,
+			check_type, read_only, required, execution_mode, specification, status, summary, last_run_at,
+			last_result_summary, evidence, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+	`, item.ID, item.OrganizationID, item.ProjectID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.ChangeSetID, nullIfEmpty(item.DatabaseChangeID), nullIfEmpty(item.ConnectionRefID), item.Name, item.Phase,
+		item.CheckType, item.ReadOnly, item.Required, item.ExecutionMode, item.Specification, item.Status, item.Summary, item.LastRunAt,
+		item.LastResultSummary, jsonValue(item.Evidence), jsonValue(item.Metadata), item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetDatabaseValidationCheck(ctx context.Context, id string) (types.DatabaseValidationCheck, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, service_id, change_set_id, database_change_id, connection_ref_id, name, phase,
+			check_type, read_only, required, execution_mode, specification, status, summary, last_run_at,
+			last_result_summary, evidence, metadata, created_at, updated_at
+		FROM database_validation_checks
+		WHERE id = $1
+	`, id)
+	return scanDatabaseValidationCheck(row)
+}
+
+func (s *PostgresStore) ListDatabaseValidationChecks(ctx context.Context, query DatabaseValidationCheckQuery) ([]types.DatabaseValidationCheck, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, service_id, change_set_id, database_change_id, connection_ref_id, name, phase,
+			check_type, read_only, required, execution_mode, specification, status, summary, last_run_at,
+			last_result_summary, evidence, metadata, created_at, updated_at
+		FROM database_validation_checks`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("change_set_id", query.ChangeSetID),
+		filterEqual("database_change_id", query.DatabaseChangeID),
+		filterEqual("connection_ref_id", query.ConnectionRefID),
+		filterEqual("phase", query.Phase),
+		filterEqual("status", query.Status),
+	)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.DatabaseValidationCheck
+	for rows.Next() {
+		item, err := scanDatabaseValidationCheck(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateDatabaseValidationCheck(ctx context.Context, item types.DatabaseValidationCheck) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE database_validation_checks
+		SET environment_id = $2, service_id = $3, change_set_id = $4, database_change_id = $5, connection_ref_id = $6, name = $7, phase = $8,
+			check_type = $9, read_only = $10, required = $11, execution_mode = $12, specification = $13, status = $14,
+			summary = $15, last_run_at = $16, last_result_summary = $17, evidence = $18, metadata = $19, updated_at = $20
+		WHERE id = $1
+	`, item.ID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.ChangeSetID, nullIfEmpty(item.DatabaseChangeID), nullIfEmpty(item.ConnectionRefID), item.Name, item.Phase,
+		item.CheckType, item.ReadOnly, item.Required, item.ExecutionMode, item.Specification, item.Status,
+		item.Summary, item.LastRunAt, item.LastResultSummary, jsonValue(item.Evidence), jsonValue(item.Metadata), item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateDatabaseConnectionReference(ctx context.Context, item types.DatabaseConnectionReference) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO database_connection_references (
+			id, organization_id, project_id, environment_id, service_id, name, datastore, driver, source_type, dsn_env,
+			secret_ref, secret_ref_env, read_only_capable, status, summary, last_tested_at, last_healthy_at, last_error_class,
+			last_error_summary, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+	`, item.ID, item.OrganizationID, item.ProjectID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.Name, item.Datastore, item.Driver, item.SourceType, nullIfEmpty(item.DSNEnv),
+		nullIfEmpty(item.SecretRef), nullIfEmpty(item.SecretRefEnv), item.ReadOnlyCapable, item.Status, item.Summary, item.LastTestedAt, item.LastHealthyAt, item.LastErrorClass, item.LastErrorSummary, jsonValue(item.Metadata), item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetDatabaseConnectionReference(ctx context.Context, id string) (types.DatabaseConnectionReference, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, service_id, name, datastore, driver, source_type, dsn_env,
+			secret_ref, secret_ref_env, read_only_capable, status, summary, last_tested_at, last_healthy_at, last_error_class,
+			last_error_summary, metadata, created_at, updated_at
+		FROM database_connection_references
+		WHERE id = $1
+	`, id)
+	return scanDatabaseConnectionReference(row)
+}
+
+func (s *PostgresStore) ListDatabaseConnectionReferences(ctx context.Context, query DatabaseConnectionReferenceQuery) ([]types.DatabaseConnectionReference, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, service_id, name, datastore, driver, source_type, dsn_env,
+			secret_ref, secret_ref_env, read_only_capable, status, summary, last_tested_at, last_healthy_at, last_error_class,
+			last_error_summary, metadata, created_at, updated_at
+		FROM database_connection_references`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("datastore", query.Datastore),
+		filterEqual("status", query.Status),
+	)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.DatabaseConnectionReference
+	for rows.Next() {
+		item, err := scanDatabaseConnectionReference(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateDatabaseConnectionReference(ctx context.Context, item types.DatabaseConnectionReference) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE database_connection_references
+		SET environment_id = $2, service_id = $3, name = $4, datastore = $5, driver = $6, source_type = $7, dsn_env = $8,
+			secret_ref = $9, secret_ref_env = $10, read_only_capable = $11, status = $12, summary = $13, last_tested_at = $14,
+			last_healthy_at = $15, last_error_class = $16, last_error_summary = $17, metadata = $18, updated_at = $19
+		WHERE id = $1
+	`, item.ID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.Name, item.Datastore, item.Driver, item.SourceType, nullIfEmpty(item.DSNEnv),
+		nullIfEmpty(item.SecretRef), nullIfEmpty(item.SecretRefEnv), item.ReadOnlyCapable, item.Status, item.Summary, item.LastTestedAt, item.LastHealthyAt, item.LastErrorClass, item.LastErrorSummary, jsonValue(item.Metadata), item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateDatabaseConnectionTest(ctx context.Context, item types.DatabaseConnectionTest) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO database_connection_tests (
+			id, organization_id, project_id, environment_id, service_id, connection_ref_id, trigger, status, summary, details,
+			error_class, actor_type, actor_id, started_at, completed_at, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+	`, item.ID, item.OrganizationID, item.ProjectID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.ConnectionRefID, item.Trigger, item.Status, item.Summary, jsonValue(item.Details), item.ErrorClass, item.ActorType, item.ActorID, item.StartedAt, item.CompletedAt, jsonValue(item.Metadata), item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetDatabaseConnectionTest(ctx context.Context, id string) (types.DatabaseConnectionTest, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, service_id, connection_ref_id, trigger, status, summary, details,
+			error_class, actor_type, actor_id, started_at, completed_at, metadata, created_at, updated_at
+		FROM database_connection_tests
+		WHERE id = $1
+	`, id)
+	return scanDatabaseConnectionTest(row)
+}
+
+func (s *PostgresStore) ListDatabaseConnectionTests(ctx context.Context, query DatabaseConnectionTestQuery) ([]types.DatabaseConnectionTest, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, service_id, connection_ref_id, trigger, status, summary, details,
+			error_class, actor_type, actor_id, started_at, completed_at, metadata, created_at, updated_at
+		FROM database_connection_tests`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("connection_ref_id", query.ConnectionRefID),
+		filterEqual("status", query.Status),
+	)
+	sqlQuery = strings.Replace(sqlQuery, " ORDER BY created_at", " ORDER BY started_at DESC, id DESC", 1)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.DatabaseConnectionTest
+	for rows.Next() {
+		item, err := scanDatabaseConnectionTest(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateDatabaseConnectionTest(ctx context.Context, item types.DatabaseConnectionTest) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE database_connection_tests
+		SET status = $2, summary = $3, details = $4, error_class = $5, completed_at = $6, metadata = $7, updated_at = $8
+		WHERE id = $1
+	`, item.ID, item.Status, item.Summary, jsonValue(item.Details), item.ErrorClass, item.CompletedAt, jsonValue(item.Metadata), item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) CreateDatabaseValidationExecution(ctx context.Context, item types.DatabaseValidationExecution) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		INSERT INTO database_validation_executions (
+			id, organization_id, project_id, environment_id, service_id, change_set_id, database_change_id, validation_check_id,
+			connection_ref_id, trigger, execution_mode, status, summary, result_details, evidence, error_class,
+			actor_type, actor_id, started_at, completed_at, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+	`, item.ID, item.OrganizationID, item.ProjectID, item.EnvironmentID, nullIfEmpty(item.ServiceID), item.ChangeSetID, nullIfEmpty(item.DatabaseChangeID), item.ValidationCheckID,
+		item.ConnectionRefID, item.Trigger, item.ExecutionMode, item.Status, item.Summary, jsonValue(item.ResultDetails), jsonValue(item.Evidence), item.ErrorClass,
+		item.ActorType, item.ActorID, item.StartedAt, item.CompletedAt, jsonValue(item.Metadata), item.CreatedAt, item.UpdatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetDatabaseValidationExecution(ctx context.Context, id string) (types.DatabaseValidationExecution, error) {
+	row := s.runner(ctx).QueryRowContext(ctx, `
+		SELECT id, organization_id, project_id, environment_id, service_id, change_set_id, database_change_id, validation_check_id,
+			connection_ref_id, trigger, execution_mode, status, summary, result_details, evidence, error_class,
+			actor_type, actor_id, started_at, completed_at, metadata, created_at, updated_at
+		FROM database_validation_executions
+		WHERE id = $1
+	`, id)
+	return scanDatabaseValidationExecution(row)
+}
+
+func (s *PostgresStore) ListDatabaseValidationExecutions(ctx context.Context, query DatabaseValidationExecutionQuery) ([]types.DatabaseValidationExecution, error) {
+	sqlQuery, args := buildListQuery(
+		`SELECT id, organization_id, project_id, environment_id, service_id, change_set_id, database_change_id, validation_check_id,
+			connection_ref_id, trigger, execution_mode, status, summary, result_details, evidence, error_class,
+			actor_type, actor_id, started_at, completed_at, metadata, created_at, updated_at
+		FROM database_validation_executions`,
+		query.Limit,
+		query.Offset,
+		filterEqual("organization_id", query.OrganizationID),
+		filterEqual("project_id", query.ProjectID),
+		filterEqual("environment_id", query.EnvironmentID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("change_set_id", query.ChangeSetID),
+		filterEqual("database_change_id", query.DatabaseChangeID),
+		filterEqual("validation_check_id", query.ValidationCheckID),
+		filterEqual("connection_ref_id", query.ConnectionRefID),
+		filterEqual("status", query.Status),
+	)
+	sqlQuery = strings.Replace(sqlQuery, " ORDER BY created_at", " ORDER BY started_at DESC, id DESC", 1)
+	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []types.DatabaseValidationExecution
+	for rows.Next() {
+		item, err := scanDatabaseValidationExecution(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *PostgresStore) UpdateDatabaseValidationExecution(ctx context.Context, item types.DatabaseValidationExecution) error {
+	_, err := s.runner(ctx).ExecContext(ctx, `
+		UPDATE database_validation_executions
+		SET status = $2, summary = $3, result_details = $4, evidence = $5, error_class = $6,
+			completed_at = $7, metadata = $8, updated_at = $9
+		WHERE id = $1
+	`, item.ID, item.Status, item.Summary, jsonValue(item.ResultDetails), jsonValue(item.Evidence), item.ErrorClass,
+		item.CompletedAt, jsonValue(item.Metadata), item.UpdatedAt)
 	return err
 }
 
@@ -508,19 +961,19 @@ func (s *PostgresStore) UpdateAPIToken(ctx context.Context, token types.APIToken
 func (s *PostgresStore) CreateRolloutExecution(ctx context.Context, execution types.RolloutExecution) error {
 	_, err := s.runner(ctx).ExecContext(ctx, `
 		INSERT INTO rollout_executions (
-			id, organization_id, project_id, rollout_plan_id, change_set_id, service_id, environment_id,
+			id, organization_id, project_id, rollout_plan_id, release_id, change_set_id, service_id, environment_id,
 			backend_type, backend_integration_id, signal_provider_type, signal_integration_id, backend_execution_id, backend_status,
 			progress_percent, status, current_step, last_decision, last_decision_reason, last_verification_result,
 			submitted_at, started_at, completed_at, last_reconciled_at, last_backend_sync_at, last_signal_sync_at, last_error,
 			metadata, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22, $23, $24, $25, $26,
-			$27, $28, $29
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19, $20,
+			$21, $22, $23, $24, $25, $26, $27,
+			$28, $29, $30
 		)
-	`, execution.ID, execution.OrganizationID, execution.ProjectID, execution.RolloutPlanID, execution.ChangeSetID, execution.ServiceID, execution.EnvironmentID,
+	`, execution.ID, execution.OrganizationID, execution.ProjectID, execution.RolloutPlanID, nullIfEmpty(execution.ReleaseID), execution.ChangeSetID, execution.ServiceID, execution.EnvironmentID,
 		execution.BackendType, nullIfEmpty(execution.BackendIntegrationID), execution.SignalProviderType, nullIfEmpty(execution.SignalIntegrationID), execution.BackendExecutionID, execution.BackendStatus,
 		execution.ProgressPercent, execution.Status, execution.CurrentStep, execution.LastDecision, execution.LastDecisionReason, nullIfEmpty(execution.LastVerificationResult),
 		execution.SubmittedAt, execution.StartedAt, execution.CompletedAt, execution.LastReconciledAt, execution.LastBackendSyncAt, execution.LastSignalSyncAt, execution.LastError,
@@ -530,7 +983,7 @@ func (s *PostgresStore) CreateRolloutExecution(ctx context.Context, execution ty
 
 func (s *PostgresStore) GetRolloutExecution(ctx context.Context, id string) (types.RolloutExecution, error) {
 	row := s.runner(ctx).QueryRowContext(ctx, `
-		SELECT id, organization_id, project_id, rollout_plan_id, change_set_id, service_id, environment_id,
+		SELECT id, organization_id, project_id, rollout_plan_id, release_id, change_set_id, service_id, environment_id,
 			backend_type, backend_integration_id, signal_provider_type, signal_integration_id, backend_execution_id, backend_status,
 			progress_percent, status, current_step, last_decision, last_decision_reason, last_verification_result,
 			submitted_at, started_at, completed_at, last_reconciled_at, last_backend_sync_at, last_signal_sync_at, last_error,
@@ -543,7 +996,7 @@ func (s *PostgresStore) GetRolloutExecution(ctx context.Context, id string) (typ
 
 func (s *PostgresStore) ListRolloutExecutions(ctx context.Context, query RolloutExecutionQuery) ([]types.RolloutExecution, error) {
 	sqlQuery, args := buildListQuery(
-		`SELECT id, organization_id, project_id, rollout_plan_id, change_set_id, service_id, environment_id,
+		`SELECT id, organization_id, project_id, rollout_plan_id, release_id, change_set_id, service_id, environment_id,
 			backend_type, backend_integration_id, signal_provider_type, signal_integration_id, backend_execution_id, backend_status,
 			progress_percent, status, current_step, last_decision, last_decision_reason, last_verification_result,
 			submitted_at, started_at, completed_at, last_reconciled_at, last_backend_sync_at, last_signal_sync_at, last_error,
@@ -577,12 +1030,12 @@ func (s *PostgresStore) UpdateRolloutExecution(ctx context.Context, execution ty
 	_, err := s.runner(ctx).ExecContext(ctx, `
 		UPDATE rollout_executions
 		SET backend_type = $2, backend_integration_id = $3, signal_provider_type = $4, signal_integration_id = $5, backend_execution_id = $6, backend_status = $7,
-			progress_percent = $8, status = $9, current_step = $10, last_decision = $11, last_decision_reason = $12, last_verification_result = $13,
-			submitted_at = $14, started_at = $15, completed_at = $16, last_reconciled_at = $17, last_backend_sync_at = $18, last_signal_sync_at = $19,
-			last_error = $20, metadata = $21, updated_at = $22
+			release_id = $8, progress_percent = $9, status = $10, current_step = $11, last_decision = $12, last_decision_reason = $13, last_verification_result = $14,
+			submitted_at = $15, started_at = $16, completed_at = $17, last_reconciled_at = $18, last_backend_sync_at = $19, last_signal_sync_at = $20,
+			last_error = $21, metadata = $22, updated_at = $23
 		WHERE id = $1
 	`, execution.ID, execution.BackendType, nullIfEmpty(execution.BackendIntegrationID), execution.SignalProviderType, nullIfEmpty(execution.SignalIntegrationID), execution.BackendExecutionID, execution.BackendStatus,
-		execution.ProgressPercent, execution.Status, execution.CurrentStep, execution.LastDecision, execution.LastDecisionReason, nullIfEmpty(execution.LastVerificationResult),
+		nullIfEmpty(execution.ReleaseID), execution.ProgressPercent, execution.Status, execution.CurrentStep, execution.LastDecision, execution.LastDecisionReason, nullIfEmpty(execution.LastVerificationResult),
 		execution.SubmittedAt, execution.StartedAt, execution.CompletedAt, execution.LastReconciledAt, execution.LastBackendSyncAt, execution.LastSignalSyncAt,
 		execution.LastError, jsonValue(execution.Metadata), execution.UpdatedAt)
 	return err
@@ -880,6 +1333,7 @@ func scanAPIToken(row scanner) (types.APIToken, error) {
 
 func scanRolloutExecution(row scanner) (types.RolloutExecution, error) {
 	var item types.RolloutExecution
+	var releaseID sql.NullString
 	var backendIntegrationID sql.NullString
 	var signalIntegrationID sql.NullString
 	var submittedAt sql.NullTime
@@ -891,7 +1345,7 @@ func scanRolloutExecution(row scanner) (types.RolloutExecution, error) {
 	var lastVerificationResult sql.NullString
 	var metadata []byte
 	err := row.Scan(
-		&item.ID, &item.OrganizationID, &item.ProjectID, &item.RolloutPlanID, &item.ChangeSetID, &item.ServiceID, &item.EnvironmentID,
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.RolloutPlanID, &releaseID, &item.ChangeSetID, &item.ServiceID, &item.EnvironmentID,
 		&item.BackendType, &backendIntegrationID, &item.SignalProviderType, &signalIntegrationID, &item.BackendExecutionID, &item.BackendStatus,
 		&item.ProgressPercent, &item.Status, &item.CurrentStep, &item.LastDecision, &item.LastDecisionReason, &lastVerificationResult,
 		&submittedAt, &startedAt, &completedAt, &lastReconciledAt, &lastBackendSyncAt, &lastSignalSyncAt, &item.LastError,
@@ -900,6 +1354,7 @@ func scanRolloutExecution(row scanner) (types.RolloutExecution, error) {
 	if err != nil {
 		return item, normalizeNotFound(err)
 	}
+	item.ReleaseID = releaseID.String
 	item.BackendIntegrationID = backendIntegrationID.String
 	item.SignalIntegrationID = signalIntegrationID.String
 	item.LastVerificationResult = lastVerificationResult.String
@@ -921,6 +1376,167 @@ func scanRolloutExecution(row scanner) (types.RolloutExecution, error) {
 	if lastSignalSyncAt.Valid {
 		item.LastSignalSyncAt = &lastSignalSyncAt.Time
 	}
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanConfigSet(row scanner) (types.ConfigSet, error) {
+	var item types.ConfigSet
+	var serviceID sql.NullString
+	var entries []byte
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.EnvironmentID, &serviceID, &item.Name, &item.Version, &item.Status, &entries, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.ServiceID = serviceID.String
+	_ = json.Unmarshal(entries, &item.Entries)
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanRelease(row scanner) (types.Release, error) {
+	var item types.Release
+	var environmentID sql.NullString
+	var changeSetIDs []byte
+	var configSetIDs []byte
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &environmentID, &item.Name, &item.Summary, &item.Version, &item.Status, &changeSetIDs, &configSetIDs, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.EnvironmentID = environmentID.String
+	_ = json.Unmarshal(changeSetIDs, &item.ChangeSetIDs)
+	_ = json.Unmarshal(configSetIDs, &item.ConfigSetIDs)
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanDatabaseChange(row scanner) (types.DatabaseChange, error) {
+	var item types.DatabaseChange
+	var serviceID sql.NullString
+	var evidence []byte
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.EnvironmentID, &serviceID, &item.ChangeSetID, &item.Name, &item.Datastore, &item.OperationType,
+		&item.ExecutionIntent, &item.Compatibility, &item.Reversibility, &item.RiskLevel, &item.LockRisk, &item.ManualApprovalRequired,
+		&item.Status, &item.Summary, &evidence, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.ServiceID = serviceID.String
+	_ = json.Unmarshal(evidence, &item.Evidence)
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanDatabaseValidationCheck(row scanner) (types.DatabaseValidationCheck, error) {
+	var item types.DatabaseValidationCheck
+	var serviceID sql.NullString
+	var databaseChangeID sql.NullString
+	var connectionRefID sql.NullString
+	var lastRunAt sql.NullTime
+	var evidence []byte
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.EnvironmentID, &serviceID, &item.ChangeSetID, &databaseChangeID, &connectionRefID, &item.Name, &item.Phase,
+		&item.CheckType, &item.ReadOnly, &item.Required, &item.ExecutionMode, &item.Specification, &item.Status, &item.Summary, &lastRunAt,
+		&item.LastResultSummary, &evidence, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.ServiceID = serviceID.String
+	item.DatabaseChangeID = databaseChangeID.String
+	item.ConnectionRefID = connectionRefID.String
+	if lastRunAt.Valid {
+		item.LastRunAt = &lastRunAt.Time
+	}
+	_ = json.Unmarshal(evidence, &item.Evidence)
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanDatabaseConnectionReference(row scanner) (types.DatabaseConnectionReference, error) {
+	var item types.DatabaseConnectionReference
+	var serviceID sql.NullString
+	var dsnEnv sql.NullString
+	var secretRef sql.NullString
+	var secretRefEnv sql.NullString
+	var lastTestedAt sql.NullTime
+	var lastHealthyAt sql.NullTime
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.EnvironmentID, &serviceID, &item.Name, &item.Datastore, &item.Driver, &item.SourceType, &dsnEnv,
+		&secretRef, &secretRefEnv, &item.ReadOnlyCapable, &item.Status, &item.Summary, &lastTestedAt, &lastHealthyAt, &item.LastErrorClass, &item.LastErrorSummary, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.ServiceID = serviceID.String
+	item.DSNEnv = dsnEnv.String
+	item.SecretRef = secretRef.String
+	item.SecretRefEnv = secretRefEnv.String
+	if lastTestedAt.Valid {
+		item.LastTestedAt = &lastTestedAt.Time
+	}
+	if lastHealthyAt.Valid {
+		item.LastHealthyAt = &lastHealthyAt.Time
+	}
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanDatabaseConnectionTest(row scanner) (types.DatabaseConnectionTest, error) {
+	var item types.DatabaseConnectionTest
+	var serviceID sql.NullString
+	var completedAt sql.NullTime
+	var details []byte
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.EnvironmentID, &serviceID, &item.ConnectionRefID, &item.Trigger, &item.Status, &item.Summary, &details,
+		&item.ErrorClass, &item.ActorType, &item.ActorID, &item.StartedAt, &completedAt, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.ServiceID = serviceID.String
+	if completedAt.Valid {
+		item.CompletedAt = &completedAt.Time
+	}
+	_ = json.Unmarshal(details, &item.Details)
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	return item, nil
+}
+
+func scanDatabaseValidationExecution(row scanner) (types.DatabaseValidationExecution, error) {
+	var item types.DatabaseValidationExecution
+	var serviceID sql.NullString
+	var databaseChangeID sql.NullString
+	var completedAt sql.NullTime
+	var resultDetails []byte
+	var evidence []byte
+	var metadata []byte
+	err := row.Scan(
+		&item.ID, &item.OrganizationID, &item.ProjectID, &item.EnvironmentID, &serviceID, &item.ChangeSetID, &databaseChangeID, &item.ValidationCheckID,
+		&item.ConnectionRefID, &item.Trigger, &item.ExecutionMode, &item.Status, &item.Summary, &resultDetails, &evidence, &item.ErrorClass,
+		&item.ActorType, &item.ActorID, &item.StartedAt, &completedAt, &metadata, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return item, normalizeNotFound(err)
+	}
+	item.ServiceID = serviceID.String
+	item.DatabaseChangeID = databaseChangeID.String
+	if completedAt.Valid {
+		item.CompletedAt = &completedAt.Time
+	}
+	_ = json.Unmarshal(resultDetails, &item.ResultDetails)
+	_ = json.Unmarshal(evidence, &item.Evidence)
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil
 }

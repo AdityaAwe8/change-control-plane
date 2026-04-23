@@ -372,6 +372,298 @@ func TestRunPolicyCommands(t *testing.T) {
 	}
 }
 
+func TestRunReleaseAndConfigSetCommands(t *testing.T) {
+	var configSetBody map[string]any
+	var releaseBody map[string]any
+	var rolloutBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/config-sets":
+			if err := json.NewDecoder(r.Body).Decode(&configSetBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"config_set":{"id":"cfg_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","name":"production-app","version":"v1","status":"active","entries":[{"key":"DB_PASSWORD_REF","value":"prod/checkout/db/password","value_type":"secret_ref"}]},"validation":{"config_set_id":"cfg_123","status":"valid"},"related_releases":[]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/releases":
+			if err := json.NewDecoder(r.Body).Decode(&releaseBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"release":{"id":"rel_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","name":"April Bundle","summary":"checkout changes","change_set_ids":["chg_123"],"config_set_ids":["cfg_123"],"version":"2026.04.23","status":"draft"},"change_sets":[{"id":"chg_123","summary":"checkout changes","status":"ingested","change_types":["code"],"file_count":3,"resource_count":1}],"assessments":[{"id":"risk_123","score":72,"level":"high","recommended_rollout_strategy":"canary","recommended_approval_level":"platform-owner","recommended_guardrails":["health-check-gates"],"explanation":["high risk"]}],"combined_risk_score":72,"combined_risk_level":"high","blast_radius":{"scope":"moderate","summary":"moderate blast radius"},"release_summary":"April bundle summary","rollback_guidance":{"safe":true,"strategy":"rollback_previous_bundle","summary":"safe"},"ops_assistant":{"status":"warning","likely_cause":"bundle complexity","guidance":["review readiness"]},"communications":{}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/rollout-executions":
+			if err := json.NewDecoder(r.Body).Decode(&rolloutBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"id":"exec_123","rollout_plan_id":"roll_123","release_id":"rel_123","change_set_id":"chg_123","service_id":"svc_123","environment_id":"env_123","status":"awaiting_approval","current_step":"precheck"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("CCP_API_BASE_URL", server.URL)
+	t.Setenv("CCP_API_TOKEN", "token-123")
+	t.Setenv("CCP_ORGANIZATION_ID", "org_123")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"config-set", "create",
+		"--org", "org_123",
+		"--project", "proj_123",
+		"--env", "env_123",
+		"--service", "svc_123",
+		"--name", "production-app",
+		"--version", "v1",
+		"--entries-json", `[{"key":"DB_PASSWORD_REF","value":"prod/checkout/db/password","value_type":"secret_ref"}]`,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected config-set create to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if configSetBody["name"] != "production-app" {
+		t.Fatalf("expected config-set create body to include name, got %+v", configSetBody)
+	}
+	if entries, ok := configSetBody["entries"].([]any); !ok || len(entries) != 1 {
+		t.Fatalf("expected config-set create to send one entry, got %+v", configSetBody["entries"])
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"release", "create",
+		"--org", "org_123",
+		"--project", "proj_123",
+		"--env", "env_123",
+		"--name", "April Bundle",
+		"--summary", "checkout changes",
+		"--version", "2026.04.23",
+		"--changes", "chg_123",
+		"--config-sets", "cfg_123",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected release create to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if releaseBody["name"] != "April Bundle" {
+		t.Fatalf("expected release create body to include name, got %+v", releaseBody)
+	}
+	if changeSetIDs, ok := releaseBody["change_set_ids"].([]any); !ok || len(changeSetIDs) != 1 {
+		t.Fatalf("expected release create to include change set ids, got %+v", releaseBody["change_set_ids"])
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"rollout", "execute",
+		"--plan", "roll_123",
+		"--release", "rel_123",
+		"--backend", "simulated",
+		"--signal", "simulated",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected rollout execute to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if rolloutBody["release_id"] != "rel_123" {
+		t.Fatalf("expected rollout execute to include release id, got %+v", rolloutBody)
+	}
+}
+
+func TestRunDatabaseGovernanceCommands(t *testing.T) {
+	var databaseConnectionBody map[string]any
+	var databaseConnectionUpdateBody map[string]any
+	var databaseConnectionTestBody map[string]any
+	var databaseChangeBody map[string]any
+	var databaseCheckBody map[string]any
+	var databaseChangeUpdateBody map[string]any
+	var databaseCheckUpdateBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/database-connection-references":
+			if err := json.NewDecoder(r.Body).Decode(&databaseConnectionBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"connection_reference":{"id":"dbconn_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","name":"checkout-primary","datastore":"checkout-primary","driver":"postgres","source_type":"env_dsn","dsn_env":"CCP_DB_DSN","status":"defined","summary":"runtime db ref"},"validation_checks":[],"connection_tests":[]}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/database-connection-references/dbconn_123":
+			if err := json.NewDecoder(r.Body).Decode(&databaseConnectionUpdateBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"connection_reference":{"id":"dbconn_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","name":"checkout-primary-updated","datastore":"checkout-primary","driver":"postgres","source_type":"secret_ref_dsn","secret_ref":"prod/checkout/db/runtime_dsn","secret_ref_env":"CCP_CHECKOUT_RUNTIME_DSN","status":"defined","summary":"runtime db ref"},"validation_checks":[],"connection_tests":[]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/database-connection-references/dbconn_123/test":
+			if err := json.NewDecoder(r.Body).Decode(&databaseConnectionTestBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"connection_test":{"id":"dbct_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","connection_ref_id":"dbconn_123","trigger":"manual","status":"passed","summary":"database connection checkout-primary-updated is ready for read-only validation","started_at":"2026-04-23T00:00:00Z"},"connection_reference":{"id":"dbconn_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","name":"checkout-primary-updated","datastore":"checkout-primary","driver":"postgres","source_type":"secret_ref_dsn","secret_ref":"prod/checkout/db/runtime_dsn","secret_ref_env":"CCP_CHECKOUT_RUNTIME_DSN","status":"ready","summary":"runtime db ref"}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/database-changes":
+			if err := json.NewDecoder(r.Body).Decode(&databaseChangeBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"database_change":{"id":"dbchg_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","change_set_id":"chg_123","name":"Expand schema","datastore":"checkout-primary","operation_type":"schema_change","execution_intent":"pre_deploy","compatibility":"expand_contract","reversibility":"reversible","risk_level":"high","status":"defined","summary":"expand schema"},"validation_checks":[]}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/database-changes/dbchg_123":
+			if err := json.NewDecoder(r.Body).Decode(&databaseChangeUpdateBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"database_change":{"id":"dbchg_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","change_set_id":"chg_123","name":"Expand schema","datastore":"checkout-primary","operation_type":"schema_change","execution_intent":"pre_deploy","compatibility":"expand_contract","reversibility":"reversible","risk_level":"high","status":"reviewed","summary":"expanded"},"validation_checks":[]}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/database-validation-checks":
+			if err := json.NewDecoder(r.Body).Decode(&databaseCheckBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"validation_check":{"id":"dbchk_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","change_set_id":"chg_123","database_change_id":"dbchg_123","name":"Compatibility check","phase":"pre_deploy","check_type":"compatibility_check","read_only":true,"required":true,"execution_mode":"manual_attestation","specification":"Confirm compatibility","status":"defined","summary":"pending"}}}`))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/database-validation-checks/dbchk_123":
+			if err := json.NewDecoder(r.Body).Decode(&databaseCheckUpdateBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"data":{"validation_check":{"id":"dbchk_123","organization_id":"org_123","project_id":"proj_123","environment_id":"env_123","service_id":"svc_123","change_set_id":"chg_123","database_change_id":"dbchg_123","name":"Compatibility check","phase":"pre_deploy","check_type":"compatibility_check","read_only":true,"required":true,"execution_mode":"manual_attestation","specification":"Confirm compatibility","status":"passed","summary":"pending","last_result_summary":"confirmed"}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("CCP_API_BASE_URL", server.URL)
+	t.Setenv("CCP_API_TOKEN", "token-123")
+	t.Setenv("CCP_ORGANIZATION_ID", "org_123")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(context.Background(), []string{
+		"db-connection", "create",
+		"--org", "org_123",
+		"--project", "proj_123",
+		"--env", "env_123",
+		"--service", "svc_123",
+		"--name", "checkout-primary",
+		"--datastore", "checkout-primary",
+		"--driver", "postgres",
+		"--source-type", "env_dsn",
+		"--dsn-env", "CCP_DB_DSN",
+		"--summary", "runtime db ref",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-connection create to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseConnectionBody["source_type"] != "env_dsn" || databaseConnectionBody["dsn_env"] != "CCP_DB_DSN" {
+		t.Fatalf("unexpected db-connection create body: %+v", databaseConnectionBody)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"db-connection", "update",
+		"--id", "dbconn_123",
+		"--name", "checkout-primary-updated",
+		"--source-type", "secret_ref_dsn",
+		"--secret-ref", "prod/checkout/db/runtime_dsn",
+		"--secret-ref-env", "CCP_CHECKOUT_RUNTIME_DSN",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-connection update to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseConnectionUpdateBody["source_type"] != "secret_ref_dsn" || databaseConnectionUpdateBody["secret_ref"] != "prod/checkout/db/runtime_dsn" || databaseConnectionUpdateBody["secret_ref_env"] != "CCP_CHECKOUT_RUNTIME_DSN" {
+		t.Fatalf("unexpected db-connection update body: %+v", databaseConnectionUpdateBody)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"db-connection", "test",
+		"--id", "dbconn_123",
+		"--trigger", "manual",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-connection test to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseConnectionTestBody["trigger"] != "manual" {
+		t.Fatalf("unexpected db-connection test body: %+v", databaseConnectionTestBody)
+	}
+	if !strings.Contains(stdout.String(), `"status": "passed"`) {
+		t.Fatalf("expected db-connection test output, got %s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"db-change", "create",
+		"--org", "org_123",
+		"--project", "proj_123",
+		"--env", "env_123",
+		"--service", "svc_123",
+		"--change", "chg_123",
+		"--name", "Expand schema",
+		"--datastore", "checkout-primary",
+		"--operation", "schema_change",
+		"--intent", "pre_deploy",
+		"--compatibility", "expand_contract",
+		"--reversibility", "reversible",
+		"--risk", "high",
+		"--summary", "expand schema",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-change create to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseChangeBody["operation_type"] != "schema_change" || databaseChangeBody["change_set_id"] != "chg_123" {
+		t.Fatalf("unexpected db-change create body: %+v", databaseChangeBody)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"db-change", "update",
+		"--id", "dbchg_123",
+		"--status", "reviewed",
+		"--summary", "expanded",
+		"--manual-approval",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-change update to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseChangeUpdateBody["status"] != "reviewed" || databaseChangeUpdateBody["manual_approval_required"] != true {
+		t.Fatalf("unexpected db-change update body: %+v", databaseChangeUpdateBody)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"db-check", "create",
+		"--org", "org_123",
+		"--project", "proj_123",
+		"--env", "env_123",
+		"--service", "svc_123",
+		"--change", "chg_123",
+		"--db-change", "dbchg_123",
+		"--name", "Compatibility check",
+		"--phase", "pre_deploy",
+		"--type", "compatibility_check",
+		"--mode", "manual_attestation",
+		"--status", "defined",
+		"--spec", "Confirm compatibility",
+		"--summary", "pending",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-check create to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseCheckBody["database_change_id"] != "dbchg_123" || databaseCheckBody["phase"] != "pre_deploy" {
+		t.Fatalf("unexpected db-check create body: %+v", databaseCheckBody)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{
+		"db-check", "update",
+		"--id", "dbchk_123",
+		"--status", "passed",
+		"--result", "confirmed",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected db-check update to succeed, got %d, stderr=%s", code, stderr.String())
+	}
+	if databaseCheckUpdateBody["status"] != "passed" || databaseCheckUpdateBody["last_result_summary"] != "confirmed" {
+		t.Fatalf("unexpected db-check update body: %+v", databaseCheckUpdateBody)
+	}
+}
+
 func TestRunTeamCommands(t *testing.T) {
 	var createBody map[string]any
 	var updateBodies []map[string]any
