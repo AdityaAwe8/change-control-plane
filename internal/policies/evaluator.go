@@ -9,8 +9,13 @@ import (
 )
 
 const (
-	AppliesToRiskAssessment = "risk_assessment"
-	AppliesToRolloutPlan    = "rollout_plan"
+	AppliesToRiskAssessment     = "risk_assessment"
+	AppliesToRolloutPlan        = "rollout_plan"
+	AppliesToRolloutExecution   = "rollout_execution"
+	AppliesToReleaseBundle      = "release_bundle"
+	AppliesToConfigSet          = "config_set"
+	AppliesToDatabaseGovernance = "database_governance"
+	AppliesToChangeWindow       = "change_window"
 
 	ModeAdvisory            = "advisory"
 	ModeBlock               = "block"
@@ -18,10 +23,18 @@ const (
 )
 
 var (
-	allowedAppliesTo = []string{AppliesToRiskAssessment, AppliesToRolloutPlan}
-	allowedModes     = []string{ModeAdvisory, ModeBlock, ModeRequireManualReview}
-	allowedTouches   = []string{"infrastructure", "secrets", "schema", "dependencies", "poor_rollback_history"}
-	allowedMissing   = []string{"observability", "slo"}
+	allowedAppliesTo = []string{
+		AppliesToRiskAssessment,
+		AppliesToRolloutPlan,
+		AppliesToRolloutExecution,
+		AppliesToReleaseBundle,
+		AppliesToConfigSet,
+		AppliesToDatabaseGovernance,
+		AppliesToChangeWindow,
+	}
+	allowedModes   = []string{ModeAdvisory, ModeBlock, ModeRequireManualReview}
+	allowedTouches = []string{"infrastructure", "secrets", "schema", "dependencies", "poor_rollback_history"}
+	allowedMissing = []string{"observability", "slo"}
 )
 
 type EvaluationInput struct {

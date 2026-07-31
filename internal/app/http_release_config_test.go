@@ -90,6 +90,52 @@ func TestConfigSetReleaseEvidenceAndIncidentRoutes(t *testing.T) {
 	if configSet.Validation.Status != "valid" {
 		t.Fatalf("expected valid config set validation, got %+v", configSet.Validation)
 	}
+	if configSet.ConfigSet.Entries[0].Value != "prod/checkout/db/password" {
+		t.Fatalf("expected secret_ref entry to retain only reference metadata, got %+v", configSet.ConfigSet.Entries[0])
+	}
+
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/config-sets", types.CreateConfigSetRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "unsupported-config",
+		Version:        "v1",
+		Entries: []types.ConfigEntry{
+			{Key: "FEATURE_FLAG", Value: "enabled", ValueType: "json_blob"},
+		},
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected unsupported config entry value type to return 400, got %d", status)
+	}
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/config-sets", types.CreateConfigSetRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "unsafe-config",
+		Version:        "v1",
+		Entries: []types.ConfigEntry{
+			{Key: "DATABASE_PASSWORD", Value: "do-not-store-this", ValueType: "literal"},
+		},
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected sensitive literal config entry to return 400, got %d", status)
+	}
+	duplicateConfigSet := postItemAuth[types.ConfigSetDetail](t, server.URL+"/api/v1/config-sets", types.CreateConfigSetRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "production-app",
+		Version:        "v1",
+		Entries: []types.ConfigEntry{
+			{Key: "DB_PASSWORD_REF", Value: "prod/checkout/db/password", ValueType: "secret_ref", Required: true},
+			{Key: "FEATURE_FLAG_CHECKOUT_GUARD", Value: "enabled", ValueType: "literal"},
+			{Key: "FEATURE_FLAG_CHECKOUT_GUARD", Value: "enabled", ValueType: "literal"},
+		},
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if duplicateConfigSet.Validation.Status != "warning" || len(duplicateConfigSet.Validation.Warnings) == 0 {
+		t.Fatalf("expected duplicate config key/version to produce warning validation, got %+v", duplicateConfigSet.Validation)
+	}
 
 	release := postItemAuth[types.ReleaseAnalysis](t, server.URL+"/api/v1/releases", types.CreateReleaseRequest{
 		OrganizationID: admin.Session.ActiveOrganizationID,

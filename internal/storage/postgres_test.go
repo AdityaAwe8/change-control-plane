@@ -29,7 +29,7 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
+		t.Skipf("postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 
@@ -325,6 +325,42 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 	}
 	if len(loadedConnectionTests) != 1 || loadedConnectionTests[0].ID != connectionTest.ID {
 		t.Fatalf("expected connection tests to round-trip, got %+v", loadedConnectionTests)
+	}
+
+	databaseExecution := types.DatabaseValidationExecution{
+		BaseRecord:        types.BaseRecord{ID: "dbexec_test_pg", CreatedAt: now, UpdatedAt: now},
+		OrganizationID:    org.ID,
+		ProjectID:         project.ID,
+		EnvironmentID:     environment.ID,
+		ServiceID:         service.ID,
+		ChangeSetID:       change.ID,
+		DatabaseChangeID:  databaseChange.ID,
+		ValidationCheckID: databaseCheck.ID,
+		ConnectionRefID:   connectionRef.ID,
+		Trigger:           "manual",
+		ExecutionMode:     "runtime_read_only",
+		Status:            "passed",
+		Summary:           "runtime database validation passed",
+		ResultDetails:     []string{"subject=table exists=true"},
+		Evidence:          []string{"connection_ref:" + connectionRef.ID, "source:secret_ref_dsn:prod/checkout/db/runtime_dsn", "resolved_via_env:CCP_CHECKOUT_RUNTIME_DSN"},
+		ActorType:         "user",
+		ActorID:           user.ID,
+		StartedAt:         now,
+		CompletedAt:       timePointer(now),
+	}
+	if err := store.CreateDatabaseValidationExecution(ctx, databaseExecution); err != nil {
+		t.Fatal(err)
+	}
+	loadedDatabaseExecutions, err := store.ListDatabaseValidationExecutions(ctx, DatabaseValidationExecutionQuery{
+		OrganizationID:    org.ID,
+		ValidationCheckID: databaseCheck.ID,
+		Limit:             10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loadedDatabaseExecutions) != 1 || loadedDatabaseExecutions[0].ID != databaseExecution.ID || len(loadedDatabaseExecutions[0].Evidence) != 3 {
+		t.Fatalf("expected database validation executions to round-trip, got %+v", loadedDatabaseExecutions)
 	}
 
 	assessment := types.RiskAssessment{
@@ -893,7 +929,7 @@ func TestPostgresStoreStatusEventFiltersAndNotFound(t *testing.T) {
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
+		t.Skipf("postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 
@@ -1137,7 +1173,7 @@ func TestPostgresStoreUpdateOutboxEventIfStatusHonorsExpectedStatus(t *testing.T
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
+		t.Skipf("postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 
@@ -1245,7 +1281,7 @@ func TestPostgresStoreBrowserSessionRoundTrip(t *testing.T) {
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
+		t.Skipf("postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 
@@ -1409,7 +1445,7 @@ func TestPostgresStoreWithinTransactionRollsBackOnError(t *testing.T) {
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
+		t.Skipf("postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 
@@ -1474,7 +1510,7 @@ func TestPostgresStoreDuplicateHandlingAndPagination(t *testing.T) {
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
+		t.Skipf("postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 
@@ -1591,7 +1627,7 @@ func TestPostgresStoreFreshBootstrapAppliesMigrations(t *testing.T) {
 	dsn := postgresTestDSN()
 	freshDSN, cleanup, err := createTemporaryDatabase(dsn)
 	if err != nil {
-		t.Skipf("temporary database unavailable: %v", err)
+		t.Skipf("temporary database unavailable; CCP_TEST_DB_DSN must point at a PostgreSQL role allowed to create/drop temporary proof databases: %v", err)
 	}
 	defer cleanup()
 
@@ -1601,7 +1637,7 @@ func TestPostgresStoreFreshBootstrapAppliesMigrations(t *testing.T) {
 
 	store, err := NewPostgresStore(cfg)
 	if err != nil {
-		t.Skipf("fresh bootstrap postgres unavailable: %v", err)
+		t.Skipf("fresh bootstrap postgres unavailable; set CCP_TEST_DB_DSN or run make proof-postgres with a reachable test database: %v", err)
 	}
 	defer store.Close()
 

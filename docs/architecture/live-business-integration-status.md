@@ -21,7 +21,7 @@ Status legend used here:
 | GitHub descriptor/catalog | `partially implemented` | The static registry entry still seeds a default org-scoped GitHub integration, but operators can now create additional named GitHub instances with different auth and scope metadata. |
 | GitHub API connection test | `near-live` | A real token-backed GitHub API test path now exists through the integration test endpoint. |
 | GitHub repository discovery | `near-live` | The platform can now call the GitHub API, discover repositories, persist them, and expose them in the onboarding surface for mapping. Pagination and very large org handling are still shallow. |
-| GitHub App onboarding | `partially implemented` | The platform now has a real installation-style start/callback flow, signed state handling, installation metadata persistence, and dynamic installation-token minting from `app_id`, `private_key_env`, and `installation_id`. Marketplace polish, automatic webhook registration, and OAuth user-consent flow are still missing. |
+| GitHub App onboarding | `partially implemented` | The platform now has a real installation-style start/callback flow, signed state handling, installation metadata persistence, dynamic installation-token minting from `app_id`, `private_key_env`, and `installation_id`, and automatic webhook registration/repair through the integration webhook-registration surface. Marketplace polish and OAuth user-consent flow are still missing. |
 | GitHub webhook ingest | `near-live` | The platform now accepts GitHub webhooks, validates `X-Hub-Signature-256`, records webhook runs, deduplicates by delivery id, and ingests mapped push or PR change metadata into persisted change sets. GitHub App installation onboarding now coexists with the legacy PAT path. |
 | GitHub changed-file ingest | `near-live` | Push payloads use file lists from the webhook payload, and pull requests can fetch changed files through the GitHub API. Large PR pagination and richer review state are still limited. |
 | Kubernetes provider runtime path | `near-live` | The Kubernetes provider still uses real HTTP calls and now has an onboarding/test/sync surface around it. It remains HTTP-backed and is not `client-go` or cluster-controller based. |
@@ -34,7 +34,7 @@ Status legend used here:
 | Runtime signal sourcing | `near-live` | Prometheus-backed signal collection is materially real when configured. Scheduling, retention, and multi-tenant metrics hardening are still future work. |
 | Onboarding UX | `partially implemented` | The web app now has a real integration onboarding surface with config, enablement, advisory mode, connection tests, sync, repository discovery, and repository mapping. It is still a serious first-run page rather than a polished multi-step wizard. |
 | CLI onboarding support | `partially implemented` | The CLI can now create/list/show/update/test/sync integrations, start GitHub App onboarding, and list/map repositories. It is still JSON-first and operational rather than polished. |
-| OpenAPI coverage | `partially implemented` | OpenAPI now covers the newest onboarding, sync, and multi-instance routes materially better than before, but older CRUD surfaces still need a fuller schema pass. |
+| OpenAPI coverage | `partially implemented` | OpenAPI now documents the registered route surface, concrete envelopes, release/config/database governance, webhook, discovery, and admin routes materially better than before. Contract tests assert route presence and broad runtime-response alignment, but this is still not a generated full schema/runtime diff across every alternate status code. |
 
 ## Reality Check
 
@@ -42,7 +42,7 @@ What is materially more real now:
 
 - GitHub is no longer only a descriptor; there is now a real token-backed API path, a GitHub App installation-style onboarding flow, and webhook ingest.
 - Integrations now have persisted health, sync history, and advisory/control state.
-- The product can now model more than one GitHub, Kubernetes, or Prometheus instance per org.
+- The product can now model more than one GitHub, GitLab, Kubernetes, or Prometheus instance per org.
 - Repository discovery and mapping are now part of the product rather than only seed data or graph ingest utilities.
 - Advisory mode now prevents live backend control actions during reconcile for non-simulated providers.
 

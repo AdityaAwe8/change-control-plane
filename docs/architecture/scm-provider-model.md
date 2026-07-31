@@ -60,18 +60,20 @@ This is not yet a full many-to-many provenance model. When multiple SCM instance
 - GitHub:
   - repository discovery
   - webhook ingest
+  - automatic webhook registration/repair when provider permissions and `webhook_secret_env` are configured
   - shared change normalization
   - GitHub App installation-style onboarding
 - GitLab:
   - token-based onboarding
   - project discovery
   - webhook ingest
+  - automatic webhook registration/repair for supported group-scoped integrations
   - merge-request changed-file enrichment
   - shared change normalization
 
 ## What Is Still Partial
 
 - GitLab does not yet have OAuth or GitLab App-style onboarding
-- GitHub still lacks automatic webhook registration
 - cross-provider provenance is still primary-source-first
-- older CRUD/OpenAPI surfaces still need a broader schema truth pass
+- webhook registration still depends on provider permissions, configured public callback reachability, and env-referenced secrets
+- OpenAPI coverage is broad, but still not a generated full schema/runtime diff across every status code and redirect branch

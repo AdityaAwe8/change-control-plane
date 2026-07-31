@@ -72,8 +72,7 @@ jobs:
         env:
           CCP_TEST_DB_DSN: postgres://postgres:postgres@localhost:5432/change_control_plane?sslmode=disable
           CCP_DB_DSN: postgres://postgres:postgres@localhost:5432/change_control_plane?sslmode=disable
-        run: |
-          go test ./internal/storage ./test/integration
+        run: make proof-postgres
 
   python:
     runs-on: ubuntu-latest

@@ -56,6 +56,9 @@ func (a *Application) CreateConfigSet(ctx context.Context, req types.CreateConfi
 		Status:         "active",
 		Entries:        normalizeConfigEntries(req.Entries),
 	}
+	if err := validateConfigEntries(configSet.Entries); err != nil {
+		return types.ConfigSetDetail{}, err
+	}
 	validation, err := a.buildConfigSetValidation(ctx, configSet)
 	if err != nil {
 		return types.ConfigSetDetail{}, err
@@ -125,6 +128,9 @@ func (a *Application) UpdateConfigSet(ctx context.Context, id string, req types.
 	}
 	if req.Entries != nil {
 		configSet.Entries = normalizeConfigEntries(*req.Entries)
+		if err := validateConfigEntries(configSet.Entries); err != nil {
+			return types.ConfigSetDetail{}, err
+		}
 	}
 	if req.Metadata != nil {
 		configSet.Metadata = req.Metadata
@@ -201,6 +207,9 @@ func (a *Application) CreateRelease(ctx context.Context, req types.CreateRelease
 	if err := a.Store.CreateRelease(ctx, release); err != nil {
 		return types.ReleaseAnalysis{}, err
 	}
+	if _, err := a.evaluateAndPersistReleaseGovernancePolicies(ctx, release); err != nil {
+		return types.ReleaseAnalysis{}, err
+	}
 	if err := a.record(ctx, identity, "release.created", "release", release.ID, release.OrganizationID, release.ProjectID, []string{release.Name, release.Version}); err != nil {
 		return types.ReleaseAnalysis{}, err
 	}
@@ -264,6 +273,9 @@ func (a *Application) UpdateRelease(ctx context.Context, id string, req types.Up
 	}
 	release.UpdatedAt = time.Now().UTC()
 	if err := a.Store.UpdateRelease(ctx, release); err != nil {
+		return types.ReleaseAnalysis{}, err
+	}
+	if _, err := a.evaluateAndPersistReleaseGovernancePolicies(ctx, release); err != nil {
 		return types.ReleaseAnalysis{}, err
 	}
 	if err := a.record(ctx, identity, "release.updated", "release", release.ID, release.OrganizationID, release.ProjectID, []string{release.Name, release.Version, release.Status}); err != nil {
@@ -351,6 +363,9 @@ func (a *Application) buildConfigSetValidation(ctx context.Context, configSet ty
 		candidate := history[idx]
 		if candidate.ID == configSet.ID || candidate.Name != configSet.Name {
 			continue
+		}
+		if strings.TrimSpace(candidate.Version) == strings.TrimSpace(configSet.Version) {
+			validation.Warnings = append(validation.Warnings, "duplicate version detected for config set "+configSet.Name+": "+configSet.Version)
 		}
 		previous = &candidate
 		break
@@ -538,6 +553,7 @@ func (a *Application) buildReleaseAnalysis(ctx context.Context, release types.Re
 		DatabasePosture:         databaseSnapshot.Posture,
 		DatabaseFindings:        databaseFindings,
 		WindowFindings:          windowFindings,
+		PolicyDecisions:         policyDecisions,
 		PolicyHighlights:        dedupeStrings(policyHighlights),
 		Warnings:                dedupeStrings(warnings),
 		Blockers:                dedupeStrings(blockers),
@@ -579,6 +595,149 @@ func (a *Application) loadReleaseScope(ctx context.Context, organizationID, proj
 		configSets = append(configSets, configSet)
 	}
 	return changes, configSets, nil
+}
+
+type releasePolicyWorkflowContext struct {
+	Change      types.ChangeSet
+	Service     types.Service
+	Environment types.Environment
+	Assessment  types.RiskAssessment
+}
+
+func (a *Application) evaluateAndPersistReleaseGovernancePolicies(ctx context.Context, release types.Release) ([]types.PolicyDecision, error) {
+	changes, configSets, err := a.loadReleaseScope(ctx, release.OrganizationID, release.ProjectID, release.EnvironmentID, release.ChangeSetIDs, release.ConfigSetIDs)
+	if err != nil {
+		return nil, err
+	}
+	environment, err := a.Store.GetEnvironment(ctx, release.EnvironmentID)
+	if err != nil {
+		return nil, err
+	}
+	contexts := make([]releasePolicyWorkflowContext, 0, len(changes))
+	contextByChangeID := make(map[string]releasePolicyWorkflowContext, len(changes))
+	contextByServiceID := make(map[string]releasePolicyWorkflowContext, len(changes))
+	for _, change := range changes {
+		service, err := a.Store.GetService(ctx, change.ServiceID)
+		if err != nil {
+			return nil, err
+		}
+		assessment, err := a.latestReleasePolicyAssessment(ctx, change, service, environment)
+		if err != nil {
+			return nil, err
+		}
+		workflowContext := releasePolicyWorkflowContext{
+			Change:      change,
+			Service:     service,
+			Environment: environment,
+			Assessment:  assessment,
+		}
+		contexts = append(contexts, workflowContext)
+		contextByChangeID[change.ID] = workflowContext
+		if _, ok := contextByServiceID[service.ID]; !ok {
+			contextByServiceID[service.ID] = workflowContext
+		}
+	}
+	if len(contexts) == 0 {
+		return nil, nil
+	}
+
+	decisions := make([]types.PolicyDecision, 0, 8)
+	appendDecisions := func(items []types.PolicyDecision) {
+		decisions = append(decisions, items...)
+	}
+	for _, workflowContext := range contexts {
+		items, err := a.evaluateAndPersistPolicies(ctx, policylib.AppliesToReleaseBundle, workflowContext.Change, workflowContext.Service, workflowContext.Environment, workflowContext.Assessment, policyEvaluationReference{
+			riskAssessmentID: workflowContext.Assessment.ID,
+			releaseID:        release.ID,
+			metadata:         policyDecisionSubjectMetadata("evaluated", false, "release", release.ID),
+		})
+		if err != nil {
+			return nil, err
+		}
+		appendDecisions(items)
+
+		items, err = a.evaluateAndPersistPolicies(ctx, policylib.AppliesToChangeWindow, workflowContext.Change, workflowContext.Service, workflowContext.Environment, workflowContext.Assessment, policyEvaluationReference{
+			riskAssessmentID: workflowContext.Assessment.ID,
+			releaseID:        release.ID,
+			metadata:         policyDecisionSubjectMetadata("evaluated", false, "change_window", release.ID),
+		})
+		if err != nil {
+			return nil, err
+		}
+		appendDecisions(items)
+	}
+
+	for _, configSet := range configSets {
+		workflowContext := contexts[0]
+		if scopedContext, ok := contextByServiceID[configSet.ServiceID]; ok {
+			workflowContext = scopedContext
+		}
+		configChange := workflowContext.Change
+		configChange.ChangeTypes = appendUniqueString(configChange.ChangeTypes, "config")
+		items, err := a.evaluateAndPersistPolicies(ctx, policylib.AppliesToConfigSet, configChange, workflowContext.Service, workflowContext.Environment, workflowContext.Assessment, policyEvaluationReference{
+			riskAssessmentID: workflowContext.Assessment.ID,
+			releaseID:        release.ID,
+			configSetID:      configSet.ID,
+			metadata:         policyDecisionSubjectMetadata("evaluated", false, "config_set", configSet.ID),
+		})
+		if err != nil {
+			return nil, err
+		}
+		appendDecisions(items)
+	}
+
+	databaseSnapshot, err := a.buildDatabaseGovernanceSnapshot(ctx, release.OrganizationID, release.ProjectID, environment, changes)
+	if err != nil {
+		return nil, err
+	}
+	for _, databaseChange := range databaseSnapshot.Changes {
+		workflowContext, ok := contextByChangeID[databaseChange.ChangeSetID]
+		if !ok {
+			continue
+		}
+		items, err := a.evaluateAndPersistPolicies(ctx, policylib.AppliesToDatabaseGovernance, workflowContext.Change, workflowContext.Service, workflowContext.Environment, workflowContext.Assessment, policyEvaluationReference{
+			riskAssessmentID: workflowContext.Assessment.ID,
+			releaseID:        release.ID,
+			databaseChangeID: databaseChange.ID,
+			metadata:         policyDecisionSubjectMetadata("evaluated", false, "database_change", databaseChange.ID),
+		})
+		if err != nil {
+			return nil, err
+		}
+		appendDecisions(items)
+	}
+	return decisions, nil
+}
+
+func (a *Application) latestReleasePolicyAssessment(ctx context.Context, change types.ChangeSet, service types.Service, environment types.Environment) (types.RiskAssessment, error) {
+	assessments, err := a.Store.ListRiskAssessments(ctx, storage.RiskAssessmentQuery{
+		OrganizationID: change.OrganizationID,
+		ProjectID:      change.ProjectID,
+		ChangeSetID:    change.ID,
+		Limit:          200,
+	})
+	if err != nil {
+		return types.RiskAssessment{}, err
+	}
+	if len(assessments) > 0 {
+		return assessments[len(assessments)-1], nil
+	}
+	assessment := a.RiskEngine.Assess(change, service, environment)
+	assessment.ID = ""
+	return assessment, nil
+}
+
+func appendUniqueString(values []string, value string) []string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return values
+	}
+	for _, existing := range values {
+		if strings.EqualFold(strings.TrimSpace(existing), normalized) {
+			return values
+		}
+	}
+	return append(values, normalized)
 }
 
 func (a *Application) validateProjectEnvironment(ctx context.Context, organizationID, projectID, environmentID string) (types.Project, types.Environment, error) {
@@ -647,6 +806,16 @@ func (a *Application) collectReleasePolicyDecisions(ctx context.Context, release
 			merged = append(merged, item)
 		}
 	}
+	releaseItems, err := a.Store.ListPolicyDecisions(ctx, storage.PolicyDecisionQuery{
+		OrganizationID: release.OrganizationID,
+		ProjectID:      release.ProjectID,
+		ReleaseID:      release.ID,
+		Limit:          500,
+	})
+	if err != nil {
+		return nil, err
+	}
+	appendDecisionSet(releaseItems)
 	for _, change := range changes {
 		items, err := a.Store.ListPolicyDecisions(ctx, storage.PolicyDecisionQuery{
 			OrganizationID: release.OrganizationID,
@@ -1179,6 +1348,23 @@ func normalizeConfigEntries(entries []types.ConfigEntry) []types.ConfigEntry {
 		})
 	}
 	return normalized
+}
+
+func validateConfigEntries(entries []types.ConfigEntry) error {
+	if len(entries) == 0 {
+		return fmt.Errorf("%w: at least one config entry is required", ErrValidation)
+	}
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.Key) == "" {
+			return fmt.Errorf("%w: config entry key is required", ErrValidation)
+		}
+		switch strings.TrimSpace(strings.ToLower(entry.ValueType)) {
+		case "literal", "secret_ref":
+		default:
+			return fmt.Errorf("%w: unsupported config entry value_type %q", ErrValidation, entry.ValueType)
+		}
+	}
+	return nil
 }
 
 func configSetValidationBlocked(validation types.ConfigSetValidation) bool {

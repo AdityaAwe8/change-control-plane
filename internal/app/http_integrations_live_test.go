@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
@@ -207,6 +208,89 @@ func TestGitHubIntegrationSyncAndWebhookIngestsMappedChangeSet(t *testing.T) {
 	runs := getListAuth[types.IntegrationSyncRun](t, server.URL+"/api/v1/integrations/"+githubIntegration.ID+"/sync-runs", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
 	if len(runs) < 3 {
 		t.Fatalf("expected test, sync, and webhook runs, got %d", len(runs))
+	}
+}
+
+func TestIntegrationProviderConfigRejectsRawSecretsAndRedactsLegacyMetadata(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	admin := loginDev(t, server.URL, types.DevLoginRequest{
+		Email:            "owner@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme",
+		OrganizationSlug: "acme",
+	})
+
+	rawCreate := types.CreateIntegrationRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Kind:           "github",
+		Name:           "Unsafe GitHub",
+		Metadata: types.Metadata{
+			"access_token": "ghs_plaintext_should_not_store",
+			"owner":        "acme",
+		},
+	}
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/integrations", rawCreate, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected raw provider secret to be rejected on create, got %d", status)
+	}
+
+	rawDSN := "postgres" + "://db.internal:5432/app?sslmode=disable"
+	created := postItemAuth[types.Integration](t, server.URL+"/api/v1/integrations", types.CreateIntegrationRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Kind:           "github",
+		Name:           "Safe GitHub",
+		Metadata: types.Metadata{
+			"access_token_env": "CCP_GITHUB_TOKEN_TEST",
+			"owner":            "acme",
+		},
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	created.Metadata = types.Metadata{
+		"access_token":     "ghs_legacy_plaintext",
+		"access_token_env": "CCP_GITHUB_TOKEN_TEST",
+		"dsn_env":          rawDSN,
+		"secret_ref":       "prod/github/app/private-key",
+		"secret_ref_env":   "CCP_GITHUB_APP_SECRET_REF",
+		"nested": map[string]any{
+			"webhook_secret": "legacy-webhook-secret",
+			"owner":          "acme",
+		},
+	}
+	if err := application.Store.UpdateIntegration(context.Background(), created); err != nil {
+		t.Fatalf("seed unsafe legacy integration metadata: %v", err)
+	}
+
+	body := doAuthenticatedJSON(t, http.MethodGet, server.URL+"/api/v1/integrations?kind=github", nil, admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
+	if bytes.Contains(body, []byte("ghs_legacy_plaintext")) || bytes.Contains(body, []byte("legacy-webhook-secret")) || bytes.Contains(body, []byte(rawDSN)) {
+		t.Fatalf("expected legacy raw provider secrets to be redacted from integration response, got %s", string(body))
+	}
+	if !bytes.Contains(body, []byte("CCP_GITHUB_TOKEN_TEST")) ||
+		!bytes.Contains(body, []byte("prod/github/app/private-key")) ||
+		!bytes.Contains(body, []byte("CCP_GITHUB_APP_SECRET_REF")) ||
+		!bytes.Contains(body, []byte("[redacted]")) {
+		t.Fatalf("expected env/reference metadata to remain visible and raw secrets to be redacted, got %s", string(body))
+	}
+
+	rawUpdate := types.UpdateIntegrationRequest{
+		Metadata: types.Metadata{
+			"access_token_env": "CCP_GITHUB_TOKEN_TEST",
+			"bearerToken":      "legacy-bearer-token",
+		},
+	}
+	if status := requestStatus(t, http.MethodPatch, server.URL+"/api/v1/integrations/"+created.ID, rawUpdate, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected raw provider secret to be rejected on update, got %d", status)
+	}
+
+	rawDSNUpdate := types.UpdateIntegrationRequest{
+		Metadata: types.Metadata{
+			"dsn_env": rawDSN,
+		},
+	}
+	if status := requestStatus(t, http.MethodPatch, server.URL+"/api/v1/integrations/"+created.ID, rawDSNUpdate, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected raw DSN-shaped metadata value to be rejected on update, got %d", status)
 	}
 }
 

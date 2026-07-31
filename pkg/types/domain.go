@@ -355,43 +355,43 @@ type DatabaseConnectionReference struct {
 
 type DatabaseConnectionTest struct {
 	BaseRecord
-	OrganizationID   string     `json:"organization_id"`
-	ProjectID        string     `json:"project_id"`
-	EnvironmentID    string     `json:"environment_id"`
-	ServiceID        string     `json:"service_id,omitempty"`
-	ConnectionRefID  string     `json:"connection_ref_id"`
-	Trigger          string     `json:"trigger"`
-	Status           string     `json:"status"`
-	Summary          string     `json:"summary"`
-	Details          []string   `json:"details,omitempty"`
-	ErrorClass       string     `json:"error_class,omitempty"`
-	ActorType        string     `json:"actor_type,omitempty"`
-	ActorID          string     `json:"actor_id,omitempty"`
-	StartedAt        time.Time  `json:"started_at"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	OrganizationID  string     `json:"organization_id"`
+	ProjectID       string     `json:"project_id"`
+	EnvironmentID   string     `json:"environment_id"`
+	ServiceID       string     `json:"service_id,omitempty"`
+	ConnectionRefID string     `json:"connection_ref_id"`
+	Trigger         string     `json:"trigger"`
+	Status          string     `json:"status"`
+	Summary         string     `json:"summary"`
+	Details         []string   `json:"details,omitempty"`
+	ErrorClass      string     `json:"error_class,omitempty"`
+	ActorType       string     `json:"actor_type,omitempty"`
+	ActorID         string     `json:"actor_id,omitempty"`
+	StartedAt       time.Time  `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 }
 
 type DatabaseValidationExecution struct {
 	BaseRecord
-	OrganizationID     string     `json:"organization_id"`
-	ProjectID          string     `json:"project_id"`
-	EnvironmentID      string     `json:"environment_id"`
-	ServiceID          string     `json:"service_id,omitempty"`
-	ChangeSetID        string     `json:"change_set_id"`
-	DatabaseChangeID   string     `json:"database_change_id,omitempty"`
-	ValidationCheckID  string     `json:"validation_check_id"`
-	ConnectionRefID    string     `json:"connection_ref_id"`
-	Trigger            string     `json:"trigger"`
-	ExecutionMode      string     `json:"execution_mode"`
-	Status             string     `json:"status"`
-	Summary            string     `json:"summary"`
-	ResultDetails      []string   `json:"result_details,omitempty"`
-	Evidence           []string   `json:"evidence,omitempty"`
-	ErrorClass         string     `json:"error_class,omitempty"`
-	ActorType          string     `json:"actor_type,omitempty"`
-	ActorID            string     `json:"actor_id,omitempty"`
-	StartedAt          time.Time  `json:"started_at"`
-	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	OrganizationID    string     `json:"organization_id"`
+	ProjectID         string     `json:"project_id"`
+	EnvironmentID     string     `json:"environment_id"`
+	ServiceID         string     `json:"service_id,omitempty"`
+	ChangeSetID       string     `json:"change_set_id"`
+	DatabaseChangeID  string     `json:"database_change_id,omitempty"`
+	ValidationCheckID string     `json:"validation_check_id"`
+	ConnectionRefID   string     `json:"connection_ref_id"`
+	Trigger           string     `json:"trigger"`
+	ExecutionMode     string     `json:"execution_mode"`
+	Status            string     `json:"status"`
+	Summary           string     `json:"summary"`
+	ResultDetails     []string   `json:"result_details,omitempty"`
+	Evidence          []string   `json:"evidence,omitempty"`
+	ErrorClass        string     `json:"error_class,omitempty"`
+	ActorType         string     `json:"actor_type,omitempty"`
+	ActorID           string     `json:"actor_id,omitempty"`
+	StartedAt         time.Time  `json:"started_at"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 }
 
 type ChangeSet struct {
@@ -586,6 +586,9 @@ type PolicyDecision struct {
 	RiskAssessmentID   string   `json:"risk_assessment_id,omitempty"`
 	RolloutPlanID      string   `json:"rollout_plan_id,omitempty"`
 	RolloutExecutionID string   `json:"rollout_execution_id,omitempty"`
+	ReleaseID          string   `json:"release_id,omitempty"`
+	ConfigSetID        string   `json:"config_set_id,omitempty"`
+	DatabaseChangeID   string   `json:"database_change_id,omitempty"`
 	Outcome            string   `json:"outcome"`
 	Summary            string   `json:"summary"`
 	Reasons            []string `json:"reasons"`

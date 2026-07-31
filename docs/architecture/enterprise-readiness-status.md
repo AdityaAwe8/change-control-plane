@@ -15,7 +15,7 @@ This status page is intentionally strict. A feature is not counted as enterprise
 | SCM webhook registration | partial | GitHub and GitLab webhook registration is now automatic for supported org/group-scoped integrations when required secret references are configured. Some scopes and missing config still fall back to honest manual/error states. |
 | Webhook health visibility | real and credible | Integration pages expose webhook registration status, delivery health, last delivery, and latest error. |
 | Restart/recovery reliability | partial | Outbox-backed events and scheduled sync runs survive process restart more credibly than before, but there is still no replay console, dead-letter queue, or multi-process dispatcher proof. |
-| Enterprise docs and contract | partial | OpenAPI and docs now reflect the new enterprise-auth, outbox, and webhook-registration routes, but older CRUD surfaces still need a broader schema truth pass. |
+| Enterprise docs and contract | partial | OpenAPI and docs now reflect enterprise auth, outbox recovery, webhook registration, release/config/database governance, and the older CRUD envelopes. Contract proof is broad, but it is still not a generated full schema/runtime diff across every status code and redirect branch. |
 
 ## Honest Summary
 

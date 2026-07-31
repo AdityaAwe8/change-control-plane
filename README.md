@@ -94,10 +94,10 @@ The current baseline includes:
 - persisted graph enrichment for repositories and integration-sourced relationships
 - policy evaluation abstraction with default production and regulated-zone policies
 - audit event recording for critical actions
-- starter integration registry with GitHub, Kubernetes, Slack, and Jira adapters
+- integration surfaces for GitHub, GitLab, Kubernetes, and Prometheus, with webhook, sync, repository, discovered-resource, and coverage context
 - health endpoints and structured JSON responses
 - CLI commands for common control-plane actions
-- TypeScript frontend scaffold with core control-plane pages
+- TypeScript web app with route-local operator pages for catalog, rollout, policies, integrations, graph, incidents, enterprise/admin, settings, and simulation
 
 ## What Is Intentionally Staged
 
@@ -198,14 +198,17 @@ CCP_DOCKER_API_HOST_PORT=38080 make compose-up-full
 
 ## API
 
-The API contract lives in [docs/api/openapi.yaml](/Users/aditya/Documents/ChangeControlPlane/docs/api/openapi.yaml).
+The API contract lives in [docs/api/openapi.yaml](/Users/aditya/Documents/ChangeControlPlane/docs/api/openapi.yaml). Treat that file, plus the OpenAPI contract tests, as the source of truth for the complete registered-route surface.
 
-Core endpoints:
+Representative endpoints:
 
 - `GET /healthz`
 - `GET /readyz`
 - `POST /api/v1/auth/dev/login`
+- `POST /api/v1/auth/sign-up`
+- `POST /api/v1/auth/sign-in`
 - `GET /api/v1/auth/session`
+- `POST /api/v1/auth/logout`
 - `GET|POST /api/v1/organizations`
 - `GET|POST /api/v1/projects`
 - `GET|POST /api/v1/teams`
@@ -216,9 +219,19 @@ Core endpoints:
 - `GET|POST /api/v1/rollout-plans`
 - `GET|POST /api/v1/rollout-executions`
 - `POST /api/v1/rollout-executions/{id}/verification`
-- `GET /api/v1/policies`
+- `GET|POST /api/v1/policies`
+- `GET /api/v1/policy-decisions`
+- `GET|POST /api/v1/config-sets`
+- `GET|POST /api/v1/releases`
+- `GET|POST /api/v1/database-connection-references`
+- `GET|POST /api/v1/database-changes`
+- `GET|POST /api/v1/database-validation-checks`
+- `GET /api/v1/database-validation-executions`
 - `GET /api/v1/audit-events`
-- `GET /api/v1/integrations`
+- `GET|POST /api/v1/integrations`
+- `GET /api/v1/repositories`
+- `GET /api/v1/discovered-resources`
+- `GET /api/v1/graph/relationships`
 - `GET|POST /api/v1/service-accounts`
 - `POST /api/v1/service-accounts/{id}/tokens`
 
@@ -245,6 +258,30 @@ The `ccp` CLI now covers the main operator/admin surface for the product. Today 
 - `ccp env create`
 - `ccp env update`
 - `ccp env archive`
+- `ccp config-set list`
+- `ccp config-set show`
+- `ccp config-set create`
+- `ccp config-set update`
+- `ccp release list`
+- `ccp release show`
+- `ccp release create`
+- `ccp release update`
+- `ccp db-connection list`
+- `ccp db-connection show`
+- `ccp db-connection create`
+- `ccp db-connection update`
+- `ccp db-connection test`
+- `ccp db-change list`
+- `ccp db-change show`
+- `ccp db-change create`
+- `ccp db-change update`
+- `ccp db-check list`
+- `ccp db-check show`
+- `ccp db-check create`
+- `ccp db-check update`
+- `ccp db-check execute`
+- `ccp db-execution list`
+- `ccp db-execution show`
 - `ccp service-account create`
 - `ccp service-account list`
 - `ccp service-account deactivate`

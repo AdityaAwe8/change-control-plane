@@ -28,7 +28,11 @@ func (a *Application) ListRepositories(ctx context.Context, query storage.Reposi
 		return nil, err
 	}
 	query.OrganizationID = orgID
-	return a.Store.ListRepositories(ctx, query)
+	items, err := a.Store.ListRepositories(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return safeRepositoriesForResponse(items), nil
 }
 
 func (a *Application) UpdateRepository(ctx context.Context, id string, req types.UpdateRepositoryRequest) (types.Repository, error) {
@@ -151,7 +155,7 @@ func (a *Application) UpdateRepository(ctx context.Context, id string, req types
 	if err := a.record(ctx, identity, "repository.updated", "repository", repository.ID, repository.OrganizationID, repository.ProjectID, []string{repository.URL, repository.ServiceID, repository.EnvironmentID}); err != nil {
 		return types.Repository{}, err
 	}
-	return repository, nil
+	return safeRepositoryForResponse(repository), nil
 }
 
 func (a *Application) ListIntegrationSyncRuns(ctx context.Context, integrationID string) ([]types.IntegrationSyncRun, error) {
@@ -188,7 +192,7 @@ func (a *Application) TestIntegrationConnection(ctx context.Context, integration
 	if err := validateIntegrationConfiguration(integration, false); err != nil {
 		run := a.integrationRunForError(integration, "test_connection", err)
 		integration, _ = a.persistIntegrationRun(ctx, integration, run)
-		return types.IntegrationTestResult{Integration: integration, Run: run}, err
+		return types.IntegrationTestResult{Integration: safeIntegrationForResponse(integration), Run: run}, err
 	}
 
 	now := time.Now().UTC()
@@ -212,7 +216,7 @@ func (a *Application) TestIntegrationConnection(ctx context.Context, integration
 	if err != nil {
 		run = a.integrationRunForError(integration, "test_connection", err)
 		integration, _ = a.persistIntegrationRun(ctx, integration, run)
-		return types.IntegrationTestResult{Integration: integration, Run: run}, err
+		return types.IntegrationTestResult{Integration: safeIntegrationForResponse(integration), Run: run}, err
 	}
 	if isSCMIntegrationKind(integration.Kind) {
 		if registration, registrationErr := a.ensureWebhookRegistration(ctx, integration, false); registrationErr == nil {
@@ -229,7 +233,7 @@ func (a *Application) TestIntegrationConnection(ctx context.Context, integration
 	if err := a.record(ctx, identity, "integration.tested", "integration", integration.ID, integration.OrganizationID, "", details); err != nil {
 		return types.IntegrationTestResult{}, err
 	}
-	return types.IntegrationTestResult{Integration: hydrateIntegrationRuntimeState(integration, time.Now().UTC()), Run: run}, nil
+	return types.IntegrationTestResult{Integration: safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())), Run: run}, nil
 }
 
 func (a *Application) SyncIntegration(ctx context.Context, integrationID string) (types.IntegrationSyncResult, error) {
@@ -267,7 +271,7 @@ func (a *Application) syncIntegrationWithTrigger(ctx context.Context, integratio
 		run.Trigger = trigger
 		run.ScheduledFor = scheduledFor
 		integration, _ = a.persistIntegrationRun(ctx, integration, run)
-		return types.IntegrationSyncResult{Integration: hydrateIntegrationRuntimeState(integration, time.Now().UTC()), Run: run}, err
+		return types.IntegrationSyncResult{Integration: safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())), Run: run}, err
 	}
 	var (
 		repositories        []types.Repository
@@ -291,7 +295,7 @@ func (a *Application) syncIntegrationWithTrigger(ctx context.Context, integratio
 	run.ScheduledFor = scheduledFor
 	if err != nil {
 		integration, _ = a.persistIntegrationRun(ctx, integration, run)
-		return types.IntegrationSyncResult{Integration: hydrateIntegrationRuntimeState(integration, time.Now().UTC()), Run: run}, err
+		return types.IntegrationSyncResult{Integration: safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())), Run: run}, err
 	}
 	integration, err = a.persistIntegrationRun(ctx, integration, run)
 	if err != nil {
@@ -315,11 +319,11 @@ func (a *Application) syncIntegrationWithTrigger(ctx context.Context, integratio
 		}
 	}
 	return types.IntegrationSyncResult{
-		Integration:         hydrateIntegrationRuntimeState(integration, time.Now().UTC()),
+		Integration:         safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())),
 		Run:                 run,
-		Repositories:        repositories,
-		DiscoveredResources: discoveredResources,
-		Relationships:       relationships,
+		Repositories:        safeRepositoriesForResponse(repositories),
+		DiscoveredResources: safeDiscoveredResourcesForResponse(discoveredResources),
+		Relationships:       safeGraphRelationshipsForResponse(relationships),
 	}, nil
 }
 
@@ -612,6 +616,9 @@ func validateIntegrationConfiguration(integration types.Integration, strict bool
 	kind := strings.ToLower(strings.TrimSpace(integration.Kind))
 	mode := normalizeIntegrationMode(integration.Mode)
 	integration.AuthStrategy = normalizeIntegrationAuthStrategy(integration.Kind, integration.AuthStrategy, integration.Metadata)
+	if err := validateIntegrationMetadataSafety(integration.Metadata); err != nil {
+		return err
+	}
 	if mode == "" {
 		return fmt.Errorf("%w: integration mode is required", ErrValidation)
 	}
@@ -681,6 +688,18 @@ func validateIntegrationConfiguration(integration types.Integration, strict bool
 		}
 	}
 	return nil
+}
+
+func validateIntegrationMetadataSafety(metadata types.Metadata) error {
+	if path := types.FirstUnsafeMetadataPath(metadata, "metadata"); path != "" {
+		return fmt.Errorf("%w: integration metadata must reference provider secrets by *_env or *_secret_ref fields; raw secret value at %s is not allowed", ErrValidation, path)
+	}
+	return nil
+}
+
+func safeIntegrationForResponse(integration types.Integration) types.Integration {
+	integration.Metadata = types.RedactMetadata(integration.Metadata)
+	return integration
 }
 
 func normalizeIntegrationMode(mode string) string {

@@ -166,7 +166,7 @@ func (a *Application) UpdateRolloutExecutionRuntime(ctx context.Context, executi
 	); err != nil {
 		return types.RolloutExecution{}, err
 	}
-	return execution, nil
+	return safeRolloutExecutionForResponse(execution), nil
 }
 
 func (a *Application) CreateSignalSnapshot(ctx context.Context, executionID string, req types.CreateSignalSnapshotRequest) (types.SignalSnapshot, error) {
@@ -245,7 +245,7 @@ func (a *Application) CreateSignalSnapshot(ctx context.Context, executionID stri
 	); err != nil {
 		return types.SignalSnapshot{}, err
 	}
-	return snapshot, nil
+	return safeSignalSnapshotForResponse(snapshot), nil
 }
 
 func (a *Application) ListSignalSnapshots(ctx context.Context, executionID string) ([]types.SignalSnapshot, error) {

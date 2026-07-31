@@ -132,7 +132,15 @@ func (c *Client) CreateChangeSet(ctx context.Context, req types.CreateChangeSetR
 }
 
 func (c *Client) ListChangeSets(ctx context.Context) ([]types.ChangeSet, error) {
-	return doList[types.ChangeSet](ctx, c, http.MethodGet, "/api/v1/changes")
+	return c.ListChangeSetsWithQuery(ctx, "")
+}
+
+func (c *Client) ListChangeSetsWithQuery(ctx context.Context, rawQuery string) ([]types.ChangeSet, error) {
+	path := "/api/v1/changes"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.ChangeSet](ctx, c, http.MethodGet, path)
 }
 
 func (c *Client) GetChangeSet(ctx context.Context, id string) (types.ChangeSet, error) {
@@ -144,7 +152,19 @@ func (c *Client) AssessRisk(ctx context.Context, req types.CreateRiskAssessmentR
 }
 
 func (c *Client) ListRiskAssessments(ctx context.Context) ([]types.RiskAssessment, error) {
-	return doList[types.RiskAssessment](ctx, c, http.MethodGet, "/api/v1/risk-assessments")
+	return c.ListRiskAssessmentsWithQuery(ctx, "")
+}
+
+func (c *Client) ListRiskAssessmentsWithQuery(ctx context.Context, rawQuery string) ([]types.RiskAssessment, error) {
+	path := "/api/v1/risk-assessments"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.RiskAssessment](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) GetRiskAssessment(ctx context.Context, id string) (types.RiskAssessment, error) {
+	return doItem[types.RiskAssessment](ctx, c, http.MethodGet, "/api/v1/risk-assessments/"+id, nil)
 }
 
 func (c *Client) CreateRolloutPlan(ctx context.Context, req types.CreateRolloutPlanRequest) (types.RolloutPlanResult, error) {
@@ -152,7 +172,19 @@ func (c *Client) CreateRolloutPlan(ctx context.Context, req types.CreateRolloutP
 }
 
 func (c *Client) ListRolloutPlans(ctx context.Context) ([]types.RolloutPlan, error) {
-	return doList[types.RolloutPlan](ctx, c, http.MethodGet, "/api/v1/rollout-plans")
+	return c.ListRolloutPlansWithQuery(ctx, "")
+}
+
+func (c *Client) ListRolloutPlansWithQuery(ctx context.Context, rawQuery string) ([]types.RolloutPlan, error) {
+	path := "/api/v1/rollout-plans"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.RolloutPlan](ctx, c, http.MethodGet, path)
+}
+
+func (c *Client) GetRolloutPlan(ctx context.Context, id string) (types.RolloutPlan, error) {
+	return doItem[types.RolloutPlan](ctx, c, http.MethodGet, "/api/v1/rollout-plans/"+id, nil)
 }
 
 func (c *Client) ListConfigSets(ctx context.Context) ([]types.ConfigSet, error) {
@@ -292,7 +324,15 @@ func (c *Client) ListPolicyDecisions(ctx context.Context, rawQuery string) ([]ty
 }
 
 func (c *Client) ListRolloutExecutions(ctx context.Context) ([]types.RolloutExecution, error) {
-	return doList[types.RolloutExecution](ctx, c, http.MethodGet, "/api/v1/rollout-executions")
+	return c.ListRolloutExecutionsWithQuery(ctx, "")
+}
+
+func (c *Client) ListRolloutExecutionsWithQuery(ctx context.Context, rawQuery string) ([]types.RolloutExecution, error) {
+	path := "/api/v1/rollout-executions"
+	if strings.TrimSpace(rawQuery) != "" {
+		path += "?" + strings.TrimPrefix(rawQuery, "?")
+	}
+	return doList[types.RolloutExecution](ctx, c, http.MethodGet, path)
 }
 
 func (c *Client) CreateRolloutExecution(ctx context.Context, req types.CreateRolloutExecutionRequest) (types.RolloutExecution, error) {
@@ -625,6 +665,10 @@ func doList[T any](ctx context.Context, c *Client, method, path string) ([]T, er
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= http.StatusBadRequest {
+		var apiErr types.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err == nil && apiErr.Error.Message != "" {
+			return nil, errors.New(apiErr.Error.Message)
+		}
 		return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
 	}
 

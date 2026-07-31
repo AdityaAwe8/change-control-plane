@@ -185,7 +185,11 @@ func (a *Application) ListDiscoveredResources(ctx context.Context, query storage
 		return nil, err
 	}
 	query.OrganizationID = orgID
-	return a.Store.ListDiscoveredResources(ctx, query)
+	items, err := a.Store.ListDiscoveredResources(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return safeDiscoveredResourcesForResponse(items), nil
 }
 
 func (a *Application) UpdateDiscoveredResource(ctx context.Context, id string, req types.UpdateDiscoveredResourceRequest) (types.DiscoveredResource, error) {
@@ -300,7 +304,7 @@ func (a *Application) UpdateDiscoveredResource(ctx context.Context, id string, r
 	if err := a.record(ctx, identity, "discovered_resource.updated", "discovered_resource", resource.ID, resource.OrganizationID, resource.ProjectID, []string{resource.ResourceType, resource.Name, resource.ServiceID, resource.EnvironmentID}); err != nil {
 		return types.DiscoveredResource{}, err
 	}
-	return resource, nil
+	return safeDiscoveredResourceForResponse(resource), nil
 }
 
 func (a *Application) ensureDiscoveredResourceGraphMappings(ctx context.Context, resource types.DiscoveredResource) error {
@@ -477,7 +481,7 @@ func (a *Application) QueryStatusEvents(ctx context.Context, query storage.Statu
 			result.Summary.AutomatedEvents++
 		}
 	}
-	return result, nil
+	return safeStatusEventQueryResultForResponse(result), nil
 }
 
 func (a *Application) ClaimScheduledIntegrationSync(ctx context.Context, integrationID string, claimedAt time.Time) (bool, error) {

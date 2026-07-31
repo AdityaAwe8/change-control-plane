@@ -1150,7 +1150,18 @@ func handleChange(ctx context.Context, c *client.Client, session cliSession, arg
 	c.SetOrganizationID(session.OrganizationID)
 	switch args[0] {
 	case "list":
-		result, err := c.ListChangeSets(ctx)
+		fs := flag.NewFlagSet("change list", flag.ExitOnError)
+		projectID := fs.String("project", "", "project id filter")
+		serviceID := fs.String("service", "", "service id filter")
+		environmentID := fs.String("env", "", "environment id filter")
+		limit := fs.Int("limit", 0, "maximum number of changes")
+		offset := fs.Int("offset", 0, "number of changes to skip")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListChangeSetsWithQuery(ctx, workflowQuery([]workflowQueryField{
+			{"project_id", *projectID},
+			{"service_id", *serviceID},
+			{"environment_id", *environmentID},
+		}, *limit, *offset))
 		if !exitOnErr(stderr, err) {
 			return 1
 		}
@@ -1226,31 +1237,85 @@ func handleChange(ctx context.Context, c *client.Client, session cliSession, arg
 }
 
 func handleRisk(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "list" {
+	if len(args) == 0 {
 		usage(stdout)
 		return 1
 	}
 	c.SetOrganizationID(session.OrganizationID)
-	result, err := c.ListRiskAssessments(ctx)
-	if !exitOnErr(stderr, err) {
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("risk list", flag.ExitOnError)
+		projectID := fs.String("project", "", "project id filter")
+		changeID := fs.String("change", "", "change set id filter")
+		serviceID := fs.String("service", "", "service id filter")
+		environmentID := fs.String("env", "", "environment id filter")
+		limit := fs.Int("limit", 0, "maximum number of risk assessments")
+		offset := fs.Int("offset", 0, "number of risk assessments to skip")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListRiskAssessmentsWithQuery(ctx, workflowQuery([]workflowQueryField{
+			{"project_id", *projectID},
+			{"change_set_id", *changeID},
+			{"service_id", *serviceID},
+			{"environment_id", *environmentID},
+		}, *limit, *offset))
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("risk show", flag.ExitOnError)
+		id := fs.String("id", "", "risk assessment id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetRiskAssessment(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
 		return 1
 	}
-	printJSON(stdout, result)
-	return 0
 }
 
 func handleRolloutPlan(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "list" {
+	if len(args) == 0 {
 		usage(stdout)
 		return 1
 	}
 	c.SetOrganizationID(session.OrganizationID)
-	result, err := c.ListRolloutPlans(ctx)
-	if !exitOnErr(stderr, err) {
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("rollout-plan list", flag.ExitOnError)
+		projectID := fs.String("project", "", "project id filter")
+		changeID := fs.String("change", "", "change set id filter")
+		limit := fs.Int("limit", 0, "maximum number of rollout plans")
+		offset := fs.Int("offset", 0, "number of rollout plans to skip")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListRolloutPlansWithQuery(ctx, workflowQuery([]workflowQueryField{
+			{"project_id", *projectID},
+			{"change_set_id", *changeID},
+		}, *limit, *offset))
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	case "show":
+		fs := flag.NewFlagSet("rollout-plan show", flag.ExitOnError)
+		id := fs.String("id", "", "rollout plan id")
+		_ = fs.Parse(args[1:])
+		result, err := c.GetRolloutPlan(ctx, *id)
+		if !exitOnErr(stderr, err) {
+			return 1
+		}
+		printJSON(stdout, result)
+		return 0
+	default:
+		usage(stdout)
 		return 1
 	}
-	printJSON(stdout, result)
-	return 0
 }
 
 func handleRollout(ctx context.Context, c *client.Client, session cliSession, args []string, stdout, stderr io.Writer) int {
@@ -1289,7 +1354,20 @@ func handleRollout(ctx context.Context, c *client.Client, session cliSession, ar
 		printJSON(stdout, result)
 		return 0
 	case "list":
-		result, err := c.ListRolloutExecutions(ctx)
+		fs := flag.NewFlagSet("rollout list", flag.ExitOnError)
+		projectID := fs.String("project", "", "project id filter")
+		serviceID := fs.String("service", "", "service id filter")
+		environmentID := fs.String("env", "", "environment id filter")
+		status := fs.String("status", "", "execution status filter")
+		limit := fs.Int("limit", 0, "maximum number of rollout executions")
+		offset := fs.Int("offset", 0, "number of rollout executions to skip")
+		_ = fs.Parse(args[1:])
+		result, err := c.ListRolloutExecutionsWithQuery(ctx, workflowQuery([]workflowQueryField{
+			{"project_id", *projectID},
+			{"service_id", *serviceID},
+			{"environment_id", *environmentID},
+			{"status", *status},
+		}, *limit, *offset))
 		if !exitOnErr(stderr, err) {
 			return 1
 		}
@@ -1701,7 +1779,7 @@ func handlePolicy(ctx context.Context, c *client.Client, session cliSession, arg
 		environmentID := fs.String("env", "", "environment id")
 		name := fs.String("name", "", "policy name")
 		code := fs.String("code", "", "policy code")
-		appliesTo := fs.String("applies-to", "risk_assessment", "workflow surface (risk_assessment|rollout_plan)")
+		appliesTo := fs.String("applies-to", "risk_assessment", "workflow surface (risk_assessment|rollout_plan|rollout_execution|release_bundle|config_set|database_governance|change_window)")
 		mode := fs.String("mode", "advisory", "policy mode (advisory|require_manual_review|block)")
 		priority := fs.Int("priority", 0, "policy priority")
 		description := fs.String("description", "", "policy description")
@@ -1754,7 +1832,7 @@ func handlePolicy(ctx context.Context, c *client.Client, session cliSession, arg
 		environmentID := fs.String("env", "", "environment id")
 		name := fs.String("name", "", "policy name")
 		code := fs.String("code", "", "policy code")
-		appliesTo := fs.String("applies-to", "", "workflow surface (risk_assessment|rollout_plan)")
+		appliesTo := fs.String("applies-to", "", "workflow surface (risk_assessment|rollout_plan|rollout_execution|release_bundle|config_set|database_governance|change_window)")
 		mode := fs.String("mode", "", "policy mode (advisory|require_manual_review|block)")
 		priority := fs.Int("priority", 0, "policy priority")
 		description := fs.String("description", "", "policy description")
@@ -1890,6 +1968,9 @@ func handlePolicyDecision(ctx context.Context, c *client.Client, session cliSess
 	riskID := fs.String("risk", "", "risk assessment id filter")
 	planID := fs.String("plan", "", "rollout plan id filter")
 	rolloutID := fs.String("rollout", "", "rollout execution id filter")
+	releaseID := fs.String("release", "", "release id filter")
+	configSetID := fs.String("config-set", "", "config set id filter")
+	databaseChangeID := fs.String("database-change", "", "database change id filter")
 	appliesTo := fs.String("applies-to", "", "workflow surface filter")
 	limit := fs.Int("limit", 50, "maximum number of policy decisions")
 	offset := fs.Int("offset", 0, "pagination offset")
@@ -1912,6 +1993,15 @@ func handlePolicyDecision(ctx context.Context, c *client.Client, session cliSess
 	}
 	if *rolloutID != "" {
 		query = append(query, "rollout_execution_id="+url.QueryEscape(*rolloutID))
+	}
+	if *releaseID != "" {
+		query = append(query, "release_id="+url.QueryEscape(*releaseID))
+	}
+	if *configSetID != "" {
+		query = append(query, "config_set_id="+url.QueryEscape(*configSetID))
+	}
+	if *databaseChangeID != "" {
+		query = append(query, "database_change_id="+url.QueryEscape(*databaseChangeID))
 	}
 	if *appliesTo != "" {
 		query = append(query, "applies_to="+url.QueryEscape(*appliesTo))
@@ -2799,7 +2889,181 @@ func handleIncident(ctx context.Context, c *client.Client, session cliSession, a
 func printJSON(w io.Writer, v any) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	_ = encoder.Encode(v)
+	_ = encoder.Encode(redactCLIVisibleMetadata(v))
+}
+
+func redactCLIVisibleMetadata(v any) any {
+	switch typed := v.(type) {
+	case types.Integration:
+		return redactCLIIntegration(typed)
+	case []types.Integration:
+		out := make([]types.Integration, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, redactCLIIntegration(item))
+		}
+		return out
+	case types.IntegrationTestResult:
+		typed.Integration = redactCLIIntegration(typed.Integration)
+		return typed
+	case types.IntegrationSyncResult:
+		typed.Integration = redactCLIIntegration(typed.Integration)
+		typed.Repositories = redactCLIRepositories(typed.Repositories)
+		typed.DiscoveredResources = redactCLIDiscoveredResources(typed.DiscoveredResources)
+		typed.Relationships = redactCLIGraphRelationships(typed.Relationships)
+		return typed
+	case types.Repository:
+		return redactCLIRepository(typed)
+	case []types.Repository:
+		return redactCLIRepositories(typed)
+	case types.DiscoveredResource:
+		return redactCLIDiscoveredResource(typed)
+	case []types.DiscoveredResource:
+		return redactCLIDiscoveredResources(typed)
+	case types.GraphRelationship:
+		return redactCLIGraphRelationship(typed)
+	case []types.GraphRelationship:
+		return redactCLIGraphRelationships(typed)
+	case types.AuditEvent:
+		typed.Metadata = types.RedactMetadata(typed.Metadata)
+		return typed
+	case []types.AuditEvent:
+		out := make([]types.AuditEvent, 0, len(typed))
+		for _, item := range typed {
+			item.Metadata = types.RedactMetadata(item.Metadata)
+			out = append(out, item)
+		}
+		return out
+	case types.StatusEvent:
+		typed.Metadata = types.RedactMetadata(typed.Metadata)
+		return typed
+	case []types.StatusEvent:
+		out := make([]types.StatusEvent, 0, len(typed))
+		for _, item := range typed {
+			item.Metadata = types.RedactMetadata(item.Metadata)
+			out = append(out, item)
+		}
+		return out
+	case types.StatusEventQueryResult:
+		typed.Events = redactCLIVisibleMetadata(typed.Events).([]types.StatusEvent)
+		typed.Filters = types.RedactMetadata(typed.Filters)
+		return typed
+	case types.RolloutExecution:
+		typed.Metadata = types.RedactMetadata(typed.Metadata)
+		return typed
+	case []types.RolloutExecution:
+		out := make([]types.RolloutExecution, 0, len(typed))
+		for _, item := range typed {
+			item.Metadata = types.RedactMetadata(item.Metadata)
+			out = append(out, item)
+		}
+		return out
+	case types.RolloutExecutionDetail:
+		return redactCLIRolloutExecutionDetail(typed)
+	case types.VerificationResult:
+		return redactCLIVerificationResult(typed)
+	case []types.VerificationResult:
+		out := make([]types.VerificationResult, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, redactCLIVerificationResult(item))
+		}
+		return out
+	case types.SignalSnapshot:
+		typed.Metadata = types.RedactMetadata(typed.Metadata)
+		return typed
+	case []types.SignalSnapshot:
+		out := make([]types.SignalSnapshot, 0, len(typed))
+		for _, item := range typed {
+			item.Metadata = types.RedactMetadata(item.Metadata)
+			out = append(out, item)
+		}
+		return out
+	case types.RolloutEvidencePack:
+		return redactCLIEvidencePack(typed)
+	default:
+		return v
+	}
+}
+
+func redactCLIIntegration(item types.Integration) types.Integration {
+	item.Metadata = types.RedactMetadata(item.Metadata)
+	return item
+}
+
+func redactCLIRepository(item types.Repository) types.Repository {
+	item.Metadata = types.RedactMetadata(item.Metadata)
+	return item
+}
+
+func redactCLIRepositories(items []types.Repository) []types.Repository {
+	out := make([]types.Repository, 0, len(items))
+	for _, item := range items {
+		out = append(out, redactCLIRepository(item))
+	}
+	return out
+}
+
+func redactCLIDiscoveredResource(item types.DiscoveredResource) types.DiscoveredResource {
+	item.Metadata = types.RedactMetadata(item.Metadata)
+	return item
+}
+
+func redactCLIDiscoveredResources(items []types.DiscoveredResource) []types.DiscoveredResource {
+	out := make([]types.DiscoveredResource, 0, len(items))
+	for _, item := range items {
+		out = append(out, redactCLIDiscoveredResource(item))
+	}
+	return out
+}
+
+func redactCLIGraphRelationship(item types.GraphRelationship) types.GraphRelationship {
+	item.Metadata = types.RedactMetadata(item.Metadata)
+	return item
+}
+
+func redactCLIGraphRelationships(items []types.GraphRelationship) []types.GraphRelationship {
+	out := make([]types.GraphRelationship, 0, len(items))
+	for _, item := range items {
+		out = append(out, redactCLIGraphRelationship(item))
+	}
+	return out
+}
+
+func redactCLIVerificationResult(item types.VerificationResult) types.VerificationResult {
+	item.Metadata = types.RedactMetadata(item.Metadata)
+	item.TechnicalSignalSummary = types.RedactMetadata(item.TechnicalSignalSummary)
+	item.BusinessSignalSummary = types.RedactMetadata(item.BusinessSignalSummary)
+	return item
+}
+
+func redactCLIRolloutExecutionDetail(detail types.RolloutExecutionDetail) types.RolloutExecutionDetail {
+	detail.Execution = redactCLIVisibleMetadata(detail.Execution).(types.RolloutExecution)
+	detail.VerificationResults = redactCLIVisibleMetadata(detail.VerificationResults).([]types.VerificationResult)
+	detail.SignalSnapshots = redactCLIVisibleMetadata(detail.SignalSnapshots).([]types.SignalSnapshot)
+	detail.Timeline = redactCLIVisibleMetadata(detail.Timeline).([]types.AuditEvent)
+	detail.StatusTimeline = redactCLIVisibleMetadata(detail.StatusTimeline).([]types.StatusEvent)
+	return detail
+}
+
+func redactCLIEvidencePack(pack types.RolloutEvidencePack) types.RolloutEvidencePack {
+	pack.ExecutionDetail = redactCLIRolloutExecutionDetail(pack.ExecutionDetail)
+	if pack.BackendIntegration != nil {
+		integration := redactCLIIntegration(*pack.BackendIntegration)
+		pack.BackendIntegration = &integration
+	}
+	if pack.SignalIntegration != nil {
+		integration := redactCLIIntegration(*pack.SignalIntegration)
+		pack.SignalIntegration = &integration
+	}
+	pack.Repositories = redactCLIRepositories(pack.Repositories)
+	pack.DiscoveredResources = redactCLIDiscoveredResources(pack.DiscoveredResources)
+	pack.GraphRelationships = redactCLIGraphRelationships(pack.GraphRelationships)
+	pack.AuditTrail = redactCLIVisibleMetadata(pack.AuditTrail).([]types.AuditEvent)
+	if pack.ReleaseAnalysis != nil {
+		analysis := *pack.ReleaseAnalysis
+		analysis.LinkedRolloutExecutions = redactCLIVisibleMetadata(analysis.LinkedRolloutExecutions).([]types.RolloutExecution)
+		pack.ReleaseAnalysis = &analysis
+	}
+	return pack
 }
 
 func parseMetadata(raw string) (types.Metadata, error) {
@@ -2822,6 +3086,28 @@ func splitCSV(raw string) []string {
 		}
 	}
 	return items
+}
+
+type workflowQueryField struct {
+	key   string
+	value string
+}
+
+func workflowQuery(fields []workflowQueryField, limit, offset int) string {
+	query := make([]string, 0, len(fields)+2)
+	for _, field := range fields {
+		if strings.TrimSpace(field.value) == "" {
+			continue
+		}
+		query = append(query, field.key+"="+url.QueryEscape(field.value))
+	}
+	if limit > 0 {
+		query = append(query, fmt.Sprintf("limit=%d", limit))
+	}
+	if offset > 0 {
+		query = append(query, fmt.Sprintf("offset=%d", offset))
+	}
+	return strings.Join(query, "&")
 }
 
 func parseConfigEntriesJSON(raw string) ([]types.ConfigEntry, error) {

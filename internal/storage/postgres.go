@@ -328,6 +328,7 @@ func (s *PostgresStore) ListChangeSets(ctx context.Context, query ChangeSetQuery
 		filterEqual("organization_id", query.OrganizationID),
 		filterEqual("project_id", query.ProjectID),
 		filterEqual("service_id", query.ServiceID),
+		filterEqual("environment_id", query.EnvironmentID),
 	)
 	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
@@ -373,6 +374,8 @@ func (s *PostgresStore) ListRiskAssessments(ctx context.Context, query RiskAsses
 		filterEqual("organization_id", query.OrganizationID),
 		filterEqual("project_id", query.ProjectID),
 		filterEqual("change_set_id", query.ChangeSetID),
+		filterEqual("service_id", query.ServiceID),
+		filterEqual("environment_id", query.EnvironmentID),
 	)
 	rows, err := s.runner(ctx).QueryContext(ctx, sqlQuery, args...)
 	if err != nil {

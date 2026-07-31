@@ -2,11 +2,12 @@ GO_PACKAGES := ./...
 GO_FILES := $(shell if command -v rg >/dev/null 2>&1; then rg --files -g '*.go' cmd internal pkg test; else find cmd internal pkg test -name '*.go' -type f 2>/dev/null; fi)
 PYTHON ?= python3
 CCP_DB_DSN ?= postgres://postgres:postgres@localhost:15432/change_control_plane?sslmode=disable
+CCP_TEST_DB_DSN ?= $(CCP_DB_DSN)
 CCP_REDIS_ADDR ?= localhost:16379
 CCP_NATS_URL ?= nats://localhost:14222
 CCP_API_PORT ?= 8080
 
-.PHONY: fmt test test-go test-python verify proof-contract proof-harness proof-live-preflight proof-live-verify proof-live-validate release-readiness build run-api run-worker run-cli migrate compose-up compose-up-full compose-down web-install web-dev web-build web-typecheck web-e2e smoke reference-pilot-up reference-pilot-down reference-pilot-verify reference-pilot-validate
+.PHONY: fmt test test-go test-python verify proof-contract proof-harness proof-postgres proof-live-preflight proof-live-verify proof-live-validate release-readiness build run-api run-worker run-cli migrate compose-up compose-up-full compose-down web-install web-dev web-build web-typecheck web-e2e smoke reference-pilot-up reference-pilot-down reference-pilot-verify reference-pilot-validate
 
 fmt:
 	gofmt -w $(GO_FILES)
@@ -26,6 +27,10 @@ proof-contract:
 
 proof-harness:
 	go test ./internal/app ./internal/delivery ./internal/verification ./internal/integrations -run 'Test(GitHubAppWebhookRegistrationSyncRepairsExistingHostedWebhook|GitLabWebhookRegistrationSyncRepairsExistingHostedWebhook|KubernetesAndPrometheusIntegrationRoutesHonorConfiguredAuthHeadersAndPaths|CreateGitHubAppInstallationToken|GitLabClientConnectionDiscoveryAndMergeRequestChanges|ParseGitLabMergeRequestWebhookNormalizesChange|KubernetesProvider.*|PrometheusProvider.*)'
+
+proof-postgres:
+	CCP_TEST_DB_DSN='$(CCP_TEST_DB_DSN)' go test ./internal/storage ./test/integration -count=1 -v
+	CCP_TEST_DB_DSN='$(CCP_TEST_DB_DSN)' go test ./internal/app -run 'Test.*Database.*|Test.*Release.*|Test.*Policy.*' -count=1 -v
 
 proof-live-preflight:
 	./scripts/live-proof-preflight.sh

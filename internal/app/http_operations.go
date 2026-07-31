@@ -453,7 +453,14 @@ func (s *HTTPServer) rotateServiceAccountToken(w http.ResponseWriter, r *http.Re
 }
 
 func (s *HTTPServer) listRolloutExecutions(w http.ResponseWriter, r *http.Request) {
-	result, err := s.app.ListRolloutExecutions(r.Context())
+	result, err := s.app.ListRolloutExecutionsWithQuery(r.Context(), storage.RolloutExecutionQuery{
+		ProjectID:     strings.TrimSpace(r.URL.Query().Get("project_id")),
+		ServiceID:     strings.TrimSpace(r.URL.Query().Get("service_id")),
+		EnvironmentID: strings.TrimSpace(r.URL.Query().Get("environment_id")),
+		Status:        strings.TrimSpace(r.URL.Query().Get("status")),
+		Limit:         parseIntQuery(r, "limit", 0),
+		Offset:        parseIntQuery(r, "offset", 0),
+	})
 	if err != nil {
 		writeAppError(w, err)
 		return

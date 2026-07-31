@@ -25,7 +25,7 @@ This remains supported for compatibility, not as the preferred reference onboard
 ## Honest Gaps
 
 - No full OAuth user-consent flow yet
-- No automatic webhook registration handshake yet
+- Automatic webhook registration/repair exists through the integration webhook-registration surface when provider permissions and `webhook_secret_env` are configured, but there is no marketplace-grade setup UX around it yet
 - No marketplace-grade install UX
 - No encrypted secret vault inside the product; env references are still used
 

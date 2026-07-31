@@ -16,12 +16,20 @@ This writes:
 .tmp/release-readiness/release-readiness-report.md
 ```
 
+Per-check command output is written to:
+
+```text
+.tmp/release-readiness/logs/*.log
+```
+
 and now also refreshes:
 
 ```text
 .tmp/live-proof/live-proof-preflight.json
 .tmp/live-proof/live-proof-operator-checklist.md
 ```
+
+All of those paths live under `.tmp/`, which is intentionally gitignored. Preserve the generated artifacts separately when they are used as release evidence; do not stage them into the repository.
 
 When `GOCACHE` or `GOTMPDIR` are unset, the gate now pins them to repo-local `.tmp/go-build` and `.tmp/go-tmp` paths so Go-based checks can still run in sandboxed or locked-down workstation environments without relying on `~/Library/Caches/go-build`.
 
@@ -42,6 +50,48 @@ The ship gate reruns or validates:
 - `make reference-pilot-validate`
 - `make proof-live-validate`
 - a secret-safety scan across the generated release report, its supporting logs, and any preserved proof artifacts
+
+## Reproducing The Full Local Matrix
+
+For a clean engineer workstation or CI-like local runner, use:
+
+```bash
+git diff --check
+go test ./...
+python3 -m unittest discover -s python/tests -v
+cd web && pnpm typecheck
+cd web && pnpm build
+cd web && pnpm test:e2e
+make proof-contract
+make proof-harness
+make proof-postgres
+make verify
+make release-readiness
+```
+
+PostgreSQL-backed tests need a reachable PostgreSQL instance. The reproducible target is:
+
+```bash
+make proof-postgres
+```
+
+With the local Docker stack, the default DSN points at `localhost:15432`:
+
+```bash
+make compose-up
+make proof-postgres
+```
+
+If Docker is unavailable, use a local PostgreSQL database instead:
+
+```bash
+createdb change_control_plane_test
+CCP_TEST_DB_DSN='postgres:///change_control_plane_test?host=/tmp&sslmode=disable' make proof-postgres
+```
+
+These DSN examples are test-only environment values. The target does not persist DSNs; it only passes `CCP_TEST_DB_DSN` to the storage and app test processes. The app runtime database tests also create temporary databases for structured validation proof when the PostgreSQL role permits it, and otherwise skip with the underlying connection or permission error.
+
+The default CI workflow runs the non-artifact local checks, browser e2e, provider harness proof, OpenAPI proof, and `make proof-postgres` with a GitHub Actions PostgreSQL service. It does not run `make release-readiness` by default because that gate is intentionally artifact-sensitive: it requires preserved reference-pilot and external live-proof reports, and it must block on missing or `hosted_like`-only external proof.
 
 ## Proof Classes
 
@@ -112,4 +162,4 @@ That checklist is regenerated on every `make release-readiness` run and is desig
 2. Generate or refresh `.tmp/live-proof/live-proof-operator-checklist.md` with `make proof-live-preflight` and close its missing-input list.
 3. Capture or refresh a real external `live-proof-verify` report for `customer_environment` or `hosted_saas`.
 4. Run `make release-readiness`.
-5. Review `.tmp/release-readiness/release-readiness-report.md` and preserve it alongside the underlying proof artifacts.
+5. Review `.tmp/release-readiness/release-readiness-report.md` and `.tmp/release-readiness/logs/*.log`, then preserve them alongside the underlying proof artifacts.

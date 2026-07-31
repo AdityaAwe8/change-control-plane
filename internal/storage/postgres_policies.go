@@ -86,14 +86,15 @@ func (s *PostgresStore) CreatePolicyDecision(ctx context.Context, decision types
 	_, err := s.runner(ctx).ExecContext(ctx, `
 		INSERT INTO policy_decisions (
 			id, organization_id, project_id, service_id, environment_id, policy_id, policy_name, policy_code, policy_scope, applies_to, mode,
-			change_set_id, risk_assessment_id, rollout_plan_id, rollout_execution_id, outcome, summary, reasons, metadata, created_at, updated_at
+			change_set_id, risk_assessment_id, rollout_plan_id, rollout_execution_id, release_id, config_set_id, database_change_id, outcome, summary, reasons, metadata, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-			$12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+			$12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 		)
 	`, decision.ID, decision.OrganizationID, nullIfEmpty(decision.ProjectID), nullIfEmpty(decision.ServiceID), nullIfEmpty(decision.EnvironmentID), decision.PolicyID,
 		decision.PolicyName, decision.PolicyCode, decision.PolicyScope, decision.AppliesTo, decision.Mode,
 		nullIfEmpty(decision.ChangeSetID), nullIfEmpty(decision.RiskAssessmentID), nullIfEmpty(decision.RolloutPlanID), nullIfEmpty(decision.RolloutExecutionID),
+		nullIfEmpty(decision.ReleaseID), nullIfEmpty(decision.ConfigSetID), nullIfEmpty(decision.DatabaseChangeID),
 		decision.Outcome, decision.Summary, jsonValue(decision.Reasons), jsonValue(decision.Metadata), decision.CreatedAt, decision.UpdatedAt)
 	return err
 }
@@ -101,7 +102,7 @@ func (s *PostgresStore) CreatePolicyDecision(ctx context.Context, decision types
 func (s *PostgresStore) ListPolicyDecisions(ctx context.Context, query PolicyDecisionQuery) ([]types.PolicyDecision, error) {
 	sqlQuery, args := buildListQuery(
 		`SELECT id, organization_id, project_id, service_id, environment_id, policy_id, policy_name, policy_code, policy_scope, applies_to, mode,
-			change_set_id, risk_assessment_id, rollout_plan_id, rollout_execution_id, outcome, summary, reasons, metadata, created_at, updated_at
+			change_set_id, risk_assessment_id, rollout_plan_id, rollout_execution_id, release_id, config_set_id, database_change_id, outcome, summary, reasons, metadata, created_at, updated_at
 		FROM policy_decisions`,
 		query.Limit,
 		query.Offset,
@@ -112,6 +113,9 @@ func (s *PostgresStore) ListPolicyDecisions(ctx context.Context, query PolicyDec
 		filterEqual("risk_assessment_id", query.RiskAssessmentID),
 		filterEqual("rollout_plan_id", query.RolloutPlanID),
 		filterEqual("rollout_execution_id", query.RolloutExecutionID),
+		filterEqual("release_id", query.ReleaseID),
+		filterEqual("config_set_id", query.ConfigSetID),
+		filterEqual("database_change_id", query.DatabaseChangeID),
 		filterEqual("applies_to", query.AppliesTo),
 	)
 	sqlQuery = strings.Replace(sqlQuery, " ORDER BY created_at", " ORDER BY created_at DESC", 1)
@@ -165,11 +169,14 @@ func scanPolicyDecision(row scanner) (types.PolicyDecision, error) {
 	var riskAssessmentID sql.NullString
 	var rolloutPlanID sql.NullString
 	var rolloutExecutionID sql.NullString
+	var releaseID sql.NullString
+	var configSetID sql.NullString
+	var databaseChangeID sql.NullString
 	var reasons []byte
 	var metadata []byte
 	err := row.Scan(
 		&item.ID, &item.OrganizationID, &projectID, &serviceID, &environmentID, &item.PolicyID, &item.PolicyName, &item.PolicyCode, &item.PolicyScope, &item.AppliesTo, &item.Mode,
-		&changeSetID, &riskAssessmentID, &rolloutPlanID, &rolloutExecutionID, &item.Outcome, &item.Summary, &reasons, &metadata, &item.CreatedAt, &item.UpdatedAt,
+		&changeSetID, &riskAssessmentID, &rolloutPlanID, &rolloutExecutionID, &releaseID, &configSetID, &databaseChangeID, &item.Outcome, &item.Summary, &reasons, &metadata, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
 		return item, normalizeNotFound(err)
@@ -181,6 +188,9 @@ func scanPolicyDecision(row scanner) (types.PolicyDecision, error) {
 	item.RiskAssessmentID = riskAssessmentID.String
 	item.RolloutPlanID = rolloutPlanID.String
 	item.RolloutExecutionID = rolloutExecutionID.String
+	item.ReleaseID = releaseID.String
+	item.ConfigSetID = configSetID.String
+	item.DatabaseChangeID = databaseChangeID.String
 	_ = json.Unmarshal(reasons, &item.Reasons)
 	_ = json.Unmarshal(metadata, &item.Metadata)
 	return item, nil

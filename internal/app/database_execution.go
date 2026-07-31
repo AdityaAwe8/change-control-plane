@@ -29,22 +29,22 @@ var (
 		"unsupported": {},
 	}
 	allowedDatabaseExecutionTriggers = map[string]struct{}{
-		"manual":            {},
-		"release_analysis":  {},
-		"rollout_pre_deploy": {},
+		"manual":              {},
+		"release_analysis":    {},
+		"rollout_pre_deploy":  {},
 		"rollout_post_deploy": {},
-		"rollback":          {},
+		"rollback":            {},
 	}
 	allowedDatabaseExecutionStatuses = map[string]struct{}{
-		"queued":   {},
-		"running":  {},
-		"passed":   {},
-		"failed":   {},
-		"blocked":  {},
-		"errored":  {},
+		"queued":  {},
+		"running": {},
+		"passed":  {},
+		"failed":  {},
+		"blocked": {},
+		"errored": {},
 	}
-	envNamePattern        = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
-	databaseIdentPattern  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	envNamePattern       = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
+	databaseIdentPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 type runtimeDatabaseCheckSpec struct {
@@ -53,6 +53,7 @@ type runtimeDatabaseCheckSpec struct {
 	Table         string `json:"table,omitempty"`
 	Column        string `json:"column,omitempty"`
 	Index         string `json:"index,omitempty"`
+	Value         string `json:"value,omitempty"`
 	Operator      string `json:"operator,omitempty"`
 	ExpectedCount *int64 `json:"expected_count,omitempty"`
 }
@@ -374,10 +375,10 @@ func (a *Application) ExecuteDatabaseValidationCheck(ctx context.Context, id str
 
 func (a *Application) buildDatabaseConnectionReferenceDetail(ctx context.Context, item types.DatabaseConnectionReference) (types.DatabaseConnectionReferenceDetail, error) {
 	checks, err := a.Store.ListDatabaseValidationChecks(ctx, storage.DatabaseValidationCheckQuery{
-		OrganizationID: item.OrganizationID,
-		ProjectID:      item.ProjectID,
+		OrganizationID:  item.OrganizationID,
+		ProjectID:       item.ProjectID,
 		ConnectionRefID: item.ID,
-		Limit:          200,
+		Limit:           200,
 	})
 	if err != nil {
 		return types.DatabaseConnectionReferenceDetail{}, err
@@ -458,7 +459,7 @@ func normalizeDatabaseEnvName(value string) (string, error) {
 		return "", fmt.Errorf("%w: dsn_env is required", ErrValidation)
 	}
 	if !envNamePattern.MatchString(trimmed) {
-		return "", fmt.Errorf("%w: invalid env var name %q", ErrValidation, value)
+		return "", fmt.Errorf("%w: invalid env var name", ErrValidation)
 	}
 	return trimmed, nil
 }
@@ -483,7 +484,7 @@ func parseRuntimeDatabaseCheckSpec(check types.DatabaseValidationCheck) (runtime
 		spec.Schema = "public"
 	}
 	switch check.CheckType {
-	case "existence_assertion", "migration_completion":
+	case "existence_assertion":
 		if spec.Subject == "" {
 			spec.Subject = "table"
 		}
@@ -502,6 +503,22 @@ func parseRuntimeDatabaseCheckSpec(check types.DatabaseValidationCheck) (runtime
 			}
 		default:
 			return spec, fmt.Errorf("%w: unsupported existence subject %q", ErrValidation, spec.Subject)
+		}
+	case "migration_completion":
+		if spec.Subject == "" {
+			spec.Subject = "table"
+		}
+		switch spec.Subject {
+		case "table":
+			if spec.Table == "" {
+				return spec, fmt.Errorf("%w: migration_completion table checks require table in specification", ErrValidation)
+			}
+		case "migration_marker":
+			if spec.Table == "" || spec.Column == "" || strings.TrimSpace(spec.Value) == "" {
+				return spec, fmt.Errorf("%w: migration_marker checks require table, column, and value in specification", ErrValidation)
+			}
+		default:
+			return spec, fmt.Errorf("%w: unsupported migration_completion subject %q", ErrValidation, spec.Subject)
 		}
 	case "row_count_assertion":
 		if spec.Table == "" || spec.ExpectedCount == nil {
@@ -615,6 +632,35 @@ func executeDatabaseExistenceAssertion(ctx context.Context, tx *sql.Tx, connecti
 				WHERE schemaname = $1 AND indexname = $2
 			)
 		`, spec.Schema, spec.Index).Scan(&exists)
+	case "migration_marker":
+		tableExists, err := databaseTableExists(ctx, tx, spec.Schema, spec.Table)
+		if err != nil {
+			return databaseValidationQueryErrorResult(connectionRef, "database validation execution could not inspect migration marker table", err)
+		}
+		if !tableExists {
+			return runtimeDatabaseCheckResult{
+				Status:           "failed",
+				Summary:          fmt.Sprintf("runtime database migration check %s did not find marker table %s.%s", check.Name, spec.Schema, spec.Table),
+				Details:          []string{"subject=migration_marker table_exists=false"},
+				Evidence:         []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef), "subject:migration_marker", "target:" + spec.Schema + "." + spec.Table},
+				ConnectionStatus: "ready",
+			}
+		}
+		columnExists, err := databaseColumnExists(ctx, tx, spec.Schema, spec.Table, spec.Column)
+		if err != nil {
+			return databaseValidationQueryErrorResult(connectionRef, "database validation execution could not inspect migration marker column", err)
+		}
+		if !columnExists {
+			return runtimeDatabaseCheckResult{
+				Status:           "failed",
+				Summary:          fmt.Sprintf("runtime database migration check %s did not find marker column %s.%s.%s", check.Name, spec.Schema, spec.Table, spec.Column),
+				Details:          []string{"subject=migration_marker column_exists=false"},
+				Evidence:         []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef), "subject:migration_marker", "target:" + spec.Schema + "." + spec.Table + "." + spec.Column},
+				ConnectionStatus: "ready",
+			}
+		}
+		query := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s.%s WHERE %s = $1)`, quoteDatabaseIdentifier(spec.Schema), quoteDatabaseIdentifier(spec.Table), quoteDatabaseIdentifier(spec.Column))
+		err = tx.QueryRowContext(ctx, query, spec.Value).Scan(&exists)
 	default:
 		return runtimeDatabaseCheckResult{
 			Status:              "blocked",
@@ -627,16 +673,7 @@ func executeDatabaseExistenceAssertion(ctx context.Context, tx *sql.Tx, connecti
 		}
 	}
 	if err != nil {
-		safe := sanitizeDatabaseExecutionError("", err)
-		return runtimeDatabaseCheckResult{
-			Status:              "errored",
-			Summary:             "database validation execution could not query existence state",
-			Details:             []string{safe},
-			Evidence:            []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef)},
-			ErrorClass:          "query_failed",
-			ConnectionStatus:    "error",
-			ConnectionErrorText: safe,
-		}
+		return databaseValidationQueryErrorResult(connectionRef, "database validation execution could not query existence state", err)
 	}
 	target := spec.Schema + "."
 	switch spec.Subject {
@@ -646,6 +683,8 @@ func executeDatabaseExistenceAssertion(ctx context.Context, tx *sql.Tx, connecti
 		target += spec.Table + "." + spec.Column
 	case "index":
 		target += spec.Index
+	case "migration_marker":
+		target += spec.Table + "." + spec.Column
 	}
 	status := "failed"
 	summary := fmt.Sprintf("runtime database check %s did not find %s", check.Name, target)
@@ -663,19 +702,23 @@ func executeDatabaseExistenceAssertion(ctx context.Context, tx *sql.Tx, connecti
 }
 
 func executeDatabaseRowCountAssertion(ctx context.Context, tx *sql.Tx, connectionRef types.DatabaseConnectionReference, check types.DatabaseValidationCheck, spec runtimeDatabaseCheckSpec) runtimeDatabaseCheckResult {
+	tableExists, err := databaseTableExists(ctx, tx, spec.Schema, spec.Table)
+	if err != nil {
+		return databaseValidationQueryErrorResult(connectionRef, "database validation execution could not inspect row-count target", err)
+	}
+	if !tableExists {
+		return runtimeDatabaseCheckResult{
+			Status:           "failed",
+			Summary:          fmt.Sprintf("runtime database row-count check %s did not find %s.%s", check.Name, spec.Schema, spec.Table),
+			Details:          []string{"row_count_target_exists=false"},
+			Evidence:         []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef), "target:" + spec.Schema + "." + spec.Table},
+			ConnectionStatus: "ready",
+		}
+	}
 	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s`, quoteDatabaseIdentifier(spec.Schema), quoteDatabaseIdentifier(spec.Table))
 	var count int64
 	if err := tx.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		safe := sanitizeDatabaseExecutionError("", err)
-		return runtimeDatabaseCheckResult{
-			Status:              "errored",
-			Summary:             "database validation execution could not query row count",
-			Details:             []string{safe},
-			Evidence:            []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef), "target:" + spec.Schema + "." + spec.Table},
-			ErrorClass:          "query_failed",
-			ConnectionStatus:    "error",
-			ConnectionErrorText: safe,
-		}
+		return databaseValidationQueryErrorResult(connectionRef, "database validation execution could not query row count", err)
 	}
 	passed := compareRowCount(count, spec.Operator, *spec.ExpectedCount)
 	status := "failed"
@@ -689,6 +732,42 @@ func executeDatabaseRowCountAssertion(ctx context.Context, tx *sql.Tx, connectio
 		Summary:          summary,
 		Details:          []string{fmt.Sprintf("row_count=%d operator=%s expected=%d", count, spec.Operator, *spec.ExpectedCount)},
 		Evidence:         []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef), "target:" + spec.Schema + "." + spec.Table},
+		ConnectionStatus: "ready",
+	}
+}
+
+func databaseTableExists(ctx context.Context, tx *sql.Tx, schema, table string) (bool, error) {
+	var exists bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = $1 AND table_name = $2
+		)
+	`, schema, table).Scan(&exists)
+	return exists, err
+}
+
+func databaseColumnExists(ctx context.Context, tx *sql.Tx, schema, table, column string) (bool, error) {
+	var exists bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+		)
+	`, schema, table, column).Scan(&exists)
+	return exists, err
+}
+
+func databaseValidationQueryErrorResult(connectionRef types.DatabaseConnectionReference, summary string, err error) runtimeDatabaseCheckResult {
+	safe := sanitizeDatabaseExecutionError("", err)
+	return runtimeDatabaseCheckResult{
+		Status:           "errored",
+		Summary:          summary,
+		Details:          []string{safe},
+		Evidence:         []string{"connection_ref:" + connectionRef.ID, "source:" + databaseConnectionSourceSummary(connectionRef)},
+		ErrorClass:       "query_failed",
 		ConnectionStatus: "ready",
 	}
 }

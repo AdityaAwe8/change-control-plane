@@ -198,6 +198,9 @@ type policyEvaluationReference struct {
 	riskAssessmentID   string
 	rolloutPlanID      string
 	rolloutExecutionID string
+	releaseID          string
+	configSetID        string
+	databaseChangeID   string
 	metadata           types.Metadata
 }
 
@@ -237,23 +240,26 @@ func (a *Application) evaluatePolicies(ctx context.Context, appliesTo string, ch
 				UpdatedAt: now,
 				Metadata:  cloneMetadata(reference.metadata),
 			},
-			OrganizationID:    change.OrganizationID,
-			ProjectID:         change.ProjectID,
-			ServiceID:         change.ServiceID,
-			EnvironmentID:     change.EnvironmentID,
-			PolicyID:          policy.ID,
-			PolicyName:        policy.Name,
-			PolicyCode:        policy.Code,
-			PolicyScope:       policy.Scope,
-			AppliesTo:         appliesTo,
-			Mode:              policy.Mode,
-			ChangeSetID:       change.ID,
-			RiskAssessmentID:  reference.riskAssessmentID,
-			RolloutPlanID:     reference.rolloutPlanID,
+			OrganizationID:     change.OrganizationID,
+			ProjectID:          change.ProjectID,
+			ServiceID:          change.ServiceID,
+			EnvironmentID:      change.EnvironmentID,
+			PolicyID:           policy.ID,
+			PolicyName:         policy.Name,
+			PolicyCode:         policy.Code,
+			PolicyScope:        policy.Scope,
+			AppliesTo:          appliesTo,
+			Mode:               policy.Mode,
+			ChangeSetID:        change.ID,
+			RiskAssessmentID:   reference.riskAssessmentID,
+			RolloutPlanID:      reference.rolloutPlanID,
 			RolloutExecutionID: reference.rolloutExecutionID,
-			Outcome:           policy.Mode,
-			Summary:           policyDecisionSummary(policy, appliesTo, reasons),
-			Reasons:           reasons,
+			ReleaseID:          reference.releaseID,
+			ConfigSetID:        reference.configSetID,
+			DatabaseChangeID:   reference.databaseChangeID,
+			Outcome:            policy.Mode,
+			Summary:            policyDecisionSummary(policy, appliesTo, reasons),
+			Reasons:            reasons,
 		}
 		if decision.Metadata == nil {
 			decision.Metadata = types.Metadata{}
@@ -366,6 +372,21 @@ func blockingPolicyNames(decisions []types.PolicyDecision) []string {
 		}
 	}
 	return names
+}
+
+func blockingPolicyDecisionSummaries(decisions []types.PolicyDecision) []string {
+	summaries := make([]string, 0, len(decisions))
+	for _, decision := range decisions {
+		if decision.Outcome != policylib.ModeBlock {
+			continue
+		}
+		if strings.TrimSpace(decision.Summary) != "" {
+			summaries = append(summaries, decision.Summary)
+			continue
+		}
+		summaries = append(summaries, decision.PolicyName)
+	}
+	return summaries
 }
 
 func decisionSummaries(decisions []types.PolicyDecision) []string {
@@ -601,6 +622,17 @@ func policyDecisionMetadata(outcome string, blocked bool) types.Metadata {
 	}
 	if blocked {
 		metadata["blocked_attempt"] = true
+	}
+	return metadata
+}
+
+func policyDecisionSubjectMetadata(outcome string, blocked bool, subjectType, subjectID string) types.Metadata {
+	metadata := policyDecisionMetadata(outcome, blocked)
+	if strings.TrimSpace(subjectType) != "" {
+		metadata["subject_type"] = subjectType
+	}
+	if strings.TrimSpace(subjectID) != "" {
+		metadata["subject_id"] = subjectID
 	}
 	return metadata
 }

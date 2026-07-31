@@ -21,7 +21,7 @@ Status legend:
 | Orchestrator adapter model | `live_and_verified` | A real internal provider abstraction exists with submission, sync, pause, resume, and rollback methods. |
 | Integration registry | `partially_live` | Descriptor-based integration metadata still exists, but rollout execution now also uses dedicated orchestrator and signal provider registries. |
 | Kubernetes integration | `partially_live` | A near-real Kubernetes deployment provider seam and normalization layer now exist, but live cluster calls still require future client wiring. |
-| GitHub integration | `metadata_only` | Present as a catalog descriptor only. No live workflow or deployment-state integration exists yet. |
+| GitHub integration | `metadata_only` | Real SCM discovery, webhook ingest, and repository/ownership provenance exist, but GitHub is not a live deployment-state or rollout-control backend. |
 | Runtime signal model | `live_and_verified` | Normalized signal snapshots are persisted and bound to rollout executions, services, environments, and plans. |
 | Signal provider abstraction | `live_and_verified` | A signal-provider registry exists with a live simulated provider and a Prometheus-style normalization seam. |
 | Verification persistence | `live_and_verified` | Verification results now persist automated/manual provenance, snapshot linkage, technical summaries, and decisions. |
@@ -39,4 +39,4 @@ Status legend:
 2. Verification still depends on pushed or simulated signal snapshots, not on continuous polling from a live telemetry platform.
 3. Worker claim semantics are safe for the current modular-monolith model, but distributed coordination will need stronger leasing later.
 4. Web and CLI coverage improved materially, but browser interaction tests and richer operator ergonomics still lag the backend.
-5. GitHub, Slack, and Jira remain metadata-oriented adapters rather than live runtime control participants.
+5. GitHub remains SCM-oriented rather than a live runtime control participant, and Slack/Jira provider implementations are not currently present.

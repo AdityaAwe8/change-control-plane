@@ -15,13 +15,14 @@ import (
 )
 
 func TestRunIntegrationsList(t *testing.T) {
+	rawDSN := "postgres" + "://db.internal:5432/app?sslmode=disable"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/integrations" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"integration_github","name":"GitHub","kind":"github"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"integration_github","name":"GitHub","kind":"github","metadata":{"access_token":"ghp_legacy_plaintext","dsn_env":"` + rawDSN + `","secret_ref":"prod/github/app/private-key","namespace":"prod"}}]}`))
 	}))
 	defer server.Close()
 
@@ -36,6 +37,63 @@ func TestRunIntegrationsList(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "GitHub") {
 		t.Fatalf("expected GitHub in output, got %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "ghp_legacy_plaintext") || strings.Contains(stdout.String(), rawDSN) {
+		t.Fatalf("expected CLI integration output to redact legacy metadata secrets, got %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"access_token": "[redacted]"`) ||
+		!strings.Contains(stdout.String(), `"dsn_env": "[redacted]"`) ||
+		!strings.Contains(stdout.String(), `"secret_ref": "prod/github/app/private-key"`) ||
+		!strings.Contains(stdout.String(), `"namespace": "prod"`) {
+		t.Fatalf("expected CLI integration output to preserve safe metadata and redact raw values, got %s", stdout.String())
+	}
+}
+
+func TestRunEvidenceCommandRedactsMetadataSecrets(t *testing.T) {
+	rawDSN := "postgres" + "://db.internal:5432/app?sslmode=disable"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/rollout-executions/rollout_123/evidence-pack" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"execution_detail":{"execution":{"id":"rollout_123","metadata":{"api_key":"ghp_execution_plaintext","owner":"platform"}},"verification_results":[{"id":"verify_123","technical_signal_summary":{"dsn_env":"` + rawDSN + `"},"metadata":{"authorization":"Bearer verification-secret"}}],"signal_snapshots":[{"id":"signal_123","metadata":{"bearer":"xoxb-signal-secret"}}],"timeline":[{"id":"audit_123","metadata":{"webhook_secret":"legacy-webhook-secret"}}],"status_timeline":[{"id":"status_123","metadata":{"password":"legacy-password"}}]},"backend_integration":{"id":"int_123","name":"Kubernetes","kind":"kubernetes","metadata":{"access_token":"ghp_backend_plaintext","secret_ref":"prod/kubernetes/provider-token","dsn_env":"` + rawDSN + `"}},"repositories":[{"id":"repo_123","metadata":{"client_secret":"legacy-client-secret","owner":"team-checkout"}}],"discovered_resources":[{"id":"discovery_123","metadata":{"api_key":"legacy-api-key"}}],"graph_relationships":[{"id":"rel_123","metadata":{"private_key":"legacy-private-key-material"}}],"audit_trail":[{"id":"audit_456","metadata":{"token":"legacy-audit-token"}}]}}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("CCP_API_BASE_URL", server.URL)
+	t.Setenv("CCP_API_TOKEN", "token-123")
+	t.Setenv("CCP_ORGANIZATION_ID", "org_123")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run(context.Background(), []string{"rollout", "evidence", "--id", "rollout_123"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d, stderr=%s", code, stderr.String())
+	}
+	for _, unsafe := range []string{
+		"ghp_execution_plaintext",
+		rawDSN,
+		"verification-secret",
+		"xoxb-signal-secret",
+		"legacy-webhook-secret",
+		"legacy-password",
+		"ghp_backend_plaintext",
+		"legacy-client-secret",
+		"legacy-api-key",
+		"legacy-private-key-material",
+		"legacy-audit-token",
+	} {
+		if strings.Contains(stdout.String(), unsafe) {
+			t.Fatalf("expected CLI evidence output to redact %q, got %s", unsafe, stdout.String())
+		}
+	}
+	if !strings.Contains(stdout.String(), `"secret_ref": "prod/kubernetes/provider-token"`) ||
+		!strings.Contains(stdout.String(), `"owner": "platform"`) ||
+		!strings.Contains(stdout.String(), `"owner": "team-checkout"`) ||
+		!strings.Contains(stdout.String(), `"[redacted]"`) {
+		t.Fatalf("expected CLI evidence output to preserve safe metadata and show redactions, got %s", stdout.String())
 	}
 }
 
@@ -1666,6 +1724,9 @@ func TestRunChangeRiskAndRolloutReadCommands(t *testing.T) {
 	var assessRiskBody map[string]any
 	var seenHeaders []string
 	var changeShowCalled bool
+	var changeListQuery string
+	var riskListQuery string
+	var rolloutPlanListQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenHeaders = append(seenHeaders, r.Header.Get("X-CCP-Organization-ID"))
@@ -1683,6 +1744,7 @@ func TestRunChangeRiskAndRolloutReadCommands(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":{"assessment":{"id":"risk_123","organization_id":"org_123","change_set_id":"change_123","risk_level":"high","recommended_rollout_strategy":"canary","score":82,"explanation":["schema touch raises risk"]},"policy_decisions":[{"id":"poldec_123","organization_id":"org_123","policy_id":"pol_123","policy_code":"prod-review","applies_to":"risk_assessment","mode":"require_manual_review","outcome":"require_manual_review","summary":"manual review required"}]}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/changes":
+			changeListQuery = r.URL.RawQuery
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":[{"id":"change_123","organization_id":"org_123","summary":"Checkout release","change_types":["code"],"file_count":5}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/changes/change_123":
@@ -1690,11 +1752,19 @@ func TestRunChangeRiskAndRolloutReadCommands(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":{"id":"change_123","organization_id":"org_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","summary":"Checkout release","change_types":["code"],"file_count":5,"resource_count":1}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/risk-assessments":
+			riskListQuery = r.URL.RawQuery
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":[{"id":"risk_123","organization_id":"org_123","change_set_id":"change_123","level":"high","recommended_rollout_strategy":"canary","score":82}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/risk-assessments/risk_123":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"id":"risk_123","organization_id":"org_123","project_id":"proj_123","change_set_id":"change_123","service_id":"svc_123","environment_id":"env_123","level":"high","recommended_rollout_strategy":"canary","score":82}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/rollout-plans":
+			rolloutPlanListQuery = r.URL.RawQuery
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"data":[{"id":"plan_123","organization_id":"org_123","change_set_id":"change_123","risk_assessment_id":"risk_123","strategy":"canary","status":"draft","approval_required":true}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/rollout-plans/plan_123":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"id":"plan_123","organization_id":"org_123","project_id":"proj_123","change_set_id":"change_123","risk_assessment_id":"risk_123","strategy":"canary","approval_required":true}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -1739,12 +1809,17 @@ func TestRunChangeRiskAndRolloutReadCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = run(context.Background(), []string{"change", "list"}, &stdout, &stderr)
+	code = run(context.Background(), []string{"change", "list", "--project", "proj_123", "--service", "svc_123", "--env", "env_123", "--limit", "25", "--offset", "5"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0 from change list, got %d, stderr=%s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `"id": "change_123"`) {
 		t.Fatalf("expected change list output, got %s", stdout.String())
+	}
+	for _, expected := range []string{"project_id=proj_123", "service_id=svc_123", "environment_id=env_123", "limit=25", "offset=5"} {
+		if !strings.Contains(changeListQuery, expected) {
+			t.Fatalf("expected change list query to include %q, got %q", expected, changeListQuery)
+		}
 	}
 
 	stdout.Reset()
@@ -1759,22 +1834,46 @@ func TestRunChangeRiskAndRolloutReadCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = run(context.Background(), []string{"risk", "list"}, &stdout, &stderr)
+	code = run(context.Background(), []string{"risk", "list", "--project", "proj_123", "--change", "change_123", "--service", "svc_123", "--env", "env_123", "--limit", "10"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0 from risk list, got %d, stderr=%s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `"level": "high"`) {
 		t.Fatalf("expected risk list output, got %s", stdout.String())
 	}
+	for _, expected := range []string{"project_id=proj_123", "change_set_id=change_123", "service_id=svc_123", "environment_id=env_123", "limit=10"} {
+		if !strings.Contains(riskListQuery, expected) {
+			t.Fatalf("expected risk list query to include %q, got %q", expected, riskListQuery)
+		}
+	}
 
 	stdout.Reset()
 	stderr.Reset()
-	code = run(context.Background(), []string{"rollout-plan", "list"}, &stdout, &stderr)
+	code = run(context.Background(), []string{"risk", "show", "--id", "risk_123"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"recommended_rollout_strategy": "canary"`) {
+		t.Fatalf("expected risk show output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"rollout-plan", "list", "--project", "proj_123", "--change", "change_123", "--limit", "5"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0 from rollout-plan list, got %d, stderr=%s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `"strategy": "canary"`) || !strings.Contains(stdout.String(), `"approval_required": true`) {
 		t.Fatalf("expected rollout-plan list output, got %s", stdout.String())
+	}
+	for _, expected := range []string{"project_id=proj_123", "change_set_id=change_123", "limit=5"} {
+		if !strings.Contains(rolloutPlanListQuery, expected) {
+			t.Fatalf("expected rollout-plan list query to include %q, got %q", expected, rolloutPlanListQuery)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run(context.Background(), []string{"rollout-plan", "show", "--id", "plan_123"}, &stdout, &stderr)
+	if code != 0 || !strings.Contains(stdout.String(), `"strategy": "canary"`) {
+		t.Fatalf("expected rollout-plan show output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 
 	for _, header := range seenHeaders {
@@ -1791,6 +1890,7 @@ func TestRunRolloutRuntimeAndVerificationCommands(t *testing.T) {
 	var verificationBody map[string]any
 	var signalBody map[string]any
 	var rolloutDetailCalls int
+	var rolloutListQuery string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1806,6 +1906,7 @@ func TestRunRolloutRuntimeAndVerificationCommands(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":{"id":"rollout_123","organization_id":"org_123","rollout_plan_id":"plan_123","change_set_id":"change_123","service_id":"svc_123","environment_id":"env_123","status":"pending_approval","current_step":"approve"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/rollout-executions":
+			rolloutListQuery = r.URL.RawQuery
 			_, _ = w.Write([]byte(`{"data":[{"id":"rollout_123","organization_id":"org_123","rollout_plan_id":"plan_123","change_set_id":"change_123","service_id":"svc_123","environment_id":"env_123","status":"pending_approval","current_step":"approve"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/rollout-executions/rollout_123":
 			rolloutDetailCalls++
@@ -1864,9 +1965,14 @@ func TestRunRolloutRuntimeAndVerificationCommands(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	code = run(context.Background(), []string{"rollout", "list"}, &stdout, &stderr)
+	code = run(context.Background(), []string{"rollout", "list", "--project", "proj_123", "--service", "svc_123", "--env", "env_123", "--status", "pending_approval", "--limit", "20", "--offset", "2"}, &stdout, &stderr)
 	if code != 0 || !strings.Contains(stdout.String(), `"id": "rollout_123"`) {
 		t.Fatalf("expected rollout list output, got code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, expected := range []string{"project_id=proj_123", "service_id=svc_123", "environment_id=env_123", "status=pending_approval", "limit=20", "offset=2"} {
+		if !strings.Contains(rolloutListQuery, expected) {
+			t.Fatalf("expected rollout list query to include %q, got %q", expected, rolloutListQuery)
+		}
 	}
 
 	stdout.Reset()
@@ -2104,7 +2210,7 @@ func TestRunPolicyDecisionAndScopedStatusHistoryCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/policy-decisions":
 			policyDecisionQuery = r.URL.RawQuery
-			_, _ = w.Write([]byte(`{"data":[{"id":"poldec_123","organization_id":"org_123","project_id":"proj_123","policy_id":"pol_123","policy_name":"Prod Review","policy_code":"prod-review","policy_scope":"project","applies_to":"rollout_plan","mode":"require_manual_review","change_set_id":"change_123","risk_assessment_id":"risk_123","rollout_plan_id":"plan_123","rollout_execution_id":"rollout_123","outcome":"require_manual_review","summary":"manual review required","reasons":["production rollout needs approval"]}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"poldec_123","organization_id":"org_123","project_id":"proj_123","policy_id":"pol_123","policy_name":"Prod Review","policy_code":"prod-review","policy_scope":"project","applies_to":"release_bundle","mode":"require_manual_review","change_set_id":"change_123","risk_assessment_id":"risk_123","rollout_plan_id":"plan_123","rollout_execution_id":"rollout_123","release_id":"rel_123","config_set_id":"cfg_123","database_change_id":"dbchg_123","outcome":"require_manual_review","summary":"manual review required","reasons":["production rollout needs approval"]}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/status-events/status_123":
 			_, _ = w.Write([]byte(`{"data":{"id":"status_123","organization_id":"org_123","project_id":"proj_123","service_id":"svc_123","environment_id":"env_123","rollout_execution_id":"rollout_123","resource_type":"rollout_execution","resource_id":"rollout_123","event_type":"rollout.execution.paused","category":"rollout","severity":"warning","outcome":"paused","source":"control_plane","automated":false,"summary":"paused for review"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects/proj_123/status-events":
@@ -2129,14 +2235,14 @@ func TestRunPolicyDecisionAndScopedStatusHistoryCommands(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := run(context.Background(), []string{"policy-decision", "list", "--project", "proj_123", "--policy", "pol_123", "--risk", "risk_123", "--plan", "plan_123", "--rollout", "rollout_123", "--applies-to", "rollout_plan", "--limit", "25", "--offset", "5"}, &stdout, &stderr)
+	code := run(context.Background(), []string{"policy-decision", "list", "--project", "proj_123", "--policy", "pol_123", "--risk", "risk_123", "--plan", "plan_123", "--rollout", "rollout_123", "--release", "rel_123", "--config-set", "cfg_123", "--database-change", "dbchg_123", "--applies-to", "release_bundle", "--limit", "25", "--offset", "5"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit code 0 from policy-decision list, got %d, stderr=%s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `"outcome": "require_manual_review"`) || !strings.Contains(stdout.String(), `"summary": "manual review required"`) {
 		t.Fatalf("expected policy-decision output, got %s", stdout.String())
 	}
-	for _, expected := range []string{"project_id=proj_123", "policy_id=pol_123", "risk_assessment_id=risk_123", "rollout_plan_id=plan_123", "rollout_execution_id=rollout_123", "applies_to=rollout_plan", "limit=25", "offset=5"} {
+	for _, expected := range []string{"project_id=proj_123", "policy_id=pol_123", "risk_assessment_id=risk_123", "rollout_plan_id=plan_123", "rollout_execution_id=rollout_123", "release_id=rel_123", "config_set_id=cfg_123", "database_change_id=dbchg_123", "applies_to=release_bundle", "limit=25", "offset=5"} {
 		if !strings.Contains(policyDecisionQuery, expected) {
 			t.Fatalf("expected policy-decision query to include %q, got %q", expected, policyDecisionQuery)
 		}

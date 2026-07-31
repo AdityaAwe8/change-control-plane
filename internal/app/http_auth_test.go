@@ -136,6 +136,102 @@ func TestSignInWithPasswordRestoresSession(t *testing.T) {
 	}
 }
 
+func TestAuthCredentialValidationAndSecretSafety(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/auth/sign-up", types.SignUpRequest{
+		Email:                "not-an-email",
+		DisplayName:          "Owner",
+		Password:             "ChangeMe123!",
+		PasswordConfirmation: "ChangeMe123!",
+	}, "", ""); status != http.StatusBadRequest {
+		t.Fatalf("expected invalid email sign-up to return 400, got %d", status)
+	}
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/auth/sign-up", types.SignUpRequest{
+		Email:                "weak@acme.local",
+		DisplayName:          "Weak",
+		Password:             "short",
+		PasswordConfirmation: "short",
+	}, "", ""); status != http.StatusBadRequest {
+		t.Fatalf("expected weak password sign-up to return 400, got %d", status)
+	}
+
+	payload, err := json.Marshal(types.SignUpRequest{
+		Email:                "owner@acme.local",
+		DisplayName:          "Owner",
+		Password:             "ChangeMe123!",
+		PasswordConfirmation: "ChangeMe123!",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(server.URL+"/api/v1/auth/sign-up", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected valid sign-up to return 200, got %d body=%s", resp.StatusCode, string(body))
+	}
+	if findBrowserSessionCookie(resp.Cookies()) == nil {
+		t.Fatal("expected valid sign-up to set a browser session cookie")
+	}
+	if bytes.Contains(body, []byte("ChangeMe123!")) || bytes.Contains(body, []byte("password_hash")) || bytes.Contains(body, []byte("password_salt")) {
+		t.Fatalf("auth response leaked password material: %s", string(body))
+	}
+	user, err := application.Store.GetUserByEmail(t.Context(), "owner@acme.local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.PasswordHash == "" || user.PasswordSalt == "" || user.PasswordHash == "ChangeMe123!" || user.PasswordSalt == "ChangeMe123!" {
+		t.Fatalf("expected stored password material to be hashed and salted, got %+v", user)
+	}
+
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/auth/sign-up", types.SignUpRequest{
+		Email:                "owner@acme.local",
+		DisplayName:          "Owner Duplicate",
+		Password:             "ChangeMe123!",
+		PasswordConfirmation: "ChangeMe123!",
+	}, "", ""); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate sign-up to return 400, got %d", status)
+	}
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/auth/sign-in", types.SignInRequest{
+		Email:    "owner@acme.local",
+		Password: "WrongPass123!",
+	}, "", ""); status != http.StatusUnauthorized {
+		t.Fatalf("expected wrong password to return 401, got %d", status)
+	}
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/auth/sign-in", types.SignInRequest{
+		Email:    "missing@acme.local",
+		Password: "ChangeMe123!",
+	}, "", ""); status != http.StatusUnauthorized {
+		t.Fatalf("expected unknown email to return 401, got %d", status)
+	}
+}
+
+func TestDevLoginForbiddenOutsideDevMode(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "production")
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/auth/dev/login", types.DevLoginRequest{
+		Email:            "owner@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme",
+		OrganizationSlug: "acme",
+	}, "", ""); status != http.StatusForbidden {
+		t.Fatalf("expected dev login outside dev mode to return 403, got %d", status)
+	}
+}
+
 func TestPasswordSignInEstablishesHttpOnlyBrowserSessionAndLogoutRevokesIt(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
@@ -189,6 +285,58 @@ func TestPasswordSignInEstablishesHttpOnlyBrowserSessionAndLogoutRevokesIt(t *te
 	}
 
 	doJSONWithCookie(t, http.MethodGet, server.URL+"/api/v1/auth/session", nil, cookie, "", http.StatusUnauthorized)
+}
+
+func TestSessionCookieMissingMalformedAndSameOriginMutationGuard(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+	t.Setenv("CCP_ENV", "production")
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+	application.Config.APIBaseURL = server.URL
+
+	login, cookie := loginDevWithBrowserSessionCookie(t, server.URL, types.DevLoginRequest{
+		Email:            "owner@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme",
+		OrganizationSlug: "acme",
+	})
+	if cookie == nil {
+		t.Fatal("expected browser session cookie from dev login")
+	}
+
+	body := doJSONWithCookie(t, http.MethodGet, server.URL+"/api/v1/auth/session", nil, nil, "", http.StatusOK)
+	var missingEnvelope types.ItemResponse[types.SessionInfo]
+	if err := json.Unmarshal(body, &missingEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if missingEnvelope.Data.Authenticated {
+		t.Fatalf("expected missing cookie session to be anonymous, got %+v", missingEnvelope.Data)
+	}
+
+	malformedCookie := &http.Cookie{Name: "ccp_session", Value: "malformed-session-token", Path: "/"}
+	doJSONWithCookie(t, http.MethodGet, server.URL+"/api/v1/auth/session", nil, malformedCookie, login.Session.ActiveOrganizationID, http.StatusUnauthorized)
+
+	projectBody := doJSONWithCookieAndHeaders(t, http.MethodPost, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: login.Session.ActiveOrganizationID,
+		Name:           "Same Origin Project",
+		Slug:           "same-origin-project",
+	}, cookie, login.Session.ActiveOrganizationID, map[string]string{
+		"Origin": server.URL,
+	}, http.StatusCreated)
+	var projectEnvelope types.ItemResponse[types.Project]
+	if err := json.Unmarshal(projectBody, &projectEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if projectEnvelope.Data.Slug != "same-origin-project" {
+		t.Fatalf("expected same-origin cookie mutation to create project, got %+v", projectEnvelope.Data)
+	}
+
+	doJSONWithCookie(t, http.MethodPost, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: login.Session.ActiveOrganizationID,
+		Name:           "Missing Origin Project",
+		Slug:           "missing-origin-project",
+	}, cookie, login.Session.ActiveOrganizationID, http.StatusForbidden)
 }
 
 func TestDevLoginEstablishesBrowserSessionCookieAndSessionEndpointUsesIt(t *testing.T) {

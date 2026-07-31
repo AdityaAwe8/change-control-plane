@@ -62,6 +62,18 @@ func TestServiceAccountTokenLifecycleAndAuth(t *testing.T) {
 	if len(services) != 1 {
 		t.Fatalf("expected one service through machine actor, got %d", len(services))
 	}
+	expired := postItemAuth[types.IssuedAPITokenResponse](t, server.URL+"/api/v1/service-accounts/"+serviceAccount.ID+"/tokens", types.IssueAPITokenRequest{
+		Name:           "expired",
+		ExpiresInHours: 1,
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	expiredEntry := expired.Entry
+	expiredAt := time.Now().UTC().Add(-1 * time.Minute)
+	expiredEntry.ExpiresAt = &expiredAt
+	expiredEntry.UpdatedAt = time.Now().UTC()
+	if err := application.Store.UpdateAPIToken(context.Background(), expiredEntry); err != nil {
+		t.Fatalf("expire api token: %v", err)
+	}
+	getListAuth[types.Service](t, server.URL+"/api/v1/services", expired.Token, admin.Session.ActiveOrganizationID, http.StatusUnauthorized)
 
 	otherOrg := loginDev(t, server.URL, types.DevLoginRequest{
 		Email:            "owner-b@acme.local",
@@ -437,6 +449,135 @@ func TestOrganizationProjectServiceAndEnvironmentCRUDRoutes(t *testing.T) {
 	}
 }
 
+func TestOrganizationProjectTeamServiceEnvironmentSlugUniquenessAndRequiredValidation(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	admin := loginDev(t, server.URL, types.DevLoginRequest{
+		Email:            "owner-catalog-constraints@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme Catalog Constraints",
+		OrganizationSlug: "acme-catalog-constraints",
+	})
+
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/organizations", types.CreateOrganizationRequest{
+		Name: "Duplicate Acme",
+		Slug: "acme-catalog-constraints",
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate organization slug to return 400, got %d", status)
+	}
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           " ",
+		Slug:           "blank-name",
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected blank project name to return 400, got %d", status)
+	}
+
+	project := postItemAuth[types.Project](t, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           "Platform",
+		Slug:           "platform",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           "Duplicate Platform",
+		Slug:           "platform",
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate project slug to return 400, got %d", status)
+	}
+	secondProject := postItemAuth[types.Project](t, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		Name:           "Operations",
+		Slug:           "operations",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	duplicateProjectSlug := "platform"
+	if status := requestStatus(t, http.MethodPatch, server.URL+"/api/v1/projects/"+secondProject.ID, types.UpdateProjectRequest{
+		Slug: &duplicateProjectSlug,
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate project slug update to return 400, got %d", status)
+	}
+
+	team := postItemAuth[types.Team](t, server.URL+"/api/v1/teams", types.CreateTeamRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Core",
+		Slug:           "core",
+		OwnerUserIDs:   []string{admin.Session.ActorID},
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/teams", types.CreateTeamRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Duplicate Core",
+		Slug:           "core",
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate team slug to return 400, got %d", status)
+	}
+
+	service := postItemAuth[types.Service](t, server.URL+"/api/v1/services", types.CreateServiceRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		TeamID:         team.ID,
+		Name:           "Checkout",
+		Slug:           "checkout",
+		Criticality:    "high",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/services", types.CreateServiceRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		TeamID:         team.ID,
+		Name:           "Duplicate Checkout",
+		Slug:           "checkout",
+		Criticality:    "medium",
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate service slug to return 400, got %d", status)
+	}
+	blankServiceName := " "
+	if status := requestStatus(t, http.MethodPatch, server.URL+"/api/v1/services/"+service.ID, types.UpdateServiceRequest{
+		Name: &blankServiceName,
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected blank service name update to return 400, got %d", status)
+	}
+
+	environment := postItemAuth[types.Environment](t, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Production",
+		Slug:           "prod",
+		Type:           "production",
+		Region:         "us-central1",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Duplicate Production",
+		Slug:           "prod",
+		Type:           "production",
+		Region:         "us-central1",
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate environment slug to return 400, got %d", status)
+	}
+	duplicateEnvironmentSlug := "prod"
+	otherEnvironment := postItemAuth[types.Environment](t, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		Name:           "Staging",
+		Slug:           "staging",
+		Type:           "staging",
+		Region:         "us-central1",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if otherEnvironment.ID == environment.ID {
+		t.Fatal("expected distinct environment records")
+	}
+	if status := requestStatus(t, http.MethodPatch, server.URL+"/api/v1/environments/"+otherEnvironment.ID, types.UpdateEnvironmentRequest{
+		Slug: &duplicateEnvironmentSlug,
+	}, admin.Token, admin.Session.ActiveOrganizationID); status != http.StatusBadRequest {
+		t.Fatalf("expected duplicate environment slug update to return 400, got %d", status)
+	}
+}
+
 func TestIncidentDetailRoute(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
@@ -653,11 +794,23 @@ func TestRolloutEvidencePackRoute(t *testing.T) {
 	}, admin.Token, admin.Session.ActiveOrganizationID)
 
 	now := time.Now().UTC()
+	rawBackendDSN := "postgres" + "://db.internal:5432/app?sslmode=disable"
 	backendIntegration := types.Integration{
 		BaseRecord: types.BaseRecord{
 			ID:        common.NewID("int"),
 			CreatedAt: now,
 			UpdatedAt: now,
+			Metadata: types.Metadata{
+				"access_token":   "kube-legacy-plaintext",
+				"dsn_env":        rawBackendDSN,
+				"namespace":      "prod",
+				"secret_ref":     "prod/kubernetes/provider-token",
+				"secret_ref_env": "CCP_KUBE_SECRET_REF",
+				"headers": map[string]any{
+					"Authorization": "Bearer kube-legacy-header",
+					"Accept":        "application/json",
+				},
+			},
 		},
 		OrganizationID: admin.Session.ActiveOrganizationID,
 		Name:           "Production Kubernetes",
@@ -677,6 +830,11 @@ func TestRolloutEvidencePackRoute(t *testing.T) {
 			ID:        common.NewID("int"),
 			CreatedAt: now,
 			UpdatedAt: now,
+			Metadata: types.Metadata{
+				"bearer_token":       "prometheus-legacy-plaintext",
+				"query":              "up",
+				"webhook_secret_env": "CCP_PROM_WEBHOOK_SECRET",
+			},
 		},
 		OrganizationID: admin.Session.ActiveOrganizationID,
 		Name:           "Production Prometheus",
@@ -832,6 +990,40 @@ func TestRolloutEvidencePackRoute(t *testing.T) {
 	}
 	if pack.ExecutionDetail.RuntimeSummary.ControlMode != "advisory" {
 		t.Fatalf("expected advisory control mode in evidence pack runtime summary, got %+v", pack.ExecutionDetail.RuntimeSummary)
+	}
+	if pack.BackendIntegration == nil || pack.BackendIntegration.Metadata["access_token"] != "[redacted]" {
+		t.Fatalf("expected backend integration secrets to be redacted in evidence pack, got %+v", pack.BackendIntegration)
+	}
+	if pack.SignalIntegration == nil || pack.SignalIntegration.Metadata["bearer_token"] != "[redacted]" {
+		t.Fatalf("expected signal integration secrets to be redacted in evidence pack, got %+v", pack.SignalIntegration)
+	}
+	if pack.BackendIntegration.Metadata["dsn_env"] != "[redacted]" {
+		t.Fatalf("expected raw DSN-shaped metadata value to be redacted in evidence pack, got %+v", pack.BackendIntegration.Metadata)
+	}
+	headers, ok := pack.BackendIntegration.Metadata["headers"].(map[string]any)
+	if !ok {
+		if typed, typedOK := pack.BackendIntegration.Metadata["headers"].(types.Metadata); typedOK {
+			headers = map[string]any(typed)
+			ok = true
+		}
+	}
+	if !ok || headers["Authorization"] != "[redacted]" || headers["Accept"] != "application/json" {
+		t.Fatalf("expected nested backend metadata headers to be redacted safely, got %+v", pack.BackendIntegration.Metadata["headers"])
+	}
+	if pack.BackendIntegration.Metadata["namespace"] != "prod" || pack.SignalIntegration.Metadata["query"] != "up" {
+		t.Fatalf("expected non-sensitive integration metadata to remain visible, got %+v / %+v", pack.BackendIntegration.Metadata, pack.SignalIntegration.Metadata)
+	}
+	if pack.BackendIntegration.Metadata["secret_ref"] != "prod/kubernetes/provider-token" ||
+		pack.BackendIntegration.Metadata["secret_ref_env"] != "CCP_KUBE_SECRET_REF" ||
+		pack.SignalIntegration.Metadata["webhook_secret_env"] != "CCP_PROM_WEBHOOK_SECRET" {
+		t.Fatalf("expected logical secret references to remain visible in evidence pack, got %+v / %+v", pack.BackendIntegration.Metadata, pack.SignalIntegration.Metadata)
+	}
+	storedBackend, err := store.GetIntegration(context.Background(), backendIntegration.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedBackend.Metadata["access_token"] != "kube-legacy-plaintext" || storedBackend.Metadata["dsn_env"] != rawBackendDSN {
+		t.Fatalf("expected evidence redaction to avoid mutating stored integration metadata, got %+v", storedBackend.Metadata)
 	}
 }
 
@@ -1408,6 +1600,170 @@ func TestGraphIngestionIsIdempotent(t *testing.T) {
 	}
 	if filteredRelationships[0].Metadata["provenance_source"] != "inferred_owner" {
 		t.Fatalf("expected filtered relationship provenance metadata, got %+v", filteredRelationships[0])
+	}
+}
+
+func TestChangeRiskRolloutScopedQueriesRejectArchivedTargets(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	admin := loginDev(t, server.URL, types.DevLoginRequest{
+		Email:            "owner-workflow-scope@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme Workflow Scope",
+		OrganizationSlug: "acme-workflow-scope",
+	})
+	orgID := admin.Session.ActiveOrganizationID
+
+	project := postItemAuth[types.Project](t, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: orgID,
+		Name:           "Platform",
+		Slug:           "platform",
+	}, admin.Token, orgID)
+	team := postItemAuth[types.Team](t, server.URL+"/api/v1/teams", types.CreateTeamRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Core",
+		Slug:           "core",
+		OwnerUserIDs:   []string{admin.Session.ActorID},
+	}, admin.Token, orgID)
+	service := postItemAuth[types.Service](t, server.URL+"/api/v1/services", types.CreateServiceRequest{
+		OrganizationID:   orgID,
+		ProjectID:        project.ID,
+		TeamID:           team.ID,
+		Name:             "Checkout",
+		Slug:             "checkout",
+		Criticality:      "high",
+		CustomerFacing:   true,
+		HasSLO:           true,
+		HasObservability: true,
+	}, admin.Token, orgID)
+	otherService := postItemAuth[types.Service](t, server.URL+"/api/v1/services", types.CreateServiceRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		TeamID:         team.ID,
+		Name:           "Backoffice",
+		Slug:           "backoffice",
+		Criticality:    "low",
+	}, admin.Token, orgID)
+	environment := postItemAuth[types.Environment](t, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Production",
+		Slug:           "prod",
+		Type:           "production",
+		Production:     true,
+	}, admin.Token, orgID)
+	otherEnvironment := postItemAuth[types.Environment](t, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Staging",
+		Slug:           "staging",
+		Type:           "staging",
+	}, admin.Token, orgID)
+
+	change := postItemAuth[types.ChangeSet](t, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID:        orgID,
+		ProjectID:             project.ID,
+		ServiceID:             service.ID,
+		EnvironmentID:         environment.ID,
+		Summary:               "all supported workflow change types",
+		ChangeTypes:           []string{"code", "database", "config", "infra", "secrets", "dependency"},
+		FileCount:             7,
+		ResourceCount:         2,
+		TouchesInfrastructure: true,
+		TouchesSecrets:        true,
+		DependencyChanges:     true,
+	}, admin.Token, orgID)
+	if len(change.ChangeTypes) != 6 || change.ChangeTypes[1] != "database" || !change.TouchesSecrets || !change.DependencyChanges {
+		t.Fatalf("expected change payload to persist supported type and touch fields, got %+v", change)
+	}
+
+	_ = postItemAuth[types.ChangeSet](t, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		ServiceID:      otherService.ID,
+		EnvironmentID:  otherEnvironment.ID,
+		Summary:        "other scoped change",
+		ChangeTypes:    []string{"code"},
+		FileCount:      1,
+	}, admin.Token, orgID)
+
+	filteredChanges := getListAuth[types.ChangeSet](t, server.URL+"/api/v1/changes?project_id="+project.ID+"&service_id="+service.ID+"&environment_id="+environment.ID+"&limit=10", admin.Token, orgID, http.StatusOK)
+	if len(filteredChanges) != 1 || filteredChanges[0].ID != change.ID {
+		t.Fatalf("expected scoped change query to return only %s, got %+v", change.ID, filteredChanges)
+	}
+
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Summary:        "unsupported type",
+		ChangeTypes:    []string{"docs_only"},
+	}, admin.Token, orgID); status != http.StatusBadRequest {
+		t.Fatalf("expected unsupported change type to return 400, got %d", status)
+	}
+
+	assessment := postItemAuth[types.RiskAssessmentResult](t, server.URL+"/api/v1/risk-assessments", types.CreateRiskAssessmentRequest{
+		ChangeSetID: change.ID,
+	}, admin.Token, orgID)
+	if assessment.Assessment.Score <= 5 || assessment.Assessment.BlastRadius.Summary == "" || len(assessment.Assessment.RecommendedGuardrails) == 0 {
+		t.Fatalf("expected deterministic risk output to include score, blast radius, and guardrails, got %+v", assessment.Assessment)
+	}
+	riskDetail := getItemAuth[types.RiskAssessment](t, server.URL+"/api/v1/risk-assessments/"+assessment.Assessment.ID, admin.Token, orgID, http.StatusOK)
+	if riskDetail.ID != assessment.Assessment.ID {
+		t.Fatalf("expected risk detail route to return %s, got %+v", assessment.Assessment.ID, riskDetail)
+	}
+	filteredRisks := getListAuth[types.RiskAssessment](t, server.URL+"/api/v1/risk-assessments?project_id="+project.ID+"&service_id="+service.ID+"&environment_id="+environment.ID+"&change_set_id="+change.ID, admin.Token, orgID, http.StatusOK)
+	if len(filteredRisks) != 1 || filteredRisks[0].ID != assessment.Assessment.ID {
+		t.Fatalf("expected scoped risk query to return %s, got %+v", assessment.Assessment.ID, filteredRisks)
+	}
+
+	plan := postItemAuth[types.RolloutPlanResult](t, server.URL+"/api/v1/rollout-plans", types.CreateRolloutPlanRequest{
+		ChangeSetID: change.ID,
+	}, admin.Token, orgID)
+	planDetail := getItemAuth[types.RolloutPlan](t, server.URL+"/api/v1/rollout-plans/"+plan.Plan.ID, admin.Token, orgID, http.StatusOK)
+	if planDetail.ID != plan.Plan.ID || len(planDetail.Steps) == 0 {
+		t.Fatalf("expected rollout plan detail with deterministic steps, got %+v", planDetail)
+	}
+	filteredPlans := getListAuth[types.RolloutPlan](t, server.URL+"/api/v1/rollout-plans?project_id="+project.ID+"&change_set_id="+change.ID, admin.Token, orgID, http.StatusOK)
+	if len(filteredPlans) != 1 || filteredPlans[0].ID != plan.Plan.ID {
+		t.Fatalf("expected scoped rollout-plan query to return %s, got %+v", plan.Plan.ID, filteredPlans)
+	}
+
+	execution := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions", types.CreateRolloutExecutionRequest{
+		RolloutPlanID: plan.Plan.ID,
+	}, admin.Token, orgID)
+	filteredExecutions := getListAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions?project_id="+project.ID+"&service_id="+service.ID+"&environment_id="+environment.ID+"&status="+execution.Status, admin.Token, orgID, http.StatusOK)
+	if len(filteredExecutions) != 1 || filteredExecutions[0].ID != execution.ID {
+		t.Fatalf("expected scoped rollout-execution query to return %s, got %+v", execution.ID, filteredExecutions)
+	}
+
+	_ = postItemAuth[types.Service](t, server.URL+"/api/v1/services/"+service.ID+"/archive", struct{}{}, admin.Token, orgID)
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Summary:        "archived service change",
+		ChangeTypes:    []string{"code"},
+	}, admin.Token, orgID); status != http.StatusBadRequest {
+		t.Fatalf("expected archived service to reject new change ingestion, got %d", status)
+	}
+
+	_ = postItemAuth[types.Environment](t, server.URL+"/api/v1/environments/"+otherEnvironment.ID+"/archive", struct{}{}, admin.Token, orgID)
+	if status := requestStatus(t, http.MethodPost, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		ServiceID:      otherService.ID,
+		EnvironmentID:  otherEnvironment.ID,
+		Summary:        "archived environment change",
+		ChangeTypes:    []string{"code"},
+	}, admin.Token, orgID); status != http.StatusBadRequest {
+		t.Fatalf("expected archived environment to reject new change ingestion, got %d", status)
 	}
 }
 

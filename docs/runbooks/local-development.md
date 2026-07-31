@@ -67,6 +67,40 @@ make web-e2e
 make smoke
 ```
 
+For the broader review/proof matrix that mirrors the main CI checks plus the operator release gate, run:
+
+```bash
+git diff --check
+go test ./...
+python3 -m unittest discover -s python/tests -v
+cd web && pnpm typecheck
+cd web && pnpm build
+cd web && pnpm test:e2e
+make proof-contract
+make proof-harness
+make proof-postgres
+make verify
+make release-readiness
+```
+
+`make release-readiness` is expected to fail until valid `.tmp/reference-pilot/reference-pilot-report.json` and `.tmp/live-proof/live-proof-report.json` artifacts exist and the live-proof report is classified as `customer_environment` or `hosted_saas`.
+
+For PostgreSQL-backed storage/app proof, use the same target reviewers and CI use. Against the local Docker stack:
+
+```bash
+make compose-up
+make proof-postgres
+```
+
+If Docker is unavailable but Homebrew or another local PostgreSQL is running, create or choose a disposable test database and pass its DSN explicitly:
+
+```bash
+createdb change_control_plane_test
+CCP_TEST_DB_DSN='postgres:///change_control_plane_test?host=/tmp&sslmode=disable' make proof-postgres
+```
+
+The DSN examples above are test-only process environment values. The proof target uses them only to connect to PostgreSQL; it does not persist DSNs in application tables, CLI output, evidence packs, or release artifacts. Storage tests truncate their test tables, and runtime database app tests create/drop temporary databases when the PostgreSQL role allows it. If PostgreSQL is not reachable or cannot create temporary databases, the affected tests skip with the underlying connection or permission error so the missing prerequisite is visible.
+
 ## Reference Pilot Environment
 
 For the local-cluster/local-metrics reference pilot flow, use:

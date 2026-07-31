@@ -25,9 +25,14 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
@@ -46,6 +51,15 @@ a {
 
 button {
   font: inherit;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(71, 198, 163, 0.75);
+  outline-offset: 3px;
 }
 
 button:disabled {
@@ -133,7 +147,7 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: clamp(260px, 26vw, 320px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   gap: 20px;
@@ -167,7 +181,7 @@ button:disabled {
 .panel-header h3 {
   margin: 0;
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .brand-block h1 {
@@ -221,6 +235,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -233,6 +248,17 @@ button:disabled {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
+}
+
+.app-feedback,
+.empty-state,
+.info-card,
+.metric-card,
+.mini-list,
+.panel-header,
+td,
+th {
+  overflow-wrap: anywhere;
 }
 
 .app-feedback[data-kind="info"] {
@@ -263,7 +289,7 @@ button:disabled {
 
 .advisory-banner strong {
   font-family: "Space Grotesk", "Avenir Next", sans-serif;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .advisory-banner span {
@@ -274,19 +300,23 @@ button:disabled {
 .hero,
 .panel {
   border-radius: 28px;
+  min-width: 0;
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 24px;
   padding: 24px 28px;
 }
 
 .topbar-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .scope-picker {
@@ -385,6 +415,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
 }
 
 .compact-top-form {
@@ -395,6 +426,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  min-width: 0;
 }
 
 .stack-form label {
@@ -436,6 +468,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .provider-grid {
@@ -523,6 +556,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  min-width: 0;
 }
 
 .metric-card,
@@ -574,6 +608,8 @@ button:disabled {
 }
 
 .table-wrap {
+  max-width: 100%;
+  min-width: 0;
   overflow: auto;
   border-radius: 22px;
   border: 1px solid var(--line);
@@ -627,23 +663,12 @@ td {
 }
 
 @media (max-width: 1100px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+  .topbar {
+    flex-direction: column;
   }
 
-  .sidebar {
-    position: static;
-    overflow: visible;
-    scrollbar-gutter: auto;
-  }
-
-  .content {
-    overflow: visible;
-    scrollbar-gutter: auto;
+  .topbar-actions {
+    justify-content: flex-start;
   }
 
   .hero,
@@ -660,6 +685,46 @@ td {
   }
 }
 
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .sidebar {
+    position: static;
+    gap: 18px;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .brand-block h1 {
+    font-size: 1.8rem;
+  }
+
+  .nav-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+    gap: 8px;
+  }
+
+  .nav-label {
+    grid-column: 1 / -1;
+  }
+
+  .nav-link {
+    padding: 10px 12px;
+  }
+
+  .content {
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+}
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 14px;
@@ -670,6 +735,24 @@ td {
   .hero,
   .panel {
     border-radius: 22px;
+  }
+
+  .sidebar {
+    padding: 22px;
+  }
+
+  .brand-block h1 {
+    font-size: 1.65rem;
+  }
+
+  .nav-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
   }
 
   .topbar {

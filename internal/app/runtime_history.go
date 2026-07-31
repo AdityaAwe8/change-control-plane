@@ -163,7 +163,11 @@ func (a *Application) ListStatusEvents(ctx context.Context, query storage.Status
 		return nil, err
 	}
 	query.OrganizationID = orgID
-	return a.Store.ListStatusEvents(ctx, query)
+	items, err := a.Store.ListStatusEvents(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return safeStatusEventsForResponse(items), nil
 }
 
 func (a *Application) GetStatusEvent(ctx context.Context, id string) (types.StatusEvent, error) {
@@ -178,6 +182,7 @@ func (a *Application) GetStatusEvent(ctx context.Context, id string) (types.Stat
 	if !a.Authorizer.CanViewStatusHistory(identity, event.OrganizationID, event.ProjectID) {
 		return types.StatusEvent{}, ErrForbidden
 	}
+	event.Metadata = types.RedactMetadata(event.Metadata)
 	return event, nil
 }
 
@@ -193,11 +198,15 @@ func (a *Application) ListRolloutExecutionStatusEvents(ctx context.Context, exec
 	if !a.Authorizer.CanViewStatusHistory(identity, execution.OrganizationID, execution.ProjectID) {
 		return nil, ErrForbidden
 	}
-	return a.Store.ListStatusEvents(ctx, storage.StatusEventQuery{
+	items, err := a.Store.ListStatusEvents(ctx, storage.StatusEventQuery{
 		OrganizationID:     execution.OrganizationID,
 		ProjectID:          execution.ProjectID,
 		RolloutExecutionID: execution.ID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return safeStatusEventsForResponse(items), nil
 }
 
 func (a *Application) resolveEffectiveRollbackPolicy(ctx context.Context, runtime types.RolloutExecutionRuntimeContext) (*types.RollbackPolicy, error) {
@@ -293,21 +302,21 @@ func (a *Application) defaultRollbackPolicy(runtime types.RolloutExecutionRuntim
 				"source": "built_in_default",
 			},
 		},
-		OrganizationID:             runtime.Execution.OrganizationID,
-		ProjectID:                  runtime.Execution.ProjectID,
-		ServiceID:                  runtime.Execution.ServiceID,
-		EnvironmentID:              runtime.Execution.EnvironmentID,
-		Name:                       "Built-in default rollback policy",
-		Description:                "Fallback policy used when no persisted override matches the rollout scope.",
-		Enabled:                    true,
-		Priority:                   -1,
-		MaxErrorRate:               maxErrorRate,
-		MaxLatencyMs:               maxLatencyMs,
-		MaxUnhealthyInstances:      maxUnhealthyInstances,
-		MaxRestartRate:             maxRestartRate,
-		MaxVerificationFailures:    1,
-		RollbackOnProviderFailure:  true,
-		RollbackOnCriticalSignals:  rollbackOnCriticalSignals,
+		OrganizationID:            runtime.Execution.OrganizationID,
+		ProjectID:                 runtime.Execution.ProjectID,
+		ServiceID:                 runtime.Execution.ServiceID,
+		EnvironmentID:             runtime.Execution.EnvironmentID,
+		Name:                      "Built-in default rollback policy",
+		Description:               "Fallback policy used when no persisted override matches the rollout scope.",
+		Enabled:                   true,
+		Priority:                  -1,
+		MaxErrorRate:              maxErrorRate,
+		MaxLatencyMs:              maxLatencyMs,
+		MaxUnhealthyInstances:     maxUnhealthyInstances,
+		MaxRestartRate:            maxRestartRate,
+		MaxVerificationFailures:   1,
+		RollbackOnProviderFailure: true,
+		RollbackOnCriticalSignals: rollbackOnCriticalSignals,
 	}
 }
 

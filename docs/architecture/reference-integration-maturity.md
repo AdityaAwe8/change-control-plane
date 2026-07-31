@@ -32,6 +32,6 @@ It still does not mean:
 
 - GitHub App marketplace polish or OAuth enterprise-ready onboarding is complete
 - GitLab OAuth or GitLab App-style onboarding is complete
-- live-cluster or live-metrics proof exists
+- hosted/customer live-cluster or live-metrics proof exists
 - overlapping integration scopes are perfectly reconciled
 - the scheduler is hardened for large multi-worker scale

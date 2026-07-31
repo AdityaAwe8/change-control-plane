@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"sort"
 	"strings"
 	"time"
@@ -111,6 +112,9 @@ func (a *Application) SignUp(ctx context.Context, req types.SignUpRequest) (type
 	if email == "" {
 		return types.AuthResponse{}, fmt.Errorf("%w: email is required", ErrValidation)
 	}
+	if err := validateEmailAddress(email); err != nil {
+		return types.AuthResponse{}, err
+	}
 	displayName := strings.TrimSpace(req.DisplayName)
 	if displayName == "" {
 		return types.AuthResponse{}, fmt.Errorf("%w: display_name is required", ErrValidation)
@@ -172,6 +176,9 @@ func (a *Application) SignIn(ctx context.Context, req types.SignInRequest) (type
 	email := normalizeEmail(req.Email)
 	if email == "" {
 		return types.AuthResponse{}, fmt.Errorf("%w: email is required", ErrValidation)
+	}
+	if err := validateEmailAddress(email); err != nil {
+		return types.AuthResponse{}, err
 	}
 	if req.Password == "" {
 		return types.AuthResponse{}, fmt.Errorf("%w: password is required", ErrValidation)
@@ -712,6 +719,9 @@ func (a *Application) DevLogin(ctx context.Context, req types.DevLoginRequest) (
 	if email == "" {
 		return types.DevLoginResponse{}, fmt.Errorf("%w: email is required", ErrValidation)
 	}
+	if err := validateEmailAddress(email); err != nil {
+		return types.DevLoginResponse{}, err
+	}
 	displayName := strings.TrimSpace(req.DisplayName)
 	if displayName == "" {
 		displayName = email
@@ -862,6 +872,41 @@ func normalizeEmail(value string) string {
 	return strings.TrimSpace(strings.ToLower(value))
 }
 
+func validateEmailAddress(email string) error {
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return fmt.Errorf("%w: email must be a valid email address", ErrValidation)
+	}
+	at := strings.LastIndex(email, "@")
+	if at <= 0 || at >= len(email)-1 || !strings.Contains(email[at+1:], ".") {
+		return fmt.Errorf("%w: email must be a valid email address", ErrValidation)
+	}
+	return nil
+}
+
+func validateChangeTypes(changeTypes []string) error {
+	for _, changeType := range changeTypes {
+		if _, ok := supportedChangeTypes[strings.TrimSpace(strings.ToLower(changeType))]; !ok {
+			return fmt.Errorf("%w: unsupported change type %q", ErrValidation, changeType)
+		}
+	}
+	return nil
+}
+
+var supportedChangeTypes = map[string]struct{}{
+	"code":           {},
+	"config":         {},
+	"database":       {},
+	"dependency":     {},
+	"dependencies":   {},
+	"iam":            {},
+	"infra":          {},
+	"infrastructure": {},
+	"schema":         {},
+	"secret":         {},
+	"secrets":        {},
+}
+
 func validatePassword(password, confirmation string) error {
 	if password == "" {
 		return fmt.Errorf("%w: password is required", ErrValidation)
@@ -878,6 +923,84 @@ func validatePassword(password, confirmation string) error {
 	return nil
 }
 
+func (a *Application) ensureOrganizationSlugAvailable(ctx context.Context, slug, excludeID string) error {
+	if strings.TrimSpace(slug) == "" {
+		return fmt.Errorf("%w: slug is required", ErrValidation)
+	}
+	existing, err := a.Store.GetOrganizationBySlug(ctx, slug)
+	if err == nil && existing.ID != excludeID {
+		return fmt.Errorf("%w: organization slug %q already exists", ErrValidation, slug)
+	}
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func (a *Application) ensureProjectSlugAvailable(ctx context.Context, organizationID, slug, excludeID string) error {
+	if strings.TrimSpace(slug) == "" {
+		return fmt.Errorf("%w: slug is required", ErrValidation)
+	}
+	projects, err := a.Store.ListProjects(ctx, storage.ProjectQuery{OrganizationID: organizationID})
+	if err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if project.ID != excludeID && project.Slug == slug {
+			return fmt.Errorf("%w: project slug %q already exists in organization", ErrValidation, slug)
+		}
+	}
+	return nil
+}
+
+func (a *Application) ensureTeamSlugAvailable(ctx context.Context, organizationID, projectID, slug, excludeID string) error {
+	if strings.TrimSpace(slug) == "" {
+		return fmt.Errorf("%w: slug is required", ErrValidation)
+	}
+	teams, err := a.Store.ListTeams(ctx, storage.TeamQuery{OrganizationID: organizationID, ProjectID: projectID})
+	if err != nil {
+		return err
+	}
+	for _, team := range teams {
+		if team.ID != excludeID && team.Slug == slug {
+			return fmt.Errorf("%w: team slug %q already exists in project", ErrValidation, slug)
+		}
+	}
+	return nil
+}
+
+func (a *Application) ensureServiceSlugAvailable(ctx context.Context, organizationID, projectID, slug, excludeID string) error {
+	if strings.TrimSpace(slug) == "" {
+		return fmt.Errorf("%w: slug is required", ErrValidation)
+	}
+	services, err := a.Store.ListServices(ctx, storage.ServiceQuery{OrganizationID: organizationID, ProjectID: projectID})
+	if err != nil {
+		return err
+	}
+	for _, service := range services {
+		if service.ID != excludeID && service.Slug == slug {
+			return fmt.Errorf("%w: service slug %q already exists in project", ErrValidation, slug)
+		}
+	}
+	return nil
+}
+
+func (a *Application) ensureEnvironmentSlugAvailable(ctx context.Context, organizationID, projectID, slug, excludeID string) error {
+	if strings.TrimSpace(slug) == "" {
+		return fmt.Errorf("%w: slug is required", ErrValidation)
+	}
+	environments, err := a.Store.ListEnvironments(ctx, storage.EnvironmentQuery{OrganizationID: organizationID, ProjectID: projectID})
+	if err != nil {
+		return err
+	}
+	for _, environment := range environments {
+		if environment.ID != excludeID && environment.Slug == slug {
+			return fmt.Errorf("%w: environment slug %q already exists in project", ErrValidation, slug)
+		}
+	}
+	return nil
+}
+
 func (a *Application) CreateOrganization(ctx context.Context, req types.CreateOrganizationRequest) (types.Organization, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
@@ -886,8 +1009,13 @@ func (a *Application) CreateOrganization(ctx context.Context, req types.CreateOr
 	if !a.Authorizer.CanCreateOrganization(identity) {
 		return types.Organization{}, a.forbidden(ctx, identity, "organization.create.denied", "organization", "", "", "", []string{"actor lacks create organization permission"})
 	}
-	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Slug) == "" {
+	name := strings.TrimSpace(req.Name)
+	slug := strings.TrimSpace(req.Slug)
+	if name == "" || slug == "" {
 		return types.Organization{}, fmt.Errorf("%w: name and slug are required", ErrValidation)
+	}
+	if err := a.ensureOrganizationSlugAvailable(ctx, slug, ""); err != nil {
+		return types.Organization{}, err
 	}
 
 	now := time.Now().UTC()
@@ -898,8 +1026,8 @@ func (a *Application) CreateOrganization(ctx context.Context, req types.CreateOr
 			UpdatedAt: now,
 			Metadata:  req.Metadata,
 		},
-		Name: req.Name,
-		Slug: req.Slug,
+		Name: name,
+		Slug: slug,
 		Tier: valueOrDefault(req.Tier, "growth"),
 		Mode: valueOrDefault(req.Mode, "startup"),
 	}
@@ -961,6 +1089,11 @@ func (a *Application) CreateProject(ctx context.Context, req types.CreateProject
 	}
 	if !a.Authorizer.CanCreateProject(identity, req.OrganizationID) {
 		return types.Project{}, a.forbidden(ctx, identity, "project.create.denied", "project", "", req.OrganizationID, "", []string{"actor lacks project creation permission"})
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if err := a.ensureProjectSlugAvailable(ctx, req.OrganizationID, req.Slug, ""); err != nil {
+		return types.Project{}, err
 	}
 
 	now := time.Now().UTC()
@@ -1039,6 +1172,11 @@ func (a *Application) CreateTeam(ctx context.Context, req types.CreateTeamReques
 	if !a.Authorizer.CanCreateTeam(identity, req.OrganizationID, req.ProjectID) {
 		return types.Team{}, a.forbidden(ctx, identity, "team.create.denied", "team", "", req.OrganizationID, req.ProjectID, []string{"actor lacks team creation permission"})
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if err := a.ensureTeamSlugAvailable(ctx, req.OrganizationID, req.ProjectID, req.Slug, ""); err != nil {
+		return types.Team{}, err
+	}
 	now := time.Now().UTC()
 	team := types.Team{
 		BaseRecord: types.BaseRecord{
@@ -1099,6 +1237,11 @@ func (a *Application) CreateService(ctx context.Context, req types.CreateService
 	}
 	if !a.Authorizer.CanManageProject(identity, req.OrganizationID, req.ProjectID) && !contains(team.OwnerUserIDs, identity.ActorID) {
 		return types.Service{}, a.forbidden(ctx, identity, "service.create.denied", "service", "", req.OrganizationID, req.ProjectID, []string{"actor lacks service registration permission"})
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if err := a.ensureServiceSlugAvailable(ctx, req.OrganizationID, req.ProjectID, req.Slug, ""); err != nil {
+		return types.Service{}, err
 	}
 	now := time.Now().UTC()
 	service := types.Service{
@@ -1162,6 +1305,11 @@ func (a *Application) CreateEnvironment(ctx context.Context, req types.CreateEnv
 	if !a.Authorizer.CanCreateEnvironment(identity, req.OrganizationID, req.ProjectID) {
 		return types.Environment{}, a.forbidden(ctx, identity, "environment.create.denied", "environment", "", req.OrganizationID, req.ProjectID, []string{"actor lacks environment mutation permission"})
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if err := a.ensureEnvironmentSlugAvailable(ctx, req.OrganizationID, req.ProjectID, req.Slug, ""); err != nil {
+		return types.Environment{}, err
+	}
 	now := time.Now().UTC()
 	environment := types.Environment{
 		BaseRecord: types.BaseRecord{
@@ -1206,8 +1354,29 @@ func (a *Application) CreateChangeSet(ctx context.Context, req types.CreateChang
 	if err != nil {
 		return types.ChangeSet{}, err
 	}
-	if strings.TrimSpace(req.OrganizationID) == "" || strings.TrimSpace(req.ProjectID) == "" || strings.TrimSpace(req.ServiceID) == "" || strings.TrimSpace(req.EnvironmentID) == "" || strings.TrimSpace(req.Summary) == "" {
+	req.OrganizationID = strings.TrimSpace(req.OrganizationID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
+	req.ServiceID = strings.TrimSpace(req.ServiceID)
+	req.EnvironmentID = strings.TrimSpace(req.EnvironmentID)
+	req.Summary = strings.TrimSpace(req.Summary)
+	if req.OrganizationID == "" || req.ProjectID == "" || req.ServiceID == "" || req.EnvironmentID == "" || req.Summary == "" {
 		return types.ChangeSet{}, fmt.Errorf("%w: organization_id, project_id, service_id, environment_id, and summary are required", ErrValidation)
+	}
+	if req.FileCount < 0 || req.ResourceCount < 0 || req.HistoricalIncidentCount < 0 {
+		return types.ChangeSet{}, fmt.Errorf("%w: file_count, resource_count, and historical_incident_count cannot be negative", ErrValidation)
+	}
+	if err := validateChangeTypes(req.ChangeTypes); err != nil {
+		return types.ChangeSet{}, err
+	}
+	project, err := a.Store.GetProject(ctx, req.ProjectID)
+	if err != nil {
+		return types.ChangeSet{}, fmt.Errorf("%w: project %s", storage.ErrNotFound, req.ProjectID)
+	}
+	if project.OrganizationID != req.OrganizationID {
+		return types.ChangeSet{}, fmt.Errorf("%w: project scope mismatch", ErrValidation)
+	}
+	if strings.EqualFold(project.Status, "archived") {
+		return types.ChangeSet{}, fmt.Errorf("%w: archived project cannot accept new changes", ErrValidation)
 	}
 	service, err := a.Store.GetService(ctx, req.ServiceID)
 	if err != nil {
@@ -1216,6 +1385,9 @@ func (a *Application) CreateChangeSet(ctx context.Context, req types.CreateChang
 	if service.OrganizationID != req.OrganizationID || service.ProjectID != req.ProjectID {
 		return types.ChangeSet{}, fmt.Errorf("%w: service scope mismatch", ErrValidation)
 	}
+	if strings.EqualFold(service.Status, "archived") {
+		return types.ChangeSet{}, fmt.Errorf("%w: archived service cannot accept new changes", ErrValidation)
+	}
 	environment, err := a.Store.GetEnvironment(ctx, req.EnvironmentID)
 	if err != nil {
 		return types.ChangeSet{}, fmt.Errorf("%w: environment %s", storage.ErrNotFound, req.EnvironmentID)
@@ -1223,9 +1395,15 @@ func (a *Application) CreateChangeSet(ctx context.Context, req types.CreateChang
 	if environment.OrganizationID != req.OrganizationID || environment.ProjectID != req.ProjectID {
 		return types.ChangeSet{}, fmt.Errorf("%w: environment scope mismatch", ErrValidation)
 	}
+	if strings.EqualFold(environment.Status, "archived") {
+		return types.ChangeSet{}, fmt.Errorf("%w: archived environment cannot accept new changes", ErrValidation)
+	}
 	team, err := a.Store.GetTeam(ctx, service.TeamID)
 	if err != nil {
 		return types.ChangeSet{}, fmt.Errorf("%w: team %s", storage.ErrNotFound, service.TeamID)
+	}
+	if strings.EqualFold(team.Status, "archived") {
+		return types.ChangeSet{}, fmt.Errorf("%w: archived team cannot accept new changes", ErrValidation)
 	}
 	if !a.Authorizer.CanIngestChange(identity, req.OrganizationID, req.ProjectID, team) {
 		return types.ChangeSet{}, a.forbidden(ctx, identity, "change.ingest.denied", "change_set", "", req.OrganizationID, req.ProjectID, []string{"actor lacks change ingestion permission"})
@@ -1266,6 +1444,10 @@ func (a *Application) CreateChangeSet(ctx context.Context, req types.CreateChang
 }
 
 func (a *Application) ListChangeSets(ctx context.Context) ([]types.ChangeSet, error) {
+	return a.ListChangeSetsWithQuery(ctx, storage.ChangeSetQuery{})
+}
+
+func (a *Application) ListChangeSetsWithQuery(ctx context.Context, query storage.ChangeSetQuery) ([]types.ChangeSet, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
 		return nil, err
@@ -1274,7 +1456,8 @@ func (a *Application) ListChangeSets(ctx context.Context) ([]types.ChangeSet, er
 	if err != nil {
 		return nil, err
 	}
-	return a.Store.ListChangeSets(ctx, storage.ChangeSetQuery{OrganizationID: orgID})
+	query.OrganizationID = orgID
+	return a.Store.ListChangeSets(ctx, query)
 }
 
 func (a *Application) AssessRisk(ctx context.Context, req types.CreateRiskAssessmentRequest) (types.RiskAssessmentResult, error) {
@@ -1321,6 +1504,10 @@ func (a *Application) AssessRisk(ctx context.Context, req types.CreateRiskAssess
 }
 
 func (a *Application) ListRiskAssessments(ctx context.Context) ([]types.RiskAssessment, error) {
+	return a.ListRiskAssessmentsWithQuery(ctx, storage.RiskAssessmentQuery{})
+}
+
+func (a *Application) ListRiskAssessmentsWithQuery(ctx context.Context, query storage.RiskAssessmentQuery) ([]types.RiskAssessment, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
 		return nil, err
@@ -1329,7 +1516,23 @@ func (a *Application) ListRiskAssessments(ctx context.Context) ([]types.RiskAsse
 	if err != nil {
 		return nil, err
 	}
-	return a.Store.ListRiskAssessments(ctx, storage.RiskAssessmentQuery{OrganizationID: orgID})
+	query.OrganizationID = orgID
+	return a.Store.ListRiskAssessments(ctx, query)
+}
+
+func (a *Application) GetRiskAssessment(ctx context.Context, id string) (types.RiskAssessment, error) {
+	identity, err := a.requireIdentity(ctx)
+	if err != nil {
+		return types.RiskAssessment{}, err
+	}
+	assessment, err := a.Store.GetRiskAssessment(ctx, id)
+	if err != nil {
+		return types.RiskAssessment{}, err
+	}
+	if !a.Authorizer.CanAssessRisk(identity, assessment.OrganizationID, assessment.ProjectID) {
+		return types.RiskAssessment{}, ErrForbidden
+	}
+	return assessment, nil
 }
 
 func (a *Application) CreateRolloutPlan(ctx context.Context, req types.CreateRolloutPlanRequest) (types.RolloutPlanResult, error) {
@@ -1402,6 +1605,10 @@ func (a *Application) CreateRolloutPlan(ctx context.Context, req types.CreateRol
 }
 
 func (a *Application) ListRolloutPlans(ctx context.Context) ([]types.RolloutPlan, error) {
+	return a.ListRolloutPlansWithQuery(ctx, storage.RolloutPlanQuery{})
+}
+
+func (a *Application) ListRolloutPlansWithQuery(ctx context.Context, query storage.RolloutPlanQuery) ([]types.RolloutPlan, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
 		return nil, err
@@ -1410,7 +1617,23 @@ func (a *Application) ListRolloutPlans(ctx context.Context) ([]types.RolloutPlan
 	if err != nil {
 		return nil, err
 	}
-	return a.Store.ListRolloutPlans(ctx, storage.RolloutPlanQuery{OrganizationID: orgID})
+	query.OrganizationID = orgID
+	return a.Store.ListRolloutPlans(ctx, query)
+}
+
+func (a *Application) GetRolloutPlan(ctx context.Context, id string) (types.RolloutPlan, error) {
+	identity, err := a.requireIdentity(ctx)
+	if err != nil {
+		return types.RolloutPlan{}, err
+	}
+	plan, err := a.Store.GetRolloutPlan(ctx, id)
+	if err != nil {
+		return types.RolloutPlan{}, err
+	}
+	if !a.Authorizer.CanPlanRollout(identity, plan.OrganizationID, plan.ProjectID) {
+		return types.RolloutPlan{}, ErrForbidden
+	}
+	return plan, nil
 }
 
 func (a *Application) PoliciesList(ctx context.Context) ([]types.Policy, error) {
@@ -1437,7 +1660,7 @@ func (a *Application) ListIntegrationsWithQuery(ctx context.Context, query stora
 	}
 	now := time.Now().UTC()
 	for idx := range integrations {
-		integrations[idx] = hydrateIntegrationRuntimeState(integrations[idx], now)
+		integrations[idx] = safeIntegrationForResponse(hydrateIntegrationRuntimeState(integrations[idx], now))
 	}
 	return integrations, nil
 }
@@ -1454,7 +1677,11 @@ func (a *Application) AuditEvents(ctx context.Context) ([]types.AuditEvent, erro
 	if !a.Authorizer.CanViewAudit(identity, orgID) {
 		return nil, ErrForbidden
 	}
-	return a.Store.ListAuditEvents(ctx, storage.AuditEventQuery{OrganizationID: orgID})
+	items, err := a.Store.ListAuditEvents(ctx, storage.AuditEventQuery{OrganizationID: orgID})
+	if err != nil {
+		return nil, err
+	}
+	return safeAuditEventsForResponse(items), nil
 }
 
 func (a *Application) Catalog(ctx context.Context) (types.CatalogSummary, error) {
@@ -1465,6 +1692,12 @@ func (a *Application) Catalog(ctx context.Context) (types.CatalogSummary, error)
 	environments, err := a.ListEnvironments(ctx)
 	if err != nil {
 		return types.CatalogSummary{}, err
+	}
+	if services == nil {
+		services = []types.Service{}
+	}
+	if environments == nil {
+		environments = []types.Environment{}
 	}
 	return types.CatalogSummary{
 		Services:     services,

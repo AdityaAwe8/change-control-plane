@@ -35,8 +35,8 @@ This report captures the truth pass between the current HTTP handlers and `docs/
 
 | Area | Current Truth | Why It Still Matters |
 | --- | --- | --- |
-| Response envelopes | OpenAPI now covers the newest enterprise and integration routes more accurately, but many older endpoints still document success responses descriptively rather than with fully referenced envelope schemas | client generation and strict contract tooling would still need another pass |
-| Some older CRUD routes | many stable CRUD endpoints still describe success responses without complete item/list schema references | acceptable for now, but not ideal for long-term SDK generation |
+| Response envelopes | OpenAPI now covers the registered route surface with concrete item/list envelopes for the older CRUD routes and the newer enterprise, integration, release/config, database-governance, and runtime routes | client generation and strict contract tooling would still benefit from a generated schema/runtime comparison |
+| Alternate runtime branches | callback redirects, common error responses, and some validation branches are documented but not exhaustively runtime-compared route by route | acceptable for now, but not ideal for long-term SDK generation |
 | Error-model specificity | shared `invalid_request`/`forbidden` behavior exists in code, but not every route enumerates concrete error responses | pilot operators still rely partly on runtime error text |
 
 ## Verification Added

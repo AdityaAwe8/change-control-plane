@@ -10,6 +10,7 @@
 - repository-to-service/environment mapping
 - webhook endpoint with `X-Hub-Signature-256` validation
 - webhook delivery id deduplication through persisted sync runs
+- automatic organization webhook registration and repair through the integration webhook-registration surface when `webhook_secret_env` and provider permissions are configured
 - mapped push and PR webhook ingest into persisted change sets
 
 ## Current Configuration
@@ -43,7 +44,6 @@ Push and PR events can create change sets when the repository has been mapped to
 
 - no OAuth install flow yet
 - no marketplace-grade GitHub App management surface yet
-- no automatic webhook registration handshake yet
 - no long-tail pagination for very large orgs
 - no full review-state or merge-queue model
 - unmapped repositories do not create change sets; they remain discoverable and map-able

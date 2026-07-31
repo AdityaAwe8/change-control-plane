@@ -292,6 +292,229 @@ func TestPolicyRolloutReviewAndBlockOutcomes(t *testing.T) {
 	}
 }
 
+func TestReleaseConfigDatabaseWindowAndExecutionPolicyGovernance(t *testing.T) {
+	t.Setenv("CCP_AUTH_MODE", "dev")
+	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
+	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
+	defer server.Close()
+
+	admin := loginDev(t, server.URL, types.DevLoginRequest{
+		Email:            "owner-policy-release@acme.local",
+		DisplayName:      "Owner",
+		OrganizationName: "Acme Release Policy",
+		OrganizationSlug: "acme-release-policy",
+	})
+	orgID := admin.Session.ActiveOrganizationID
+
+	project := postItemAuth[types.Project](t, server.URL+"/api/v1/projects", types.CreateProjectRequest{
+		OrganizationID: orgID,
+		Name:           "Platform",
+		Slug:           "platform",
+	}, admin.Token, orgID)
+	team := postItemAuth[types.Team](t, server.URL+"/api/v1/teams", types.CreateTeamRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Core",
+		Slug:           "core",
+		OwnerUserIDs:   []string{admin.Session.ActorID},
+	}, admin.Token, orgID)
+	service := postItemAuth[types.Service](t, server.URL+"/api/v1/services", types.CreateServiceRequest{
+		OrganizationID:   orgID,
+		ProjectID:        project.ID,
+		TeamID:           team.ID,
+		Name:             "Checkout",
+		Slug:             "checkout",
+		Criticality:      "medium",
+		CustomerFacing:   true,
+		HasSLO:           true,
+		HasObservability: true,
+	}, admin.Token, orgID)
+	environment := postItemAuth[types.Environment](t, server.URL+"/api/v1/environments", types.CreateEnvironmentRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Production",
+		Slug:           "prod",
+		Type:           "production",
+		Region:         "us-central1",
+		Production:     true,
+	}, admin.Token, orgID)
+
+	releasePolicy := postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Release Bundle Review",
+		Code:           "release-bundle-review",
+		AppliesTo:      "release_bundle",
+		Mode:           "require_manual_review",
+		Priority:       110,
+		Conditions: types.PolicyCondition{
+			ProductionOnly: true,
+		},
+	}, admin.Token, orgID)
+	configPolicy := postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Config Bundle Advisory",
+		Code:           "config-bundle-advisory",
+		AppliesTo:      "config_set",
+		Mode:           "advisory",
+		Priority:       100,
+		Conditions: types.PolicyCondition{
+			ProductionOnly:      true,
+			RequiredChangeTypes: []string{"config"},
+		},
+	}, admin.Token, orgID)
+	databasePolicy := postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Database Governance Freeze",
+		Code:           "database-governance-freeze",
+		AppliesTo:      "database_governance",
+		Mode:           "block",
+		Priority:       130,
+		Conditions: types.PolicyCondition{
+			ProductionOnly:  true,
+			RequiredTouches: []string{"schema"},
+		},
+	}, admin.Token, orgID)
+	windowPolicy := postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Production Window Advisory",
+		Code:           "production-window-advisory",
+		AppliesTo:      "change_window",
+		Mode:           "advisory",
+		Priority:       80,
+		Conditions: types.PolicyCondition{
+			ProductionOnly: true,
+		},
+	}, admin.Token, orgID)
+	disabled := false
+	disabledPolicy := postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Disabled Release Block",
+		Code:           "disabled-release-block",
+		AppliesTo:      "release_bundle",
+		Mode:           "block",
+		Enabled:        &disabled,
+		Conditions: types.PolicyCondition{
+			ProductionOnly: true,
+		},
+	}, admin.Token, orgID)
+	executionPolicy := postItemAuth[types.Policy](t, server.URL+"/api/v1/policies", types.CreatePolicyRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		Name:           "Execution Freeze",
+		Code:           "execution-freeze",
+		AppliesTo:      "rollout_execution",
+		Mode:           "block",
+		Priority:       140,
+		Conditions: types.PolicyCondition{
+			ProductionOnly: true,
+		},
+	}, admin.Token, orgID)
+
+	change := postItemAuth[types.ChangeSet](t, server.URL+"/api/v1/changes", types.CreateChangeSetRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		ServiceID:      service.ID,
+		EnvironmentID:  environment.ID,
+		Summary:        "release policy coverage change",
+		ChangeTypes:    []string{"code", "database"},
+		FileCount:      6,
+		ResourceCount:  1,
+		TouchesSchema:  true,
+	}, admin.Token, orgID)
+	assessment := postItemAuth[types.RiskAssessmentResult](t, server.URL+"/api/v1/risk-assessments", types.CreateRiskAssessmentRequest{
+		ChangeSetID: change.ID,
+	}, admin.Token, orgID)
+	plan := postItemAuth[types.RolloutPlanResult](t, server.URL+"/api/v1/rollout-plans", types.CreateRolloutPlanRequest{
+		ChangeSetID: change.ID,
+	}, admin.Token, orgID)
+	if assessment.Assessment.ID == "" || plan.Plan.ID == "" {
+		t.Fatal("expected assessment and rollout plan to be created")
+	}
+
+	configSet := postItemAuth[types.ConfigSetDetail](t, server.URL+"/api/v1/config-sets", types.CreateConfigSetRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "production-config",
+		Version:        "v1",
+		Entries: []types.ConfigEntry{
+			{Key: "PAYMENTS_MODE", Value: "guarded", ValueType: "literal"},
+		},
+	}, admin.Token, orgID)
+	databaseChange := postItemAuth[types.DatabaseChangeDetail](t, server.URL+"/api/v1/database-changes", types.CreateDatabaseChangeRequest{
+		OrganizationID:  orgID,
+		ProjectID:       project.ID,
+		EnvironmentID:   environment.ID,
+		ServiceID:       service.ID,
+		ChangeSetID:     change.ID,
+		Name:            "Checkout index change",
+		Datastore:       "checkout-primary",
+		OperationType:   "index_change",
+		ExecutionIntent: "pre_deploy",
+		Compatibility:   "backward_compatible",
+		Reversibility:   "reversible",
+		RiskLevel:       types.RiskLevelMedium,
+		Summary:         "Policy-governed database change.",
+	}, admin.Token, orgID)
+
+	release := postItemAuth[types.ReleaseAnalysis](t, server.URL+"/api/v1/releases", types.CreateReleaseRequest{
+		OrganizationID: orgID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		Name:           "Policy governed bundle",
+		Summary:        "Release bundle exercising policy governance surfaces.",
+		ChangeSetIDs:   []string{change.ID},
+		ConfigSetIDs:   []string{configSet.ConfigSet.ID},
+		Version:        "2026.04.23-policy",
+	}, admin.Token, orgID)
+	for _, code := range []string{releasePolicy.Code, configPolicy.Code, databasePolicy.Code, windowPolicy.Code} {
+		if !containsPolicyDecisionCode(release.PolicyDecisions, code) {
+			t.Fatalf("expected release analysis to include %s decision, got %+v", code, release.PolicyDecisions)
+		}
+	}
+	if containsPolicyDecisionCode(release.PolicyDecisions, disabledPolicy.Code) {
+		t.Fatalf("expected disabled policy not to evaluate, got %+v", release.PolicyDecisions)
+	}
+	databaseDecision := decisionByCode(release.PolicyDecisions, databasePolicy.Code)
+	if databaseDecision.ReleaseID != release.Release.ID || databaseDecision.DatabaseChangeID != databaseChange.DatabaseChange.ID || databaseDecision.Outcome != "block" {
+		t.Fatalf("expected database policy decision to carry release/database subject ids, got %+v", databaseDecision)
+	}
+	if !strings.Contains(strings.Join(release.Blockers, " "), "Database Governance Freeze") {
+		t.Fatalf("expected release blockers to include blocking database policy, got %+v", release.Blockers)
+	}
+
+	releaseDecisions := getListAuth[types.PolicyDecision](t, server.URL+"/api/v1/policy-decisions?release_id="+release.Release.ID+"&applies_to=release_bundle", admin.Token, orgID, http.StatusOK)
+	if !containsPolicyDecisionCode(releaseDecisions, releasePolicy.Code) {
+		t.Fatalf("expected release-scoped decision query to include %s, got %+v", releasePolicy.Code, releaseDecisions)
+	}
+	configDecisions := getListAuth[types.PolicyDecision](t, server.URL+"/api/v1/policy-decisions?config_set_id="+configSet.ConfigSet.ID+"&applies_to=config_set", admin.Token, orgID, http.StatusOK)
+	if !containsPolicyDecisionCode(configDecisions, configPolicy.Code) {
+		t.Fatalf("expected config-scoped decision query to include %s, got %+v", configPolicy.Code, configDecisions)
+	}
+	databaseDecisions := getListAuth[types.PolicyDecision](t, server.URL+"/api/v1/policy-decisions?database_change_id="+databaseChange.DatabaseChange.ID+"&applies_to=database_governance", admin.Token, orgID, http.StatusOK)
+	if !containsPolicyDecisionCode(databaseDecisions, databasePolicy.Code) {
+		t.Fatalf("expected database-scoped decision query to include %s, got %+v", databasePolicy.Code, databaseDecisions)
+	}
+
+	status, body := requestStatusAndBody(t, http.MethodPost, server.URL+"/api/v1/rollout-executions", types.CreateRolloutExecutionRequest{
+		RolloutPlanID: plan.Plan.ID,
+	}, admin.Token, orgID)
+	if status != http.StatusBadRequest || !strings.Contains(string(body), "rollout execution blocked by policy") {
+		t.Fatalf("expected rollout execution policy block, got %d %s", status, string(body))
+	}
+	executionDecisions := getListAuth[types.PolicyDecision](t, server.URL+"/api/v1/policy-decisions?change_set_id="+change.ID+"&applies_to=rollout_execution", admin.Token, orgID, http.StatusOK)
+	executionDecision := decisionByCode(executionDecisions, executionPolicy.Code)
+	if executionDecision.PolicyCode != executionPolicy.Code || executionDecision.RolloutExecutionID != "" || executionDecision.Metadata["blocked_attempt"] != true {
+		t.Fatalf("expected blocked rollout-execution decision without execution id, got %+v", executionDecision)
+	}
+}
+
 func TestPolicyRoutesEnforceRBACAndTenantScope(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())

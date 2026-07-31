@@ -12,89 +12,89 @@ import (
 )
 
 type InMemoryStore struct {
-	mu                   sync.RWMutex
-	organizations        map[string]types.Organization
-	projects             map[string]types.Project
-	teams                map[string]types.Team
-	services             map[string]types.Service
-	environments         map[string]types.Environment
-	changeSets           map[string]types.ChangeSet
-	riskAssessments      map[string]types.RiskAssessment
-	rolloutPlans         map[string]types.RolloutPlan
-	configSets           map[string]types.ConfigSet
-	releases             map[string]types.Release
-	databaseChanges      map[string]types.DatabaseChange
-	databaseChecks       map[string]types.DatabaseValidationCheck
-	databaseConnections  map[string]types.DatabaseConnectionReference
+	mu                      sync.RWMutex
+	organizations           map[string]types.Organization
+	projects                map[string]types.Project
+	teams                   map[string]types.Team
+	services                map[string]types.Service
+	environments            map[string]types.Environment
+	changeSets              map[string]types.ChangeSet
+	riskAssessments         map[string]types.RiskAssessment
+	rolloutPlans            map[string]types.RolloutPlan
+	configSets              map[string]types.ConfigSet
+	releases                map[string]types.Release
+	databaseChanges         map[string]types.DatabaseChange
+	databaseChecks          map[string]types.DatabaseValidationCheck
+	databaseConnections     map[string]types.DatabaseConnectionReference
 	databaseConnectionTests map[string]types.DatabaseConnectionTest
-	databaseExecutions   map[string]types.DatabaseValidationExecution
-	rolloutExecutions    map[string]types.RolloutExecution
-	verificationResults  map[string]types.VerificationResult
-	signalSnapshots      map[string]types.SignalSnapshot
-	auditEvents          map[string]types.AuditEvent
-	integrations         map[string]types.Integration
-	integrationSyncRuns  map[string]types.IntegrationSyncRun
-	repositories         map[string]types.Repository
-	discoveredResources  map[string]types.DiscoveredResource
-	graphRelationships   map[string]types.GraphRelationship
-	users                map[string]types.User
-	usersByEmail         map[string]string
-	identityProviders    map[string]types.IdentityProvider
-	identityLinks        map[string]types.IdentityLink
-	orgMemberships       map[string]types.OrganizationMembership
-	projectMemberships   map[string]types.ProjectMembership
-	serviceAccounts      map[string]types.ServiceAccount
-	apiTokens            map[string]types.APIToken
-	browserSessions      map[string]types.BrowserSession
-	webhookRegistrations map[string]types.WebhookRegistration
-	policies             map[string]types.Policy
-	policyDecisions      map[string]types.PolicyDecision
-	rollbackPolicies     map[string]types.RollbackPolicy
-	statusEvents         map[string]types.StatusEvent
-	outboxEvents         map[string]types.OutboxEvent
+	databaseExecutions      map[string]types.DatabaseValidationExecution
+	rolloutExecutions       map[string]types.RolloutExecution
+	verificationResults     map[string]types.VerificationResult
+	signalSnapshots         map[string]types.SignalSnapshot
+	auditEvents             map[string]types.AuditEvent
+	integrations            map[string]types.Integration
+	integrationSyncRuns     map[string]types.IntegrationSyncRun
+	repositories            map[string]types.Repository
+	discoveredResources     map[string]types.DiscoveredResource
+	graphRelationships      map[string]types.GraphRelationship
+	users                   map[string]types.User
+	usersByEmail            map[string]string
+	identityProviders       map[string]types.IdentityProvider
+	identityLinks           map[string]types.IdentityLink
+	orgMemberships          map[string]types.OrganizationMembership
+	projectMemberships      map[string]types.ProjectMembership
+	serviceAccounts         map[string]types.ServiceAccount
+	apiTokens               map[string]types.APIToken
+	browserSessions         map[string]types.BrowserSession
+	webhookRegistrations    map[string]types.WebhookRegistration
+	policies                map[string]types.Policy
+	policyDecisions         map[string]types.PolicyDecision
+	rollbackPolicies        map[string]types.RollbackPolicy
+	statusEvents            map[string]types.StatusEvent
+	outboxEvents            map[string]types.OutboxEvent
 }
 
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
-		organizations:        make(map[string]types.Organization),
-		projects:             make(map[string]types.Project),
-		teams:                make(map[string]types.Team),
-		services:             make(map[string]types.Service),
-		environments:         make(map[string]types.Environment),
-		changeSets:           make(map[string]types.ChangeSet),
-		riskAssessments:      make(map[string]types.RiskAssessment),
-		rolloutPlans:         make(map[string]types.RolloutPlan),
-		configSets:           make(map[string]types.ConfigSet),
-		releases:             make(map[string]types.Release),
-		databaseChanges:      make(map[string]types.DatabaseChange),
-		databaseChecks:       make(map[string]types.DatabaseValidationCheck),
-		databaseConnections:  make(map[string]types.DatabaseConnectionReference),
+		organizations:           make(map[string]types.Organization),
+		projects:                make(map[string]types.Project),
+		teams:                   make(map[string]types.Team),
+		services:                make(map[string]types.Service),
+		environments:            make(map[string]types.Environment),
+		changeSets:              make(map[string]types.ChangeSet),
+		riskAssessments:         make(map[string]types.RiskAssessment),
+		rolloutPlans:            make(map[string]types.RolloutPlan),
+		configSets:              make(map[string]types.ConfigSet),
+		releases:                make(map[string]types.Release),
+		databaseChanges:         make(map[string]types.DatabaseChange),
+		databaseChecks:          make(map[string]types.DatabaseValidationCheck),
+		databaseConnections:     make(map[string]types.DatabaseConnectionReference),
 		databaseConnectionTests: make(map[string]types.DatabaseConnectionTest),
-		databaseExecutions:   make(map[string]types.DatabaseValidationExecution),
-		rolloutExecutions:    make(map[string]types.RolloutExecution),
-		verificationResults:  make(map[string]types.VerificationResult),
-		signalSnapshots:      make(map[string]types.SignalSnapshot),
-		auditEvents:          make(map[string]types.AuditEvent),
-		integrations:         make(map[string]types.Integration),
-		integrationSyncRuns:  make(map[string]types.IntegrationSyncRun),
-		repositories:         make(map[string]types.Repository),
-		discoveredResources:  make(map[string]types.DiscoveredResource),
-		graphRelationships:   make(map[string]types.GraphRelationship),
-		users:                make(map[string]types.User),
-		usersByEmail:         make(map[string]string),
-		identityProviders:    make(map[string]types.IdentityProvider),
-		identityLinks:        make(map[string]types.IdentityLink),
-		orgMemberships:       make(map[string]types.OrganizationMembership),
-		projectMemberships:   make(map[string]types.ProjectMembership),
-		serviceAccounts:      make(map[string]types.ServiceAccount),
-		apiTokens:            make(map[string]types.APIToken),
-		browserSessions:      make(map[string]types.BrowserSession),
-		webhookRegistrations: make(map[string]types.WebhookRegistration),
-		policies:             make(map[string]types.Policy),
-		policyDecisions:      make(map[string]types.PolicyDecision),
-		rollbackPolicies:     make(map[string]types.RollbackPolicy),
-		statusEvents:         make(map[string]types.StatusEvent),
-		outboxEvents:         make(map[string]types.OutboxEvent),
+		databaseExecutions:      make(map[string]types.DatabaseValidationExecution),
+		rolloutExecutions:       make(map[string]types.RolloutExecution),
+		verificationResults:     make(map[string]types.VerificationResult),
+		signalSnapshots:         make(map[string]types.SignalSnapshot),
+		auditEvents:             make(map[string]types.AuditEvent),
+		integrations:            make(map[string]types.Integration),
+		integrationSyncRuns:     make(map[string]types.IntegrationSyncRun),
+		repositories:            make(map[string]types.Repository),
+		discoveredResources:     make(map[string]types.DiscoveredResource),
+		graphRelationships:      make(map[string]types.GraphRelationship),
+		users:                   make(map[string]types.User),
+		usersByEmail:            make(map[string]string),
+		identityProviders:       make(map[string]types.IdentityProvider),
+		identityLinks:           make(map[string]types.IdentityLink),
+		orgMemberships:          make(map[string]types.OrganizationMembership),
+		projectMemberships:      make(map[string]types.ProjectMembership),
+		serviceAccounts:         make(map[string]types.ServiceAccount),
+		apiTokens:               make(map[string]types.APIToken),
+		browserSessions:         make(map[string]types.BrowserSession),
+		webhookRegistrations:    make(map[string]types.WebhookRegistration),
+		policies:                make(map[string]types.Policy),
+		policyDecisions:         make(map[string]types.PolicyDecision),
+		rollbackPolicies:        make(map[string]types.RollbackPolicy),
+		statusEvents:            make(map[string]types.StatusEvent),
+		outboxEvents:            make(map[string]types.OutboxEvent),
 	}
 }
 
@@ -351,6 +351,9 @@ func (s *InMemoryStore) ListChangeSets(_ context.Context, query storage.ChangeSe
 		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
 			return false
 		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
+			return false
+		}
 		return true
 	})
 	return paginate(items, query.Offset, query.Limit), nil
@@ -384,6 +387,12 @@ func (s *InMemoryStore) ListRiskAssessments(_ context.Context, query storage.Ris
 			return false
 		}
 		if query.ChangeSetID != "" && item.ChangeSetID != query.ChangeSetID {
+			return false
+		}
+		if query.ServiceID != "" && item.ServiceID != query.ServiceID {
+			return false
+		}
+		if query.EnvironmentID != "" && item.EnvironmentID != query.EnvironmentID {
 			return false
 		}
 		return true
@@ -1762,6 +1771,15 @@ func (s *InMemoryStore) ListPolicyDecisions(_ context.Context, query storage.Pol
 			return false
 		}
 		if query.RolloutExecutionID != "" && item.RolloutExecutionID != query.RolloutExecutionID {
+			return false
+		}
+		if query.ReleaseID != "" && item.ReleaseID != query.ReleaseID {
+			return false
+		}
+		if query.ConfigSetID != "" && item.ConfigSetID != query.ConfigSetID {
+			return false
+		}
+		if query.DatabaseChangeID != "" && item.DatabaseChangeID != query.DatabaseChangeID {
 			return false
 		}
 		if query.AppliesTo != "" && item.AppliesTo != query.AppliesTo {

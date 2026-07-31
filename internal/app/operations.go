@@ -11,6 +11,7 @@ import (
 
 	"github.com/change-control-plane/change-control-plane/internal/auth"
 	"github.com/change-control-plane/change-control-plane/internal/common"
+	policylib "github.com/change-control-plane/change-control-plane/internal/policies"
 	"github.com/change-control-plane/change-control-plane/internal/rollouts"
 	"github.com/change-control-plane/change-control-plane/internal/storage"
 	"github.com/change-control-plane/change-control-plane/pkg/types"
@@ -41,6 +42,9 @@ func (a *Application) UpdateOrganization(ctx context.Context, id string, req typ
 	}
 	if req.Name != nil {
 		organization.Name = strings.TrimSpace(*req.Name)
+		if organization.Name == "" {
+			return types.Organization{}, fmt.Errorf("%w: name is required", ErrValidation)
+		}
 	}
 	if req.Tier != nil {
 		organization.Tier = strings.TrimSpace(*req.Tier)
@@ -90,9 +94,16 @@ func (a *Application) UpdateProject(ctx context.Context, id string, req types.Up
 	}
 	if req.Name != nil {
 		project.Name = strings.TrimSpace(*req.Name)
+		if project.Name == "" {
+			return types.Project{}, fmt.Errorf("%w: name is required", ErrValidation)
+		}
 	}
 	if req.Slug != nil {
-		project.Slug = strings.TrimSpace(*req.Slug)
+		nextSlug := strings.TrimSpace(*req.Slug)
+		if err := a.ensureProjectSlugAvailable(ctx, project.OrganizationID, nextSlug, project.ID); err != nil {
+			return types.Project{}, err
+		}
+		project.Slug = nextSlug
 	}
 	if req.Description != nil {
 		project.Description = *req.Description
@@ -152,9 +163,16 @@ func (a *Application) UpdateTeam(ctx context.Context, id string, req types.Updat
 	}
 	if req.Name != nil {
 		team.Name = strings.TrimSpace(*req.Name)
+		if team.Name == "" {
+			return types.Team{}, fmt.Errorf("%w: name is required", ErrValidation)
+		}
 	}
 	if req.Slug != nil {
-		team.Slug = strings.TrimSpace(*req.Slug)
+		nextSlug := strings.TrimSpace(*req.Slug)
+		if err := a.ensureTeamSlugAvailable(ctx, team.OrganizationID, team.ProjectID, nextSlug, team.ID); err != nil {
+			return types.Team{}, err
+		}
+		team.Slug = nextSlug
 	}
 	if req.OwnerUserIDs != nil {
 		team.OwnerUserIDs = *req.OwnerUserIDs
@@ -213,9 +231,16 @@ func (a *Application) UpdateService(ctx context.Context, id string, req types.Up
 	}
 	if req.Name != nil {
 		service.Name = strings.TrimSpace(*req.Name)
+		if service.Name == "" {
+			return types.Service{}, fmt.Errorf("%w: name is required", ErrValidation)
+		}
 	}
 	if req.Slug != nil {
-		service.Slug = strings.TrimSpace(*req.Slug)
+		nextSlug := strings.TrimSpace(*req.Slug)
+		if err := a.ensureServiceSlugAvailable(ctx, service.OrganizationID, service.ProjectID, nextSlug, service.ID); err != nil {
+			return types.Service{}, err
+		}
+		service.Slug = nextSlug
 	}
 	if req.Description != nil {
 		service.Description = *req.Description
@@ -291,9 +316,16 @@ func (a *Application) UpdateEnvironment(ctx context.Context, id string, req type
 	}
 	if req.Name != nil {
 		environment.Name = strings.TrimSpace(*req.Name)
+		if environment.Name == "" {
+			return types.Environment{}, fmt.Errorf("%w: name is required", ErrValidation)
+		}
 	}
 	if req.Slug != nil {
-		environment.Slug = strings.TrimSpace(*req.Slug)
+		nextSlug := strings.TrimSpace(*req.Slug)
+		if err := a.ensureEnvironmentSlugAvailable(ctx, environment.OrganizationID, environment.ProjectID, nextSlug, environment.ID); err != nil {
+			return types.Environment{}, err
+		}
+		environment.Slug = nextSlug
 	}
 	if req.Type != nil {
 		environment.Type = strings.TrimSpace(*req.Type)
@@ -421,7 +453,7 @@ func (a *Application) CreateIntegration(ctx context.Context, req types.CreateInt
 	if isSCMIntegrationKind(integration.Kind) {
 		_, _ = a.ensureWebhookRegistration(ctx, integration, false)
 	}
-	return hydrateIntegrationRuntimeState(integration, now), nil
+	return safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, now)), nil
 }
 
 func (a *Application) UpdateIntegration(ctx context.Context, id string, req types.UpdateIntegrationRequest) (types.Integration, error) {
@@ -542,7 +574,7 @@ func (a *Application) UpdateIntegration(ctx context.Context, id string, req type
 	if isSCMIntegrationKind(integration.Kind) {
 		_, _ = a.ensureWebhookRegistration(ctx, integration, false)
 	}
-	return hydrateIntegrationRuntimeState(integration, time.Now().UTC()), nil
+	return safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())), nil
 }
 
 func (a *Application) CreateServiceAccount(ctx context.Context, req types.CreateServiceAccountRequest) (types.ServiceAccount, error) {
@@ -963,7 +995,7 @@ func (a *Application) IngestIntegrationGraph(ctx context.Context, integrationID 
 	if err := a.record(ctx, identity, "integration.graph.ingested", "integration", integration.ID, integration.OrganizationID, "", []string{fmt.Sprintf("relationships=%d", len(relationships))}); err != nil {
 		return nil, err
 	}
-	return relationships, nil
+	return safeGraphRelationshipsForResponse(relationships), nil
 }
 
 func (a *Application) ListGraphRelationships(ctx context.Context, query storage.GraphRelationshipQuery) ([]types.GraphRelationship, error) {
@@ -976,7 +1008,11 @@ func (a *Application) ListGraphRelationships(ctx context.Context, query storage.
 		return nil, err
 	}
 	query.OrganizationID = orgID
-	return a.Store.ListGraphRelationships(ctx, query)
+	items, err := a.Store.ListGraphRelationships(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return safeGraphRelationshipsForResponse(items), nil
 }
 
 func (a *Application) CreateRolloutExecution(ctx context.Context, req types.CreateRolloutExecutionRequest) (types.RolloutExecution, error) {
@@ -1014,6 +1050,47 @@ func (a *Application) CreateRolloutExecution(ctx context.Context, req types.Crea
 		if analysis.DatabasePosture.Status == "blocked" {
 			return types.RolloutExecution{}, fmt.Errorf("%w: release %s is blocked by database governance findings: %s", ErrValidation, release.ID, strings.Join(analysis.DatabasePosture.BlockingFindings, "; "))
 		}
+		if blocking := blockingPolicyDecisionSummaries(analysis.PolicyDecisions); len(blocking) > 0 {
+			return types.RolloutExecution{}, fmt.Errorf("%w: release %s is blocked by policy decisions: %s", ErrValidation, release.ID, strings.Join(blocking, "; "))
+		}
+	}
+	service, err := a.Store.GetService(ctx, change.ServiceID)
+	if err != nil {
+		return types.RolloutExecution{}, err
+	}
+	environment, err := a.Store.GetEnvironment(ctx, change.EnvironmentID)
+	if err != nil {
+		return types.RolloutExecution{}, err
+	}
+	assessment, err := a.Store.GetRiskAssessment(ctx, plan.RiskAssessmentID)
+	if err != nil {
+		return types.RolloutExecution{}, err
+	}
+	executionDecisions, err := a.evaluatePolicies(ctx, policylib.AppliesToRolloutExecution, change, service, environment, assessment, policyEvaluationReference{
+		riskAssessmentID: assessment.ID,
+		rolloutPlanID:    plan.ID,
+		releaseID:        releaseID,
+		metadata:         policyDecisionSubjectMetadata("evaluated", false, "rollout_execution", ""),
+	})
+	if err != nil {
+		return types.RolloutExecution{}, err
+	}
+	if isPolicyBlocked(executionDecisions) {
+		for index := range executionDecisions {
+			if executionDecisions[index].Metadata == nil {
+				executionDecisions[index].Metadata = types.Metadata{}
+			}
+			for key, value := range policyDecisionSubjectMetadata("blocked", true, "rollout_execution", "") {
+				executionDecisions[index].Metadata[key] = value
+			}
+		}
+		if err := a.persistPolicyDecisions(ctx, executionDecisions); err != nil {
+			return types.RolloutExecution{}, err
+		}
+		if err := a.recordPolicyBlockedOutcome(ctx, identity, change, executionDecisions); err != nil {
+			return types.RolloutExecution{}, err
+		}
+		return types.RolloutExecution{}, fmt.Errorf("%w: rollout execution blocked by policy: %s", ErrValidation, strings.Join(blockingPolicyNames(executionDecisions), ", "))
 	}
 	now := time.Now().UTC()
 	execution := types.RolloutExecution{
@@ -1038,16 +1115,35 @@ func (a *Application) CreateRolloutExecution(ctx context.Context, req types.Crea
 		Status:               rollouts.InitialExecutionStatus(plan),
 		CurrentStep:          rollouts.InitialExecutionStep(plan),
 	}
+	if isPolicyReviewRequired(executionDecisions) && execution.Status == "planned" {
+		execution.Status = "awaiting_approval"
+		execution.CurrentStep = "precheck"
+	}
 	if err := a.Store.CreateRolloutExecution(ctx, execution); err != nil {
 		return types.RolloutExecution{}, err
 	}
-	if err := a.record(ctx, identity, "rollout.execution.created", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, []string{execution.Status, execution.BackendType, execution.SignalProviderType}); err != nil {
+	for index := range executionDecisions {
+		executionDecisions[index].RolloutExecutionID = execution.ID
+		if executionDecisions[index].Metadata == nil {
+			executionDecisions[index].Metadata = types.Metadata{}
+		}
+		executionDecisions[index].Metadata["subject_id"] = execution.ID
+	}
+	if err := a.persistPolicyDecisions(ctx, executionDecisions); err != nil {
 		return types.RolloutExecution{}, err
 	}
-	return execution, nil
+	recordDetails := append([]string{execution.Status, execution.BackendType, execution.SignalProviderType}, decisionSummaries(executionDecisions)...)
+	if err := a.record(ctx, identity, "rollout.execution.created", "rollout_execution", execution.ID, execution.OrganizationID, execution.ProjectID, recordDetails); err != nil {
+		return types.RolloutExecution{}, err
+	}
+	return safeRolloutExecutionForResponse(execution), nil
 }
 
 func (a *Application) ListRolloutExecutions(ctx context.Context) ([]types.RolloutExecution, error) {
+	return a.ListRolloutExecutionsWithQuery(ctx, storage.RolloutExecutionQuery{})
+}
+
+func (a *Application) ListRolloutExecutionsWithQuery(ctx context.Context, query storage.RolloutExecutionQuery) ([]types.RolloutExecution, error) {
 	identity, err := a.requireIdentity(ctx)
 	if err != nil {
 		return nil, err
@@ -1056,7 +1152,15 @@ func (a *Application) ListRolloutExecutions(ctx context.Context) ([]types.Rollou
 	if err != nil {
 		return nil, err
 	}
-	return a.Store.ListRolloutExecutions(ctx, storage.RolloutExecutionQuery{OrganizationID: orgID})
+	query.OrganizationID = orgID
+	items, err := a.Store.ListRolloutExecutions(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	for idx := range items {
+		items[idx] = safeRolloutExecutionForResponse(items[idx])
+	}
+	return items, nil
 }
 
 func (a *Application) GetRolloutExecutionDetail(ctx context.Context, id string) (types.RolloutExecutionDetail, error) {
@@ -1112,12 +1216,12 @@ func (a *Application) AdvanceRolloutExecution(ctx context.Context, id string, re
 	); err != nil {
 		return types.RolloutExecution{}, err
 	}
-	return execution, nil
+	return safeRolloutExecutionForResponse(execution), nil
 }
 
 func (a *Application) RecordVerificationResult(ctx context.Context, executionID string, req types.RecordVerificationResultRequest) (types.VerificationResult, error) {
 	result, _, err := a.recordVerificationResultInternal(ctx, executionID, req)
-	return result, err
+	return safeVerificationResultForResponse(result), err
 }
 
 func (a *Application) recordVerificationResultInternal(ctx context.Context, executionID string, req types.RecordVerificationResultRequest) (types.VerificationResult, bool, error) {

@@ -21,10 +21,10 @@ var (
 		"secret_ref_dsn": {},
 	}
 	allowedDatabaseConnectionTestStatuses = map[string]struct{}{
-		"running":  {},
-		"passed":   {},
-		"blocked":  {},
-		"errored":  {},
+		"running": {},
+		"passed":  {},
+		"blocked": {},
+		"errored": {},
 	}
 )
 
@@ -185,7 +185,7 @@ func normalizeDatabaseConnectionSourceType(value string) (string, error) {
 		normalized = "env_dsn"
 	}
 	if _, ok := allowedDatabaseConnectionSourceTypes[normalized]; !ok {
-		return "", fmt.Errorf("%w: unsupported database connection source_type %q", ErrValidation, value)
+		return "", fmt.Errorf("%w: unsupported database connection source_type", ErrValidation)
 	}
 	return normalized, nil
 }
@@ -214,7 +214,7 @@ func normalizeDatabaseConnectionSourceValues(sourceType, dsnEnv, secretRef, secr
 			return "", "", "", "", fmt.Errorf("%w: secret_ref is required when source_type is secret_ref_dsn", ErrValidation)
 		}
 		if !looksLikeSecretReference(trimmedSecretRef) {
-			return "", "", "", "", fmt.Errorf("%w: invalid secret_ref %q", ErrValidation, secretRef)
+			return "", "", "", "", fmt.Errorf("%w: invalid secret_ref", ErrValidation)
 		}
 		if strings.TrimSpace(dsnEnv) != "" {
 			return "", "", "", "", fmt.Errorf("%w: dsn_env is unsupported when source_type is secret_ref_dsn", ErrValidation)
@@ -228,7 +228,7 @@ func normalizeDatabaseConnectionSourceValues(sourceType, dsnEnv, secretRef, secr
 		}
 		return normalizedSourceType, "", trimmedSecretRef, trimmedSecretRefEnv, nil
 	default:
-		return "", "", "", "", fmt.Errorf("%w: unsupported database connection source_type %q", ErrValidation, sourceType)
+		return "", "", "", "", fmt.Errorf("%w: unsupported database connection source_type", ErrValidation)
 	}
 }
 

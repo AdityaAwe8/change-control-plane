@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type ItemResponse[T any] struct {
 	Data T `json:"data"`
@@ -8,6 +11,18 @@ type ItemResponse[T any] struct {
 
 type ListResponse[T any] struct {
 	Data []T `json:"data"`
+}
+
+func (r ListResponse[T]) MarshalJSON() ([]byte, error) {
+	data := r.Data
+	if data == nil {
+		data = []T{}
+	}
+	return json.Marshal(struct {
+		Data []T `json:"data"`
+	}{
+		Data: data,
+	})
 }
 
 type ErrorDetail struct {
@@ -679,19 +694,19 @@ type CoverageSummary struct {
 }
 
 type RolloutPageState struct {
-	Catalog                CatalogSummary            `json:"catalog"`
-	RolloutPlans           []RolloutPlan             `json:"rollout_plans"`
-	RolloutExecutions      []RolloutExecution        `json:"rollout_executions"`
-	RolloutExecutionDetail *RolloutExecutionDetail   `json:"rollout_execution_detail,omitempty"`
-	Integrations           []Integration             `json:"integrations"`
-	Releases               []Release                 `json:"releases,omitempty"`
-	ReleaseAnalysis        *ReleaseAnalysis          `json:"release_analysis,omitempty"`
-	ConfigSets             []ConfigSet               `json:"config_sets,omitempty"`
-	DatabaseConnections    []DatabaseConnectionReference `json:"database_connections,omitempty"`
-	DatabaseConnectionTests []DatabaseConnectionTest `json:"database_connection_tests,omitempty"`
-	DatabaseChanges        []DatabaseChange          `json:"database_changes,omitempty"`
-	DatabaseChecks         []DatabaseValidationCheck `json:"database_checks,omitempty"`
-	DatabaseExecutions     []DatabaseValidationExecution `json:"database_executions,omitempty"`
+	Catalog                 CatalogSummary                `json:"catalog"`
+	RolloutPlans            []RolloutPlan                 `json:"rollout_plans"`
+	RolloutExecutions       []RolloutExecution            `json:"rollout_executions"`
+	RolloutExecutionDetail  *RolloutExecutionDetail       `json:"rollout_execution_detail,omitempty"`
+	Integrations            []Integration                 `json:"integrations"`
+	Releases                []Release                     `json:"releases,omitempty"`
+	ReleaseAnalysis         *ReleaseAnalysis              `json:"release_analysis,omitempty"`
+	ConfigSets              []ConfigSet                   `json:"config_sets,omitempty"`
+	DatabaseConnections     []DatabaseConnectionReference `json:"database_connections,omitempty"`
+	DatabaseConnectionTests []DatabaseConnectionTest      `json:"database_connection_tests,omitempty"`
+	DatabaseChanges         []DatabaseChange              `json:"database_changes,omitempty"`
+	DatabaseChecks          []DatabaseValidationCheck     `json:"database_checks,omitempty"`
+	DatabaseExecutions      []DatabaseValidationExecution `json:"database_executions,omitempty"`
 }
 
 type DeploymentsPageState struct {
@@ -849,10 +864,10 @@ type DatabaseConnectionReferenceDetail struct {
 }
 
 type DatabaseValidationCheckDetail struct {
-	ValidationCheck    DatabaseValidationCheck       `json:"validation_check"`
-	DatabaseChange     *DatabaseChange               `json:"database_change,omitempty"`
-	ConnectionReference *DatabaseConnectionReference `json:"connection_reference,omitempty"`
-	Executions         []DatabaseValidationExecution `json:"executions,omitempty"`
+	ValidationCheck     DatabaseValidationCheck       `json:"validation_check"`
+	DatabaseChange      *DatabaseChange               `json:"database_change,omitempty"`
+	ConnectionReference *DatabaseConnectionReference  `json:"connection_reference,omitempty"`
+	Executions          []DatabaseValidationExecution `json:"executions,omitempty"`
 }
 
 type DatabaseConnectionTestDetail struct {
@@ -881,33 +896,34 @@ type DatabasePosture struct {
 }
 
 type ReleaseAnalysis struct {
-	Release                 Release                   `json:"release"`
-	ChangeSets              []ChangeSet               `json:"change_sets"`
-	Assessments             []RiskAssessment          `json:"assessments"`
-	ConfigSets              []ConfigSet               `json:"config_sets,omitempty"`
+	Release                 Release                       `json:"release"`
+	ChangeSets              []ChangeSet                   `json:"change_sets"`
+	Assessments             []RiskAssessment              `json:"assessments"`
+	ConfigSets              []ConfigSet                   `json:"config_sets,omitempty"`
 	DatabaseConnections     []DatabaseConnectionReference `json:"database_connections,omitempty"`
-	DatabaseConnectionTests []DatabaseConnectionTest  `json:"database_connection_tests,omitempty"`
-	DatabaseChanges         []DatabaseChange          `json:"database_changes,omitempty"`
-	DatabaseChecks          []DatabaseValidationCheck `json:"database_checks,omitempty"`
+	DatabaseConnectionTests []DatabaseConnectionTest      `json:"database_connection_tests,omitempty"`
+	DatabaseChanges         []DatabaseChange              `json:"database_changes,omitempty"`
+	DatabaseChecks          []DatabaseValidationCheck     `json:"database_checks,omitempty"`
 	DatabaseExecutions      []DatabaseValidationExecution `json:"database_executions,omitempty"`
-	LinkedRolloutExecutions []RolloutExecution        `json:"linked_rollout_executions,omitempty"`
-	CombinedRiskScore       int                       `json:"combined_risk_score"`
-	CombinedRiskLevel       RiskLevel                 `json:"combined_risk_level"`
-	BlastRadius             BlastRadius               `json:"blast_radius"`
-	ReleaseSummary          string                    `json:"release_summary"`
-	DependencyPlan          []ReleaseDependency       `json:"dependency_plan,omitempty"`
-	ConfigValidation        []ConfigSetValidation     `json:"config_validation,omitempty"`
-	DatabasePosture         DatabasePosture           `json:"database_posture"`
-	DatabaseFindings        []string                  `json:"database_findings,omitempty"`
-	WindowFindings          []string                  `json:"window_findings,omitempty"`
-	PolicyHighlights        []string                  `json:"policy_highlights,omitempty"`
-	Warnings                []string                  `json:"warnings,omitempty"`
-	Blockers                []string                  `json:"blockers,omitempty"`
-	ReadinessReview         []ReadinessReviewItem     `json:"readiness_review,omitempty"`
-	RollbackGuidance        RollbackGuidance          `json:"rollback_guidance"`
-	OpsAssistant            OpsAssistantSummary       `json:"ops_assistant"`
-	TeamMemory              []TeamMemoryInsight       `json:"team_memory,omitempty"`
-	Communications          CommunicationDrafts       `json:"communications"`
+	LinkedRolloutExecutions []RolloutExecution            `json:"linked_rollout_executions,omitempty"`
+	CombinedRiskScore       int                           `json:"combined_risk_score"`
+	CombinedRiskLevel       RiskLevel                     `json:"combined_risk_level"`
+	BlastRadius             BlastRadius                   `json:"blast_radius"`
+	ReleaseSummary          string                        `json:"release_summary"`
+	DependencyPlan          []ReleaseDependency           `json:"dependency_plan,omitempty"`
+	ConfigValidation        []ConfigSetValidation         `json:"config_validation,omitempty"`
+	DatabasePosture         DatabasePosture               `json:"database_posture"`
+	DatabaseFindings        []string                      `json:"database_findings,omitempty"`
+	WindowFindings          []string                      `json:"window_findings,omitempty"`
+	PolicyDecisions         []PolicyDecision              `json:"policy_decisions,omitempty"`
+	PolicyHighlights        []string                      `json:"policy_highlights,omitempty"`
+	Warnings                []string                      `json:"warnings,omitempty"`
+	Blockers                []string                      `json:"blockers,omitempty"`
+	ReadinessReview         []ReadinessReviewItem         `json:"readiness_review,omitempty"`
+	RollbackGuidance        RollbackGuidance              `json:"rollback_guidance"`
+	OpsAssistant            OpsAssistantSummary           `json:"ops_assistant"`
+	TeamMemory              []TeamMemoryInsight           `json:"team_memory,omitempty"`
+	Communications          CommunicationDrafts           `json:"communications"`
 }
 
 type RolloutEvidencePackSummary struct {
@@ -932,29 +948,29 @@ type RolloutEvidencePackSummary struct {
 }
 
 type RolloutEvidencePack struct {
-	Summary             RolloutEvidencePackSummary `json:"summary"`
-	Organization        Organization               `json:"organization"`
-	Project             Project                    `json:"project"`
-	Service             Service                    `json:"service"`
-	Environment         Environment                `json:"environment"`
-	ChangeSet           ChangeSet                  `json:"change_set"`
-	Assessment          RiskAssessment             `json:"assessment"`
-	Plan                RolloutPlan                `json:"plan"`
-	ExecutionDetail     RolloutExecutionDetail     `json:"execution_detail"`
-	BackendIntegration  *Integration               `json:"backend_integration,omitempty"`
-	SignalIntegration   *Integration               `json:"signal_integration,omitempty"`
-	PolicyDecisions     []PolicyDecision           `json:"policy_decisions,omitempty"`
-	Incidents           []Incident                 `json:"incidents,omitempty"`
-	Repositories        []Repository               `json:"repositories,omitempty"`
-	DiscoveredResources []DiscoveredResource       `json:"discovered_resources,omitempty"`
-	GraphRelationships  []GraphRelationship        `json:"graph_relationships,omitempty"`
-	AuditTrail          []AuditEvent               `json:"audit_trail,omitempty"`
-	Release             *Release                   `json:"release,omitempty"`
-	ReleaseAnalysis     *ReleaseAnalysis           `json:"release_analysis,omitempty"`
-	DatabaseConnections []DatabaseConnectionReference `json:"database_connections,omitempty"`
-	DatabaseConnectionTests []DatabaseConnectionTest `json:"database_connection_tests,omitempty"`
-	DatabaseChanges     []DatabaseChange           `json:"database_changes,omitempty"`
-	DatabaseChecks      []DatabaseValidationCheck  `json:"database_checks,omitempty"`
-	DatabaseExecutions  []DatabaseValidationExecution `json:"database_executions,omitempty"`
-	DatabasePosture     *DatabasePosture           `json:"database_posture,omitempty"`
+	Summary                 RolloutEvidencePackSummary    `json:"summary"`
+	Organization            Organization                  `json:"organization"`
+	Project                 Project                       `json:"project"`
+	Service                 Service                       `json:"service"`
+	Environment             Environment                   `json:"environment"`
+	ChangeSet               ChangeSet                     `json:"change_set"`
+	Assessment              RiskAssessment                `json:"assessment"`
+	Plan                    RolloutPlan                   `json:"plan"`
+	ExecutionDetail         RolloutExecutionDetail        `json:"execution_detail"`
+	BackendIntegration      *Integration                  `json:"backend_integration,omitempty"`
+	SignalIntegration       *Integration                  `json:"signal_integration,omitempty"`
+	PolicyDecisions         []PolicyDecision              `json:"policy_decisions,omitempty"`
+	Incidents               []Incident                    `json:"incidents,omitempty"`
+	Repositories            []Repository                  `json:"repositories,omitempty"`
+	DiscoveredResources     []DiscoveredResource          `json:"discovered_resources,omitempty"`
+	GraphRelationships      []GraphRelationship           `json:"graph_relationships,omitempty"`
+	AuditTrail              []AuditEvent                  `json:"audit_trail,omitempty"`
+	Release                 *Release                      `json:"release,omitempty"`
+	ReleaseAnalysis         *ReleaseAnalysis              `json:"release_analysis,omitempty"`
+	DatabaseConnections     []DatabaseConnectionReference `json:"database_connections,omitempty"`
+	DatabaseConnectionTests []DatabaseConnectionTest      `json:"database_connection_tests,omitempty"`
+	DatabaseChanges         []DatabaseChange              `json:"database_changes,omitempty"`
+	DatabaseChecks          []DatabaseValidationCheck     `json:"database_checks,omitempty"`
+	DatabaseExecutions      []DatabaseValidationExecution `json:"database_executions,omitempty"`
+	DatabasePosture         *DatabasePosture              `json:"database_posture,omitempty"`
 }

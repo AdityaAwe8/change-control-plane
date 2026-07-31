@@ -60,6 +60,7 @@ type ChangeSetQuery struct {
 	OrganizationID string
 	ProjectID      string
 	ServiceID      string
+	EnvironmentID  string
 	Limit          int
 	Offset         int
 }
@@ -68,6 +69,8 @@ type RiskAssessmentQuery struct {
 	OrganizationID string
 	ProjectID      string
 	ChangeSetID    string
+	ServiceID      string
+	EnvironmentID  string
 	Limit          int
 	Offset         int
 }
@@ -318,6 +321,9 @@ type PolicyDecisionQuery struct {
 	RiskAssessmentID   string
 	RolloutPlanID      string
 	RolloutExecutionID string
+	ReleaseID          string
+	ConfigSetID        string
+	DatabaseChangeID   string
 	AppliesTo          string
 	Limit              int
 	Offset             int

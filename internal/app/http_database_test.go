@@ -191,7 +191,7 @@ func TestRuntimeDatabaseValidationExecutionRoutesPersistExecutionTruth(t *testin
 	sourceDSN := databaseTestDSN()
 	freshDSN, cleanup, err := createTemporaryDatabaseForAppTests(sourceDSN)
 	if err != nil {
-		t.Skipf("postgres unavailable for runtime db execution test: %v", err)
+		t.Skipf("postgres unavailable for runtime db execution test; set CCP_TEST_DB_DSN or run make proof-postgres with a role allowed to create/drop temporary proof databases: %v", err)
 	}
 	defer cleanup()
 
@@ -203,7 +203,16 @@ func TestRuntimeDatabaseValidationExecutionRoutesPersistExecutionTruth(t *testin
 	if _, err := db.Exec(`CREATE TABLE runtime_validation_target (id SERIAL PRIMARY KEY, name TEXT NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`CREATE INDEX runtime_validation_target_name_idx ON runtime_validation_target (name)`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO runtime_validation_target (name) VALUES ('seed')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES ('202604230001_add_runtime_validation_target')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -399,13 +408,101 @@ func TestRuntimeDatabaseValidationExecutionRoutesPersistExecutionTruth(t *testin
 		t.Fatalf("expected release analysis to include runtime execution evidence, got %+v", released.DatabaseExecutions)
 	}
 
+	migrationMarkerCheck := postItemAuth[types.DatabaseValidationCheckDetail](t, server.URL+"/api/v1/database-validation-checks", types.CreateDatabaseValidationCheckRequest{
+		OrganizationID:   admin.Session.ActiveOrganizationID,
+		ProjectID:        project.ID,
+		EnvironmentID:    environment.ID,
+		ServiceID:        service.ID,
+		ChangeSetID:      change.ID,
+		DatabaseChangeID: databaseChange.DatabaseChange.ID,
+		ConnectionRefID:  connectionRef.ConnectionReference.ID,
+		Name:             "Runtime migration marker check",
+		Phase:            "post_deploy",
+		CheckType:        "migration_completion",
+		ReadOnly:         true,
+		Required:         false,
+		ExecutionMode:    "runtime_read_only",
+		Specification:    `{"subject":"migration_marker","schema":"public","table":"schema_migrations","column":"version","value":"202604230001_add_runtime_validation_target"}`,
+		Summary:          "Confirm the schema migration marker is present after deployment.",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	migrationMarkerExecution := postItemAuth[types.DatabaseValidationExecutionDetail](t, server.URL+"/api/v1/database-validation-checks/"+migrationMarkerCheck.ValidationCheck.ID+"/execute", types.ExecuteDatabaseValidationCheckRequest{
+		Trigger: "manual",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if migrationMarkerExecution.Execution.Status != "passed" {
+		t.Fatalf("expected migration marker execution to pass, got %+v", migrationMarkerExecution.Execution)
+	}
+	if migrationMarkerExecution.ConnectionReference == nil || migrationMarkerExecution.ConnectionReference.Status != "ready" {
+		t.Fatalf("expected migration marker check to keep connection ready, got %+v", migrationMarkerExecution.ConnectionReference)
+	}
+
+	executeRuntimeAssertion := func(name, checkType, specification string) types.DatabaseValidationExecutionDetail {
+		t.Helper()
+		check := postItemAuth[types.DatabaseValidationCheckDetail](t, server.URL+"/api/v1/database-validation-checks", types.CreateDatabaseValidationCheckRequest{
+			OrganizationID:   admin.Session.ActiveOrganizationID,
+			ProjectID:        project.ID,
+			EnvironmentID:    environment.ID,
+			ServiceID:        service.ID,
+			ChangeSetID:      change.ID,
+			DatabaseChangeID: databaseChange.DatabaseChange.ID,
+			ConnectionRefID:  connectionRef.ConnectionReference.ID,
+			Name:             name,
+			Phase:            "post_deploy",
+			CheckType:        checkType,
+			ReadOnly:         true,
+			Required:         false,
+			ExecutionMode:    "runtime_read_only",
+			Specification:    specification,
+			Summary:          "Runtime read-only assertion coverage.",
+		}, admin.Token, admin.Session.ActiveOrganizationID)
+		return postItemAuth[types.DatabaseValidationExecutionDetail](t, server.URL+"/api/v1/database-validation-checks/"+check.ValidationCheck.ID+"/execute", types.ExecuteDatabaseValidationCheckRequest{
+			Trigger: "manual",
+		}, admin.Token, admin.Session.ActiveOrganizationID)
+	}
+
+	columnPass := executeRuntimeAssertion("Runtime column existence pass", "existence_assertion", `{"subject":"column","schema":"public","table":"runtime_validation_target","column":"name"}`)
+	if columnPass.Execution.Status != "passed" {
+		t.Fatalf("expected column existence pass, got %+v", columnPass.Execution)
+	}
+	columnFail := executeRuntimeAssertion("Runtime column existence fail", "existence_assertion", `{"subject":"column","schema":"public","table":"runtime_validation_target","column":"missing_name"}`)
+	if columnFail.Execution.Status != "failed" || columnFail.ConnectionReference == nil || columnFail.ConnectionReference.Status != "ready" {
+		t.Fatalf("expected column existence failure to stay assertion-scoped, got %+v", columnFail)
+	}
+	indexPass := executeRuntimeAssertion("Runtime index existence pass", "existence_assertion", `{"subject":"index","schema":"public","index":"runtime_validation_target_name_idx"}`)
+	if indexPass.Execution.Status != "passed" {
+		t.Fatalf("expected index existence pass, got %+v", indexPass.Execution)
+	}
+	indexFail := executeRuntimeAssertion("Runtime index existence fail", "existence_assertion", `{"subject":"index","schema":"public","index":"runtime_validation_target_missing_idx"}`)
+	if indexFail.Execution.Status != "failed" || indexFail.ConnectionReference == nil || indexFail.ConnectionReference.Status != "ready" {
+		t.Fatalf("expected index existence failure to stay assertion-scoped, got %+v", indexFail)
+	}
+	rowCountPass := executeRuntimeAssertion("Runtime row-count pass", "row_count_assertion", `{"schema":"public","table":"runtime_validation_target","operator":"eq","expected_count":1}`)
+	if rowCountPass.Execution.Status != "passed" {
+		t.Fatalf("expected row-count assertion pass, got %+v", rowCountPass.Execution)
+	}
+	rowCountFail := executeRuntimeAssertion("Runtime row-count fail", "row_count_assertion", `{"schema":"public","table":"runtime_validation_target","operator":"gt","expected_count":5}`)
+	if rowCountFail.Execution.Status != "failed" || rowCountFail.ConnectionReference == nil || rowCountFail.ConnectionReference.Status != "ready" {
+		t.Fatalf("expected row-count assertion failure to keep connection ready, got %+v", rowCountFail)
+	}
+
 	execution := postItemAuth[types.RolloutExecution](t, server.URL+"/api/v1/rollout-executions", types.CreateRolloutExecutionRequest{
 		RolloutPlanID: rollout.Plan.ID,
 		ReleaseID:     initialRelease.Release.ID,
 	}, admin.Token, admin.Session.ActiveOrganizationID)
 	pack := getItemAuth[types.RolloutEvidencePack](t, server.URL+"/api/v1/rollout-executions/"+execution.ID+"/evidence-pack", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
-	if len(pack.DatabaseConnections) != 1 || len(pack.DatabaseConnectionTests) != 1 || len(pack.DatabaseExecutions) != 1 {
+	if len(pack.DatabaseConnections) != 1 || len(pack.DatabaseConnectionTests) != 1 || len(pack.DatabaseExecutions) < 2 {
 		t.Fatalf("expected evidence pack to include runtime db connection and execution context, got %+v", pack)
+	}
+	executionIDs := map[string]bool{}
+	for _, databaseExecution := range pack.DatabaseExecutions {
+		executionIDs[databaseExecution.ID] = true
+		for _, candidate := range append(append([]string{databaseExecution.Summary}, databaseExecution.ResultDetails...), databaseExecution.Evidence...) {
+			if strings.Contains(candidate, freshDSN) || strings.Contains(candidate, "postgres://") || strings.Contains(strings.ToLower(candidate), "password=") {
+				t.Fatalf("expected evidence-pack database execution output to stay redacted, got %q", candidate)
+			}
+		}
+	}
+	if !executionIDs[executed.Execution.ID] || !executionIDs[migrationMarkerExecution.Execution.ID] {
+		t.Fatalf("expected evidence pack to include table and migration-marker runtime executions, got %+v", pack.DatabaseExecutions)
 	}
 
 	failingRuntimeCheck := postItemAuth[types.DatabaseValidationCheckDetail](t, server.URL+"/api/v1/database-validation-checks", types.CreateDatabaseValidationCheckRequest{
@@ -439,13 +536,48 @@ func TestRuntimeDatabaseValidationExecutionRoutesPersistExecutionTruth(t *testin
 		t.Fatalf("expected failed execution to update validation-check truth, got %+v", failedCheckDetail.ValidationCheck)
 	}
 	failedExecutionList := getListAuth[types.DatabaseValidationExecution](t, server.URL+"/api/v1/database-validation-executions?status=failed", admin.Token, admin.Session.ActiveOrganizationID, http.StatusOK)
-	if len(failedExecutionList) != 1 || failedExecutionList[0].ID != failedExecution.Execution.ID {
+	failedExecutionFound := false
+	for _, item := range failedExecutionList {
+		if item.ID == failedExecution.Execution.ID {
+			failedExecutionFound = true
+			break
+		}
+	}
+	if !failedExecutionFound {
 		t.Fatalf("expected failed execution to be listable by status, got %+v", failedExecutionList)
+	}
+
+	missingRowCountCheck := postItemAuth[types.DatabaseValidationCheckDetail](t, server.URL+"/api/v1/database-validation-checks", types.CreateDatabaseValidationCheckRequest{
+		OrganizationID:   admin.Session.ActiveOrganizationID,
+		ProjectID:        project.ID,
+		EnvironmentID:    environment.ID,
+		ServiceID:        service.ID,
+		ChangeSetID:      change.ID,
+		DatabaseChangeID: databaseChange.DatabaseChange.ID,
+		ConnectionRefID:  connectionRef.ConnectionReference.ID,
+		Name:             "Runtime missing row-count table check",
+		Phase:            "post_deploy",
+		CheckType:        "row_count_assertion",
+		ReadOnly:         true,
+		Required:         false,
+		ExecutionMode:    "runtime_read_only",
+		Specification:    `{"schema":"public","table":"runtime_validation_missing_count","operator":"eq","expected_count":0}`,
+		Summary:          "Confirm missing row-count targets fail as assertions without marking the connection unhealthy.",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	missingRowCountExecution := postItemAuth[types.DatabaseValidationExecutionDetail](t, server.URL+"/api/v1/database-validation-checks/"+missingRowCountCheck.ValidationCheck.ID+"/execute", types.ExecuteDatabaseValidationCheckRequest{
+		Trigger: "manual",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if missingRowCountExecution.Execution.Status != "failed" {
+		t.Fatalf("expected missing row-count target to persist as a failed assertion, got %+v", missingRowCountExecution.Execution)
+	}
+	if missingRowCountExecution.ConnectionReference == nil || missingRowCountExecution.ConnectionReference.Status != "ready" || missingRowCountExecution.ConnectionReference.LastErrorSummary != "" {
+		t.Fatalf("expected missing row-count target to keep connection health ready and error-free, got %+v", missingRowCountExecution.ConnectionReference)
 	}
 }
 
 func TestDatabaseConnectionTestingRejectsUnboundSecretRuntimeWithoutLeakingSecrets(t *testing.T) {
 	t.Setenv("CCP_AUTH_MODE", "dev")
+	t.Setenv("CCP_BAD_RUNTIME_DSN", "postgres://leaky_user:leaky_password@127.0.0.1:1/nope?sslmode=disable")
 	application := app.NewApplicationWithStore(common.LoadConfig(), app.NewInMemoryStore())
 	server := newLocalIPv4Server(t, app.NewHTTPServer(application).Handler())
 	defer server.Close()
@@ -517,6 +649,47 @@ func TestDatabaseConnectionTestingRejectsUnboundSecretRuntimeWithoutLeakingSecre
 	for _, candidate := range append([]string{testDetail.ConnectionTest.Summary, testDetail.ConnectionReference.LastErrorSummary}, testDetail.ConnectionTest.Details...) {
 		if strings.Contains(candidate, "postgres://") || strings.Contains(strings.ToLower(candidate), "password=") {
 			t.Fatalf("expected connection test output to stay redacted, got %q", candidate)
+		}
+	}
+
+	leakyDSN := "postgres://leaky_user:leaky_password@127.0.0.1:1/nope"
+	leakyBody := doAuthenticatedJSON(t, http.MethodPost, server.URL+"/api/v1/database-connection-references", types.CreateDatabaseConnectionReferenceRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "checkout-plaintext-dsn",
+		Datastore:      "checkout-primary",
+		Driver:         "postgres",
+		SourceType:     "env_dsn",
+		DSNEnv:         leakyDSN,
+		Summary:        "Plaintext DSN input must be rejected instead of stored.",
+	}, admin.Token, admin.Session.ActiveOrganizationID, http.StatusBadRequest)
+	if strings.Contains(string(leakyBody), leakyDSN) || strings.Contains(string(leakyBody), "postgres://") || strings.Contains(string(leakyBody), "leaky_user") || strings.Contains(string(leakyBody), "leaky_password") {
+		t.Fatalf("expected plaintext DSN-shaped env reference rejection to stay redacted, got %s", string(leakyBody))
+	}
+
+	failingConnection := postItemAuth[types.DatabaseConnectionReferenceDetail](t, server.URL+"/api/v1/database-connection-references", types.CreateDatabaseConnectionReferenceRequest{
+		OrganizationID: admin.Session.ActiveOrganizationID,
+		ProjectID:      project.ID,
+		EnvironmentID:  environment.ID,
+		ServiceID:      service.ID,
+		Name:           "checkout-bad-env-ref",
+		Datastore:      "checkout-primary",
+		Driver:         "postgres",
+		SourceType:     "env_dsn",
+		DSNEnv:         "CCP_BAD_RUNTIME_DSN",
+		Summary:        "Env-backed reference with an unreachable runtime DSN for failure classification.",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	failingTest := postItemAuth[types.DatabaseConnectionTestDetail](t, server.URL+"/api/v1/database-connection-references/"+failingConnection.ConnectionReference.ID+"/test", types.TestDatabaseConnectionReferenceRequest{
+		Trigger: "manual",
+	}, admin.Token, admin.Session.ActiveOrganizationID)
+	if failingTest.ConnectionTest.Status != "errored" || failingTest.ConnectionReference.Status != "error" {
+		t.Fatalf("expected failed runtime connection test to mark connection error, got %+v", failingTest)
+	}
+	for _, candidate := range append([]string{failingTest.ConnectionTest.Summary, failingTest.ConnectionReference.LastErrorSummary}, failingTest.ConnectionTest.Details...) {
+		if strings.Contains(candidate, "postgres://") || strings.Contains(candidate, "leaky_user") || strings.Contains(candidate, "leaky_password") || strings.Contains(strings.ToLower(candidate), "password=") {
+			t.Fatalf("expected failed connection output to stay redacted, got %q", candidate)
 		}
 	}
 }

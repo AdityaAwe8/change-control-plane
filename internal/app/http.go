@@ -79,8 +79,10 @@ func (s *HTTPServer) routes() {
 	s.mux.HandleFunc("GET /api/v1/changes/{id}", s.withAuth(s.getChange))
 	s.mux.HandleFunc("GET /api/v1/risk-assessments", s.withAuth(s.listRiskAssessments))
 	s.mux.HandleFunc("POST /api/v1/risk-assessments", s.withAuth(s.createRiskAssessment))
+	s.mux.HandleFunc("GET /api/v1/risk-assessments/{id}", s.withAuth(s.getRiskAssessment))
 	s.mux.HandleFunc("GET /api/v1/rollout-plans", s.withAuth(s.listRolloutPlans))
 	s.mux.HandleFunc("POST /api/v1/rollout-plans", s.withAuth(s.createRolloutPlan))
+	s.mux.HandleFunc("GET /api/v1/rollout-plans/{id}", s.withAuth(s.getRolloutPlan))
 	s.mux.HandleFunc("GET /api/v1/config-sets", s.withAuth(s.listConfigSets))
 	s.mux.HandleFunc("POST /api/v1/config-sets", s.withAuth(s.createConfigSet))
 	s.mux.HandleFunc("GET /api/v1/config-sets/{id}", s.withAuth(s.getConfigSet))
@@ -421,7 +423,7 @@ func (s *HTTPServer) createEnvironment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) listChanges(w http.ResponseWriter, r *http.Request) {
-	result, err := s.app.ListChangeSets(r.Context())
+	result, err := s.app.ListChangeSetsWithQuery(r.Context(), decodeChangeSetQuery(r))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -444,7 +446,7 @@ func (s *HTTPServer) createChange(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) listRiskAssessments(w http.ResponseWriter, r *http.Request) {
-	result, err := s.app.ListRiskAssessments(r.Context())
+	result, err := s.app.ListRiskAssessmentsWithQuery(r.Context(), decodeRiskAssessmentQuery(r))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -466,8 +468,17 @@ func (s *HTTPServer) createRiskAssessment(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, types.ItemResponse[types.RiskAssessmentResult]{Data: result})
 }
 
+func (s *HTTPServer) getRiskAssessment(w http.ResponseWriter, r *http.Request) {
+	result, err := s.app.GetRiskAssessment(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, types.ItemResponse[types.RiskAssessment]{Data: result})
+}
+
 func (s *HTTPServer) listRolloutPlans(w http.ResponseWriter, r *http.Request) {
-	result, err := s.app.ListRolloutPlans(r.Context())
+	result, err := s.app.ListRolloutPlansWithQuery(r.Context(), decodeRolloutPlanQuery(r))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -487,6 +498,45 @@ func (s *HTTPServer) createRolloutPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, types.ItemResponse[types.RolloutPlanResult]{Data: result})
+}
+
+func (s *HTTPServer) getRolloutPlan(w http.ResponseWriter, r *http.Request) {
+	result, err := s.app.GetRolloutPlan(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, types.ItemResponse[types.RolloutPlan]{Data: result})
+}
+
+func decodeChangeSetQuery(r *http.Request) storage.ChangeSetQuery {
+	return storage.ChangeSetQuery{
+		ProjectID:     strings.TrimSpace(r.URL.Query().Get("project_id")),
+		ServiceID:     strings.TrimSpace(r.URL.Query().Get("service_id")),
+		EnvironmentID: strings.TrimSpace(r.URL.Query().Get("environment_id")),
+		Limit:         parseIntQuery(r, "limit", 0),
+		Offset:        parseIntQuery(r, "offset", 0),
+	}
+}
+
+func decodeRiskAssessmentQuery(r *http.Request) storage.RiskAssessmentQuery {
+	return storage.RiskAssessmentQuery{
+		ProjectID:     strings.TrimSpace(r.URL.Query().Get("project_id")),
+		ChangeSetID:   strings.TrimSpace(r.URL.Query().Get("change_set_id")),
+		ServiceID:     strings.TrimSpace(r.URL.Query().Get("service_id")),
+		EnvironmentID: strings.TrimSpace(r.URL.Query().Get("environment_id")),
+		Limit:         parseIntQuery(r, "limit", 0),
+		Offset:        parseIntQuery(r, "offset", 0),
+	}
+}
+
+func decodeRolloutPlanQuery(r *http.Request) storage.RolloutPlanQuery {
+	return storage.RolloutPlanQuery{
+		ProjectID:   strings.TrimSpace(r.URL.Query().Get("project_id")),
+		ChangeSetID: strings.TrimSpace(r.URL.Query().Get("change_set_id")),
+		Limit:       parseIntQuery(r, "limit", 0),
+		Offset:      parseIntQuery(r, "offset", 0),
+	}
 }
 
 func (s *HTTPServer) listAuditEvents(w http.ResponseWriter, r *http.Request) {

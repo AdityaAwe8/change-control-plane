@@ -19,9 +19,9 @@ Status legend:
 | Kubernetes provider | `near_real_and_verified` | Now performs real HTTP calls against Kubernetes-style deployment status endpoints, normalizes deployment JSON, supports pause/resume through deployment patching, is harness-proven for bearer-auth headers plus custom status-path handling, and is now part of the reusable `live-proof-verify` external proof track. Rollback supports configured action endpoints or configured image patch targets. |
 | Prometheus provider | `near_real_and_verified` | Now performs real HTTP query-range requests, normalizes results into signal snapshots, classifies overall signal health deterministically, is harness-proven for bearer-auth headers plus custom query-path handling, and is now part of the reusable `live-proof-verify` external proof track. |
 | Provider error classification | `near_real_and_verified` | HTTP-backed providers now distinguish transient from terminal failures through typed provider errors. |
-| GitHub runtime integration | `normalization_only` | Still catalog and metadata oriented only. No live deployment-state integration. |
-| Slack runtime integration | `normalization_only` | Still descriptor-level only. |
-| Jira runtime integration | `normalization_only` | Still descriptor-level only. |
+| GitHub runtime integration | `normalization_only` | Real SCM discovery, webhook ingest, and ownership provenance exist, but there is no live deployment-state or rollout-control integration. |
+| Slack runtime integration | `missing` | No registered Slack provider kind, API adapter, or runtime-control surface is implemented. |
+| Jira runtime integration | `missing` | No registered Jira provider kind, API adapter, or runtime-control surface is implemented. |
 
 ## Reality Check
 
@@ -37,4 +37,4 @@ What is still not claimed:
 - no live cluster credential bootstrap
 - no `client-go`-based Kubernetes controller loop
 - no production-grade Prometheus auth/tenant routing layer
-- no live GitHub, Slack, or Jira operational control integration
+- no live GitHub deployment-control integration, and no Slack or Jira provider implementation

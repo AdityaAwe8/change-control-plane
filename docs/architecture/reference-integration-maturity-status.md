@@ -5,7 +5,7 @@ This document tracks the real maturity of the platform's reference integration s
 | Area | Status | Reality |
 | --- | --- | --- |
 | GitHub PAT path | real but limited | Still supported for legacy setup and webhook ingest, but it remains operator-plumbing-heavy compared with the GitHub App path. |
-| GitHub App onboarding | partially implemented | The platform now has a real install-style start/callback flow, installation scope persistence, and installation-token minting from `app_id` + `private_key_env` + `installation_id`. Marketplace polish, OAuth user-consent flow, and automatic webhook registration are still missing. |
+| GitHub App onboarding | partially implemented | The platform now has a real install-style start/callback flow, installation scope persistence, installation-token minting from `app_id` + `private_key_env` + `installation_id`, and automatic webhook registration/repair when provider permissions and `webhook_secret_env` are configured. Marketplace polish and OAuth user-consent flow are still missing. |
 | GitLab onboarding | real but limited | GitLab now has a product-shaped token-based onboarding path with scope, health, sync, and webhook support. OAuth and app-style onboarding are still missing. |
 | Shared SCM model | real but limited | GitHub and GitLab now fit the same repository discovery, webhook normalization, change ingest, and coverage model. Some provider-specific seams and provenance limits remain. |
 | Multi-instance integration persistence | real and scalable enough for pilots | Multiple instances per org and kind now exist through `instance_key`, `scope_type`, `scope_name`, `auth_strategy`, and per-instance schedule/freshness state. |

@@ -1385,6 +1385,11 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
                   <select name="applies_to">
                     <option value="risk_assessment">risk_assessment</option>
                     <option value="rollout_plan">rollout_plan</option>
+                    <option value="rollout_execution">rollout_execution</option>
+                    <option value="release_bundle">release_bundle</option>
+                    <option value="config_set">config_set</option>
+                    <option value="database_governance">database_governance</option>
+                    <option value="change_window">change_window</option>
                   </select>
                 </label>
                 <label><span>Mode</span>
@@ -2015,7 +2020,7 @@ function renderPage(state: ControlPlaneState, routeKey: string): string {
           <article class="surface panel wide">
             <div class="panel-header">
               <h3>Service Accounts and Tokens</h3>
-              <p>Machine actors can authenticate with revoked-or-rotated tokens while tenant boundaries stay enforced.</p>
+              <p>Machine actors use scoped tokens, while revoked or rotated credentials stop authenticating and tenant boundaries stay enforced.</p>
             </div>
             ${serviceAccounts.length > 0 ? table(["Account", "Role", "Status", "Tokens"], serviceAccounts.map((serviceAccount) => [serviceAccount.name, serviceAccount.role, serviceAccount.status, String((serviceAccountTokens[serviceAccount.id] || []).length)])) : emptyState("No service accounts yet", "Create a machine actor for rollout automation, graph ingestion, or controlled change execution.")}
             <div class="page-grid">
@@ -3219,6 +3224,15 @@ function policyDecisionTargetLabel(state: ControlPlaneState, decision: PolicyDec
   if (decision.rollout_execution_id) {
     return `execution ${decision.rollout_execution_id}`;
   }
+  if (decision.release_id) {
+    return `release ${decision.release_id}`;
+  }
+  if (decision.config_set_id) {
+    return `config ${decision.config_set_id}`;
+  }
+  if (decision.database_change_id) {
+    return `database ${decision.database_change_id}`;
+  }
   if (decision.rollout_plan_id) {
     return `plan ${decision.rollout_plan_id}`;
   }
@@ -3264,6 +3278,11 @@ function renderPolicyManagementCard(state: ControlPlaneState, policy: Policy, ca
           <select name="applies_to">
             <option value="risk_assessment" ${policy.applies_to === "risk_assessment" ? "selected" : ""}>risk_assessment</option>
             <option value="rollout_plan" ${policy.applies_to === "rollout_plan" ? "selected" : ""}>rollout_plan</option>
+            <option value="rollout_execution" ${policy.applies_to === "rollout_execution" ? "selected" : ""}>rollout_execution</option>
+            <option value="release_bundle" ${policy.applies_to === "release_bundle" ? "selected" : ""}>release_bundle</option>
+            <option value="config_set" ${policy.applies_to === "config_set" ? "selected" : ""}>config_set</option>
+            <option value="database_governance" ${policy.applies_to === "database_governance" ? "selected" : ""}>database_governance</option>
+            <option value="change_window" ${policy.applies_to === "change_window" ? "selected" : ""}>change_window</option>
           </select>
         </label>
         <label><span>Mode</span>

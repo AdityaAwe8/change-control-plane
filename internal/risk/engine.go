@@ -31,15 +31,17 @@ func (e *Engine) Assess(change types.ChangeSet, service types.Service, environme
 			add(6, "application code changes introduce runtime behavior changes")
 		case "config":
 			add(8, "configuration changes can alter environment behavior quickly")
-		case "infra":
+		case "infra", "infrastructure":
 			add(15, "infrastructure changes expand operational impact")
 		case "schema":
 			add(16, "schema changes can introduce compatibility and rollback risk")
+		case "database":
+			add(8, "database-related changes require persistence and compatibility review")
 		case "iam":
 			add(18, "IAM changes can affect access and privilege boundaries")
-		case "secret":
+		case "secret", "secrets":
 			add(14, "secret changes can disrupt connectivity and runtime access")
-		case "dependency":
+		case "dependency", "dependencies":
 			add(9, "dependency changes can introduce compatibility regressions")
 		}
 	}

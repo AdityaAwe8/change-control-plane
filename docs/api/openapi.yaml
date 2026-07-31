@@ -51,6 +51,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponseItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/auth/sign-up:
     post:
       summary: Create a password-backed account
@@ -68,6 +72,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponseItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/auth/sign-in:
     post:
       summary: Sign in with email and password
@@ -85,6 +93,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponseItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/auth/providers:
     get:
       summary: List public enterprise identity providers that are enabled for browser sign-in
@@ -150,6 +164,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionInfoItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
   /api/v1/auth/logout:
     post:
       summary: Invalidate the current browser session and clear the session cookie
@@ -161,6 +177,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionInfoItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/catalog:
     get:
       summary: Combined service and environment catalog summary
@@ -171,6 +191,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CatalogSummaryItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
   /api/v1/metrics/basics:
     get:
       summary: Basic control-plane counts
@@ -678,6 +702,22 @@ paths:
   /api/v1/changes:
     get:
       summary: List change sets
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
       responses:
         '200':
           description: Change set list
@@ -737,6 +777,25 @@ paths:
   /api/v1/risk-assessments:
     get:
       summary: List risk assessments
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
       responses:
         '200':
           description: Risk assessment list
@@ -771,9 +830,43 @@ paths:
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
+  /api/v1/risk-assessments/{id}:
+    get:
+      summary: Get risk assessment detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Risk assessment detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessmentItemResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
   /api/v1/rollout-plans:
     get:
       summary: List rollout plans
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: change_set_id
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
       responses:
         '200':
           description: Rollout plan list
@@ -802,6 +895,27 @@ paths:
                 $ref: '#/components/schemas/RolloutPlanResultItemResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+  /api/v1/rollout-plans/{id}:
+    get:
+      summary: Get rollout plan detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Rollout plan detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolloutPlanItemResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
@@ -1408,6 +1522,25 @@ paths:
   /api/v1/rollout-executions:
     get:
       summary: List rollout executions
+      parameters:
+        - in: query
+          name: project_id
+          schema: { type: string }
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: environment_id
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0 }
       responses:
         '200':
           description: Rollout execution list
@@ -1698,14 +1831,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VerificationResultItemResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
           $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
-        '422':
-          $ref: '#/components/responses/ValidationError'
   /api/v1/rollout-executions/{id}/timeline:
     get:
       summary: List canonical rollout execution status timeline events
@@ -3978,8 +4111,10 @@ components:
           type: string
         value:
           type: string
+          description: Literal value or logical secret reference, depending on value_type. Secret-reference entries do not expose resolved secret values.
         value_type:
           type: string
+          enum: [literal, secret_ref]
         required:
           type: boolean
         deprecated:
@@ -4084,6 +4219,7 @@ components:
           type: array
           items:
             type: string
+            enum: [code, config, database, dependency, dependencies, iam, infra, infrastructure, schema, secret, secrets]
         file_count:
           type: integer
         resource_count:
@@ -4190,6 +4326,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RiskAssessment'
+    RiskAssessmentItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RiskAssessment'
     PolicyDecision:
       type: object
       properties:
@@ -4231,6 +4372,12 @@ components:
         rollout_plan_id:
           type: string
         rollout_execution_id:
+          type: string
+        release_id:
+          type: string
+        config_set_id:
+          type: string
+        database_change_id:
           type: string
         outcome:
           type: string
@@ -4337,6 +4484,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RolloutPlan'
+    RolloutPlanItemResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/RolloutPlan'
     RolloutPlanResult:
       type: object
       properties:
@@ -4839,6 +4991,7 @@ components:
           type: string
         specification:
           type: string
+          description: Runtime read-only checks accept a JSON string for the supported Postgres validator shapes, including table/column/index existence, migration_marker completion checks, and row_count_assertion checks.
         status:
           type: string
         summary:
@@ -4871,6 +5024,7 @@ components:
           type: string
         specification:
           type: string
+          description: Runtime read-only checks accept a JSON string for the supported Postgres validator shapes, including table/column/index existence, migration_marker completion checks, and row_count_assertion checks.
         status:
           type: string
         summary:
@@ -4916,10 +5070,13 @@ components:
           type: string
         dsn_env:
           type: string
+          description: Environment variable name that resolves a runtime DSN; the DSN value itself is not stored or returned.
         secret_ref:
           type: string
+          description: Logical secret reference for DSN-backed sources; not a resolved secret value.
         secret_ref_env:
           type: string
+          description: Runtime-only environment variable name used to resolve secret_ref_dsn connections; the resolved value is not persisted or returned.
         read_only_capable:
           type: boolean
         summary:
@@ -4940,10 +5097,13 @@ components:
           type: string
         dsn_env:
           type: string
+          description: Environment variable name that resolves a runtime DSN; the DSN value itself is not stored or returned.
         secret_ref:
           type: string
+          description: Logical secret reference for DSN-backed sources; not a resolved secret value.
         secret_ref_env:
           type: string
+          description: Runtime-only environment variable name used to resolve secret_ref_dsn connections; the resolved value is not persisted or returned.
         read_only_capable:
           type: boolean
         summary:
@@ -5778,6 +5938,7 @@ components:
           type: string
         applies_to:
           type: string
+          description: Deterministic local policy surface. Supported values are risk_assessment, rollout_plan, rollout_execution, release_bundle, config_set, database_governance, and change_window.
         mode:
           type: string
         enabled:
@@ -5835,6 +5996,7 @@ components:
           type: string
         applies_to:
           type: string
+          description: Deterministic local policy surface. Supported values are risk_assessment, rollout_plan, rollout_execution, release_bundle, config_set, database_governance, and change_window.
         mode:
           type: string
         enabled:
@@ -5863,6 +6025,7 @@ components:
           type: string
         applies_to:
           type: string
+          description: Deterministic local policy surface. Supported values are risk_assessment, rollout_plan, rollout_execution, release_bundle, config_set, database_governance, and change_window.
         mode:
           type: string
         enabled:
@@ -6817,10 +6980,13 @@ components:
           type: string
         dsn_env:
           type: string
+          description: Environment variable name that resolves a runtime DSN; the DSN value itself is not stored or returned.
         secret_ref:
           type: string
+          description: Logical secret reference for DSN-backed sources; not a resolved secret value.
         secret_ref_env:
           type: string
+          description: Runtime-only environment variable name used to resolve secret_ref_dsn connections; the resolved value is not persisted or returned.
         read_only_capable:
           type: boolean
         status:
@@ -7156,6 +7322,10 @@ components:
           type: array
           items:
             type: string
+        policy_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyDecision'
         policy_highlights:
           type: array
           items:

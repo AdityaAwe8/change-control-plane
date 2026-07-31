@@ -82,7 +82,7 @@ func (a *Application) buildRolloutExecutionDetail(ctx context.Context, runtimeCo
 		verificationResults = append(verificationResults, decorateVerificationResult(item, summary))
 	}
 
-	return types.RolloutExecutionDetail{
+	detail := types.RolloutExecutionDetail{
 		Execution:               runtimeContext.Execution,
 		VerificationResults:     verificationResults,
 		SignalSnapshots:         runtimeContext.SignalSnapshots,
@@ -90,7 +90,8 @@ func (a *Application) buildRolloutExecutionDetail(ctx context.Context, runtimeCo
 		StatusTimeline:          statusTimeline,
 		EffectiveRollbackPolicy: runtimeContext.EffectiveRollbackPolicy,
 		RuntimeSummary:          summary,
-	}, nil
+	}
+	return safeRolloutExecutionDetailForResponse(detail), nil
 }
 
 func (a *Application) GetRolloutEvidencePack(ctx context.Context, id string) (types.RolloutEvidencePack, error) {
@@ -182,33 +183,44 @@ func (a *Application) GetRolloutEvidencePack(ctx context.Context, id string) (ty
 		}
 	}
 
+	backendIntegration := safeIntegrationPointerForResponse(runtimeContext.BackendIntegration)
+	signalIntegration := safeIntegrationPointerForResponse(runtimeContext.SignalIntegration)
+
 	return types.RolloutEvidencePack{
-		Summary:             buildRolloutEvidencePackSummary(detail, runtimeContext, policyDecisions, incidents, repositories, discoveredResources, release, databasePosture, len(databaseChanges), len(databaseChecks)),
-		Organization:        organization,
-		Project:             project,
-		Service:             runtimeContext.Service,
-		Environment:         runtimeContext.Environment,
-		ChangeSet:           runtimeContext.ChangeSet,
-		Assessment:          runtimeContext.Assessment,
-		Plan:                runtimeContext.Plan,
-		ExecutionDetail:     detail,
-		BackendIntegration:  runtimeContext.BackendIntegration,
-		SignalIntegration:   runtimeContext.SignalIntegration,
-		PolicyDecisions:     policyDecisions,
-		Incidents:           incidents,
-		Repositories:        repositories,
-		DiscoveredResources: discoveredResources,
-		GraphRelationships:  graphRelationships,
-		AuditTrail:          auditTrail,
-		Release:             release,
-		ReleaseAnalysis:     releaseAnalysis,
-		DatabaseConnections: databaseConnections,
+		Summary:                 buildRolloutEvidencePackSummary(detail, runtimeContext, policyDecisions, incidents, repositories, discoveredResources, release, databasePosture, len(databaseChanges), len(databaseChecks)),
+		Organization:            organization,
+		Project:                 project,
+		Service:                 runtimeContext.Service,
+		Environment:             runtimeContext.Environment,
+		ChangeSet:               runtimeContext.ChangeSet,
+		Assessment:              runtimeContext.Assessment,
+		Plan:                    runtimeContext.Plan,
+		ExecutionDetail:         detail,
+		BackendIntegration:      backendIntegration,
+		SignalIntegration:       signalIntegration,
+		PolicyDecisions:         policyDecisions,
+		Incidents:               incidents,
+		Repositories:            safeRepositoriesForResponse(repositories),
+		DiscoveredResources:     safeDiscoveredResourcesForResponse(discoveredResources),
+		GraphRelationships:      safeGraphRelationshipsForResponse(graphRelationships),
+		AuditTrail:              safeAuditEventsForResponse(auditTrail),
+		Release:                 release,
+		ReleaseAnalysis:         releaseAnalysis,
+		DatabaseConnections:     databaseConnections,
 		DatabaseConnectionTests: databaseConnectionTests,
-		DatabaseChanges:     databaseChanges,
-		DatabaseChecks:      databaseChecks,
-		DatabaseExecutions:  databaseExecutions,
-		DatabasePosture:     databasePosture,
+		DatabaseChanges:         databaseChanges,
+		DatabaseChecks:          databaseChecks,
+		DatabaseExecutions:      databaseExecutions,
+		DatabasePosture:         databasePosture,
 	}, nil
+}
+
+func safeIntegrationPointerForResponse(integration *types.Integration) *types.Integration {
+	if integration == nil {
+		return nil
+	}
+	safe := safeIntegrationForResponse(*integration)
+	return &safe
 }
 
 func (a *Application) listEvidencePolicyDecisions(ctx context.Context, runtimeContext types.RolloutExecutionRuntimeContext) ([]types.PolicyDecision, error) {
@@ -217,6 +229,9 @@ func (a *Application) listEvidencePolicyDecisions(ctx context.Context, runtimeCo
 		{ProjectID: runtimeContext.Execution.ProjectID, RiskAssessmentID: runtimeContext.Assessment.ID, Limit: 100},
 		{ProjectID: runtimeContext.Execution.ProjectID, RolloutPlanID: runtimeContext.Plan.ID, Limit: 100},
 		{ProjectID: runtimeContext.Execution.ProjectID, RolloutExecutionID: runtimeContext.Execution.ID, Limit: 100},
+	}
+	if strings.TrimSpace(runtimeContext.Execution.ReleaseID) != "" {
+		queries = append(queries, storage.PolicyDecisionQuery{ProjectID: runtimeContext.Execution.ProjectID, ReleaseID: runtimeContext.Execution.ReleaseID, Limit: 200})
 	}
 	merged := make([]types.PolicyDecision, 0, 16)
 	seen := map[string]struct{}{}

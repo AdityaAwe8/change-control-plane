@@ -78,7 +78,7 @@ func (a *Application) StartGitHubOnboarding(ctx context.Context, integrationID s
 		return types.GitHubOnboardingStartResult{}, err
 	}
 	return types.GitHubOnboardingStartResult{
-		Integration:  hydrateIntegrationRuntimeState(integration, time.Now().UTC()),
+		Integration:  safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())),
 		AuthorizeURL: authorizeURL,
 		CallbackURL:  callbackURL,
 		ExpiresAt:    expiresAt.Format(time.RFC3339),
@@ -135,7 +135,7 @@ func (a *Application) CompleteGitHubOnboarding(ctx context.Context, rawState str
 		return types.Integration{}, err
 	}
 	_ = a.record(ctx, systemIdentity(), "integration.github_onboarding.completed", "integration", integration.ID, integration.OrganizationID, "", []string{installationID, integration.InstanceKey})
-	return hydrateIntegrationRuntimeState(integration, time.Now().UTC()), nil
+	return safeIntegrationForResponse(hydrateIntegrationRuntimeState(integration, time.Now().UTC())), nil
 }
 
 func (a *Application) signGitHubOnboardingState(state gitHubOnboardingState) (string, error) {
